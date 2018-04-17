@@ -55,6 +55,10 @@ class Configuration
     int     inNumChannels;
     int     noZeroCoeffsPercentage;
 
+     //! Pre-processing type applied to the input frame
+     //! Specific to each network, can take values from 0 to 4, default is 0
+     int    preProcType;
+
     //! Size of the TI DL per Execution Object heap
     size_t EXTMEM_HEAP_SIZE;
 
@@ -79,6 +83,7 @@ class Configuration
     Configuration(): numFrames(0), inHeight(0), inWidth(0),
                      inNumChannels(0),
                      noZeroCoeffsPercentage(100),
+                     preProcType(0),
                      EXTMEM_HEAP_SIZE(64 << 20),  // 64MB for inceptionNetv1
                      PARAM_HEAP_SIZE(9 << 20)     // 9MB for mobileNet1
     {}

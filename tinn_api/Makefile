@@ -33,9 +33,11 @@ BUILD_SHA?=$(shell git rev-parse --short HEAD)
 endif
 
 LIB_NAME = tinn_api.a
-DSP_OUTFILE = dsp/ocl_wrapper.out
+DSP_SRCFILE = dsp/ocl_wrapper.cl
+DSP_OUTFILE = dsp/ocl_wrapper.dsp_h
+LIB_IMGUTIL_NAME = tinn_imgutil.a
 
-all: $(LIB_NAME) $(DSP_OUTFILE)
+all: $(LIB_NAME) $(DSP_OUTFILE) $(LIB_IMGUTIL_NAME)
 
 include make.inc
 RM = rm
@@ -44,14 +46,19 @@ AR = ar
 
 SRCS = ocl_device.cpp configuration_parser.cpp configuration.cpp\
 	   executor.cpp execution_object.cpp trace.cpp util.cpp
+SRCS_IMGUTIL = imgutil.cpp
 
 OBJS = $(SRCS:.cpp=.o)
+OBJS_IMGUTIL = $(SRCS_IMGUTIL:.cpp=.o)
 
 HOST_SRC_FILES = $(addprefix src/,$(SRCS))
 HOST_OBJ_FILES = $(addprefix obj/,$(OBJS))
+HOST_SRC_IMGUTIL_FILES = $(addprefix src/,$(SRCS_IMGUTIL))
+HOST_OBJ_IMGUTIL_FILES = $(addprefix obj/,$(OBJS_IMGUTIL))
 
 HEADERS = src/ocl_device.h src/trace.h src/common_defines.h src/util.h
 HEADERS += src/executor_impl.h inc/executor.h inc/configuration.h
+HEADERS += ${DSP_OUTFILE}
 
 .PHONY: $(BUILD_ID)
 BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
@@ -72,19 +79,27 @@ CXXFLAGS += -I$(TARGET_ROOTDIR)/usr/share/ti/opencl
 CXXFLAGS += -Isrc -Iinc
 CXXFLAGS += $(BUILD_ID)
 
+$(DSP_OUTFILE): $(DSP_SRCFILE)
+	$(MAKE) -C dsp
+
 obj/%.o: src/%.cpp $(HEADERS)
+	@mkdir -p obj
 	@echo Compiling $< ...
 	$(CXX) -c $(CXXFLAGS) $< -o $@
 
-obj_dir:
-	@mkdir -p obj
-
-$(LIB_NAME) : obj_dir $(HOST_OBJ_FILES)
+$(LIB_NAME): $(HOST_OBJ_FILES)
 	$(AR) cr $@ $(HOST_OBJ_FILES)
 
-.PHONY: $(DSP_OUTFILE)
-$(DSP_OUTFILE):
-	$(MAKE) -C dsp
+
+$(LIB_IMGUTIL_NAME): HEADERS = inc/imgutil.h
+$(LIB_IMGUTIL_NAME): CXXFLAGS += $(shell pkg-config --cflags opencv)
+
+$(LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
+	$(AR) cr $@ $(HOST_OBJ_IMGUTIL_FILES)
 
 clean::
-	$(RM) -f $(LIB_NAME) $(HOST_OBJ_FILES) $(DSP_OUTFILE)
+	$(MAKE) -C dsp clean
+	$(RM) -f $(LIB_NAME) $(HOST_OBJ_FILES)
+	$(RM) -f $(LIB_IMGUTIL_NAME) $(HOST_OBJ_IMGUTIL_FILES)
+	$(RM) -rf obj
+

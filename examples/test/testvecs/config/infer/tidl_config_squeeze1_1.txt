@@ -1,4 +1,5 @@
 numFrames   = 1
+preProcType = 1
 inData   = testvecs/input/preproc_1_227x227.y
 outData   = "./stats_tool_out.bin"
 netBinFile      = "testvecs/config/tidl_models/tidl_net_squeezeNet1.1.bin"

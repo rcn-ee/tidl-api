@@ -246,14 +246,6 @@ LIBS  = -lOpenCL -locl_util
 	@echo Compiling $<
 	$(CL6X) -c $(CL6XFLAGS) $<
 
-%.out: %.cl
-	@echo Compiling $<
-	$(CLOCL) $(CLOCLFLAGS) $^
-
-%.dsp_h: %.cl
-	@echo Compiling $<
-	$(CLOCL) -t $(CLOCLFLAGS) $^
-
 $(EXE):
 
 clean::

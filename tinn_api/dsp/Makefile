@@ -1,14 +1,14 @@
 
-all: ocl_wrapper.out
+all: ocl_wrapper.dsp_h
 
 include ../make.inc
 
-CLOCL_FLAGS = -I../
+CLOCL_FLAGS = -I../ -t
 
 
-ocl_wrapper.out: ocl_wrapper.cl
+ocl_wrapper.dsp_h: ocl_wrapper.cl
 	@echo Generating $@
 	@$(CLOCL) $(CLOCL_FLAGS) $^
 
 clean::
-	@$(RM) *.obj *.out
+	@$(RM) *.obj *.out *.dsp_h

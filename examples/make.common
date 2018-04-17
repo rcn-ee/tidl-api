@@ -1,0 +1,40 @@
+RM = rm
+AR = ar
+CP = cp
+
+TINN_DIR = ../../tinn_api
+TINN_LIB_NAME = tinn_api.a
+TINN_LIB = $(TINN_DIR)/$(TINN_LIB_NAME)
+TINN_LIB_IMGUTIL_NAME = tinn_imgutil.a
+TINN_LIB_IMGUTIL = $(TINN_DIR)/$(TINN_LIB_IMGUTIL_NAME)
+
+include $(TINN_DIR)/make.inc
+
+ifeq ($(BUILD), debug)
+	CXXFLAGS += -Og -g -ggdb
+else
+	CXXFLAGS += -O3
+endif
+
+CXXFLAGS += -I. -I$(TINN_DIR)/inc -std=c++11
+
+HEADERS = 
+LIBS    = -lOpenCL -locl_util -lpthread
+
+all: $(EXE)
+
+.PHONY: $(TINN_LIB)
+$(TINN_LIB):
+	$(MAKE) -C $(TINN_DIR) $(TINN_LIB_NAME)
+
+.PHONY: $(TINN_LIB_IMGUTIL)
+$(TINN_LIB_IMGUTIL):
+	$(MAKE) -C $(TINN_DIR) $(TINN_LIB_IMGUTIL_NAME)
+
+realclean: clean
+	$(MAKE) -C $(TINN_DIR) clean
+	$(MAKE) -C $(TINN_DIR)/dsp clean
+
+clean::
+	$(RM) -f $(EXE) stats_tool_out.* *.out
+

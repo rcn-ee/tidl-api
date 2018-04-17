@@ -1,4 +1,5 @@
 numFrames   = 1
+preProcType = 0
 inData   = testvecs/input/000100_1024x512_bgr.y
 outData   = "./stats_tool_out.bin"
 netBinFile      = "testvecs/config/tidl_models/tidl_net_dense_varibale_block_size.bin"

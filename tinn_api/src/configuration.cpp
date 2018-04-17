@@ -38,6 +38,7 @@ void Configuration::Print(std::ostream &os) const
     os << "Configuration"
        << "\nFrame=      " << numFrames << " " << inWidth << "x"
                            << inHeight << "x" << inNumChannels
+       << "\nPreProcType              " << preProcType
        << "\nInputFile                " << inData
        << "\nOutputFile               " << outData
        << "\nNetwork                  " << netBinFile

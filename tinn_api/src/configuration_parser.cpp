@@ -60,6 +60,7 @@ struct ConfigParser : qi::grammar<Iterator, ascii::space_type>
 
         entry %=
           lit("numFrames")   >> '=' >> int_[ph::ref(x.numFrames) = _1]    |
+          lit("preProcType") >> '=' >> int_[ph::ref(x.preProcType) = _1]    |
           lit("inWidth")     >> '=' >> int_[ph::ref(x.inWidth) = _1]   |
           lit("inHeight")    >> '=' >> int_[ph::ref(x.inHeight) = _1]  |
           lit("inNumChannels") >> '=' >> int_[ph::ref(x.inNumChannels) = _1]  |

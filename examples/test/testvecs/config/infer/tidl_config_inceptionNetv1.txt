@@ -1,4 +1,5 @@
 numFrames   = 1
+preProcType = 2
 inData   = testvecs/input/preproc_2_224x224.y
 outData   = "stats_tool_out.bin"
 netBinFile      = testvecs/config/tidl_models/tidl_inception_v1_net.bin

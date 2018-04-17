@@ -36,6 +36,7 @@ using std::size_t;
 #include "ocl_device.h"
 #include "ocl_util.h"
 #include "trace.h"
+#include "../dsp/ocl_wrapper.dsp_h"
 
 using namespace tinn;
 
@@ -206,13 +207,13 @@ bool DspDevice::BuildProgramFromBinary(const std::string &BFN,
                                        cl_device_id device_ids[],
                                        int num_devices)
 {
-    char *bin_arr;
-    size_t bin_len = ocl_read_binary(BFN.c_str(), bin_arr);
+    size_t bin_len = ocl_wrapper_dsp_bin_len;
 
     assert (bin_len != 0);
 
     // Casting to make ocl_read_binary work with clCreateProgramWithBinary
-    const unsigned char *bin_arrc = reinterpret_cast <const unsigned char *>(bin_arr);
+    const unsigned char *bin_arrc = reinterpret_cast <const unsigned char *>
+                                    (ocl_wrapper_dsp_bin);
 
     size_t lengths[num_devices];
     for (int i=0; i < num_devices; i++) lengths[i] = bin_len;
@@ -233,8 +234,6 @@ bool DspDevice::BuildProgramFromBinary(const std::string &BFN,
     const char *options = "";
     err = clBuildProgram(program_m, num_devices, device_ids, options, 0, 0);
     errorCheck(err, __LINE__);
-
-    delete bin_arr;
 
     return true;
 }
