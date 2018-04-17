@@ -1,0 +1,8 @@
+numFrames   = 1
+inData   = testvecs/input/preproc_0_224x224.y
+outData   = "stats_tool_out.bin"
+netBinFile      = "testvecs/config/tidl_models/tidl_net_imagenet_jacintonet11v2.bin"
+paramsBinFile   = "testvecs/config/tidl_models/tidl_param_imagenet_jacintonet11v2.bin"
+inWidth = 224
+inHeight = 224
+inNumChannels = 3

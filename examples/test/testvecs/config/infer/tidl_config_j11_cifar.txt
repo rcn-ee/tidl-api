@@ -1,0 +1,8 @@
+numFrames     = 1
+inData        = testvecs/input/preproc_3_32x32.y
+outData       = "./stats_tool_out.bin"
+netBinFile    = "testvecs/config/tidl_models/tidl_net_cifar_jacintonet11v2.bin"
+paramsBinFile = "testvecs/config/tidl_models/tidl_param_cifar_jacintonet11v2.bin"
+inWidth       = 32
+inHeight      = 32
+inNumChannels = 3

@@ -1,0 +1,8 @@
+numFrames   = 1
+inData   = testvecs/input/preproc_1_227x227.y
+outData   = "./stats_tool_out.bin"
+netBinFile      = "testvecs/config/tidl_models/tidl_net_squeezeNet1.1.bin"
+paramsBinFile   = "testvecs/config/tidl_models/tidl_param_squeezeNet1.1.bin"
+inWidth = 227
+inHeight = 227
+inNumChannels = 3
