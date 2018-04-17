@@ -87,6 +87,7 @@ int main(int argc, char *argv[])
         std::cout << "TI DL not supported on this SoC." << std::endl;
         return EXIT_SUCCESS;
     }
+    std::cout << "API Version: " << Executor::GetAPIVersion() << std::endl;
 
     // Process arguments
     std::string config_file;
@@ -401,8 +402,8 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
 
 void DisplayHelp()
 {
-    std::cout << "Usage: tidl\n"
-                 "  Will run all available networks if tidl is invoked without"
+    std::cout << "Usage: test_tinn\n"
+                 "  Will run all available networks if invoked without"
                  " any arguments.\n  Use -c to run a single network.\n"
                  "Optional arguments:\n"
                  " -c                   Path to the configuration file\n"

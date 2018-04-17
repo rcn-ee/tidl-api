@@ -101,6 +101,11 @@ class Executor
         //! @return number of devices available
         static uint32_t GetNumDevicesSupportingTIDL(DeviceType device_type);
 
+        //! @brief Returns a string corresponding to the API version
+        //!
+        //! @return <major_ver>.<minor_ver>.<patch_ver>.<git_sha>
+        static std::string GetAPIVersion();
+
         Executor(const Executor&) = delete;
         Executor& operator= (const Executor&) = delete;
 

@@ -34,6 +34,17 @@ uint32_t Executor::GetNumDevicesSupportingTIDL(DeviceType device_type)
     return Device::GetNumDevicesSupportingTIDL(device_type);
 }
 
+#define STRING(S)  XSTRING(S)
+#define XSTRING(S) #S
+std::string Executor::GetAPIVersion()
+{
+    static std::string version = STRING(_BUILD_VER);
+    version += ".";
+    version += STRING(_BUILD_SHA);
+    return version;
+}
+
+
 ExecutorImpl::ExecutorImpl(DeviceType core_type, const DeviceIds& ids):
     configuration_m(),
     shared_networkparam_heap_m(nullptr, &__free_ddr),
@@ -47,7 +58,6 @@ ExecutorImpl::ExecutorImpl(DeviceType core_type, const DeviceIds& ids):
         name = STRING(SETUP_KERNEL) ";" STRING(INIT_KERNEL) ";" STRING(PROCESS_KERNEL) ";" STRING(CLEANUP_KERNEL);
 
     device_m = Device::Create(core_type_m, ids, name);
-
 }
 
 

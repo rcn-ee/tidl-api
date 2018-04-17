@@ -24,6 +24,14 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
+MAJOR_VER=0
+MINOR_VER=1
+PATCH_VER=0
+
+ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
+BUILD_SHA?=$(shell git rev-parse --short HEAD)
+endif
+
 LIB_NAME = tinn_api.a
 DSP_OUTFILE = dsp/ocl_wrapper.out
 
@@ -45,6 +53,13 @@ HOST_OBJ_FILES = $(addprefix obj/,$(OBJS))
 HEADERS = src/ocl_device.h src/trace.h src/common_defines.h src/util.h
 HEADERS += src/executor_impl.h inc/executor.h inc/configuration.h
 
+.PHONY: $(BUILD_ID)
+BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
+                awk '{ printf ("%02d.%02d.%02d", $(MAJOR_VER), \
+                $(MINOR_VER), $(PATCH_VER)); }') \
+			-D_BUILD_SHA=$(BUILD_SHA)
+
+
 ifeq ($(BUILD), debug)
 	CXXFLAGS += -Og -g -ggdb
 else
@@ -55,6 +70,7 @@ CXXFLAGS += -std=c++11 -Wall -Werror -Wno-error=ignored-attributes
 CXXFLAGS += -I$(TI_OCL_INSTALL)/usr/share/ti/opencl
 CXXFLAGS += -I$(TARGET_ROOTDIR)/usr/share/ti/opencl
 CXXFLAGS += -Isrc -Iinc
+CXXFLAGS += $(BUILD_ID)
 
 obj/%.o: src/%.cpp $(HEADERS)
 	@echo Compiling $< ...
@@ -70,6 +86,5 @@ $(LIB_NAME) : obj_dir $(HOST_OBJ_FILES)
 $(DSP_OUTFILE):
 	$(MAKE) -C dsp
 
-
 clean::
-	$(RM) -f $(LIB_NAME) $(HOST_OBJ_FILES)
+	$(RM) -f $(LIB_NAME) $(HOST_OBJ_FILES) $(DSP_OUTFILE)
