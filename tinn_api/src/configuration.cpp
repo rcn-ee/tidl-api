@@ -31,7 +31,7 @@
 
 #include "configuration.h"
 
-using namespace tidl;
+using namespace tinn;
 
 void Configuration::Print(std::ostream &os) const
 {

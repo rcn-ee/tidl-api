@@ -39,7 +39,7 @@
 
 #include "configuration.h"
 
-namespace tidl {
+namespace tinn {
 
 //! Enumerates types of devices available to offload the network.
 enum class DeviceType { DSP, /**< Offload to C66x DSP */
@@ -99,7 +99,7 @@ class Executor
         //! available for TI DL.
         //! @param  device_type DSP or EVE/DLA device
         //! @return number of devices available
-        static uint32_t GetNumDevicesSupportingTIDL(DeviceType device_type);
+        static uint32_t GetNumDevices(DeviceType device_type);
 
         //! @brief Returns a string corresponding to the API version
         //!
@@ -143,7 +143,7 @@ class ArgInfo
         //! @return The size of the buffer or scalar represented by ArgInfo
         size_t size() const { return size_m; }
 
-        // Only used by tidl::Device
+        // Only used by tinn::Device
         Kind   kind() const { return kind_m; }
         bool   isLocal() const { return (ptr_m == nullptr); }
 
@@ -203,4 +203,4 @@ class Exception : public std::exception
         std::string message_m;
 };
 
-} // namespace tidl
+} // namespace tinn

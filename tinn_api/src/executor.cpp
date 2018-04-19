@@ -6,7 +6,7 @@
 #include "trace.h"
 
 
-using namespace tidl;
+using namespace tinn;
 
 using std::unique_ptr;
 
@@ -29,9 +29,9 @@ Executor::Executor(DeviceType core_type, const DeviceIds& ids,
 // on demand in the caller’s code where impl is not defined.
 Executor::~Executor() = default;
 
-uint32_t Executor::GetNumDevicesSupportingTIDL(DeviceType device_type)
+uint32_t Executor::GetNumDevices(DeviceType device_type)
 {
-    return Device::GetNumDevicesSupportingTIDL(device_type);
+    return Device::GetNumDevices(device_type);
 }
 
 #define STRING(S)  XSTRING(S)
@@ -178,15 +178,15 @@ void ExecutorImpl::Cleanup()
 
 void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP)
 {
-    CP->currCoreId           = tidl::internal::CURR_CORE_ID;
-    CP->currLayersGroupId    = tidl::internal::CURR_LAYERS_GROUP_ID;
-    CP->l1MemSize            = tidl::internal::DMEM0_SIZE;
-    CP->l2MemSize            = tidl::internal::DMEM1_SIZE;
-    CP->l3MemSize            = tidl::internal::OCMC_SIZE;
+    CP->currCoreId           = tinn::internal::CURR_CORE_ID;
+    CP->currLayersGroupId    = tinn::internal::CURR_LAYERS_GROUP_ID;
+    CP->l1MemSize            = tinn::internal::DMEM0_SIZE;
+    CP->l2MemSize            = tinn::internal::DMEM1_SIZE;
+    CP->l3MemSize            = tinn::internal::OCMC_SIZE;
 
-    CP->quantHistoryParam1   = tidl::internal::QUANT_HISTORY_PARAM1;
-    CP->quantHistoryParam2   = tidl::internal::QUANT_HISTORY_PARAM2;
-    CP->quantMargin          = tidl::internal::QUANT_MARGIN;
+    CP->quantHistoryParam1   = tinn::internal::QUANT_HISTORY_PARAM1;
+    CP->quantHistoryParam2   = tinn::internal::QUANT_HISTORY_PARAM2;
+    CP->quantMargin          = tinn::internal::QUANT_MARGIN;
     CP->optimiseExtMem       = TIDL_optimiseExtMemL1;
 }
 

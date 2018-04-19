@@ -34,7 +34,7 @@
 #include <cstdio>
 #include <cstdarg>
 
-namespace tidl {
+namespace tinn {
 
 /// Used to emit trace messages from runtime
 class TRACE

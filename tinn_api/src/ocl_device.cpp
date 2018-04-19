@@ -37,7 +37,7 @@ using std::size_t;
 #include "ocl_util.h"
 #include "trace.h"
 
-using namespace tidl;
+using namespace tinn;
 
 static const char* error2string(cl_int err);
 static void        errorCheck(cl_int ret, int line);
@@ -493,7 +493,7 @@ static bool PlatformIsAM57()
 }
 
 // TI DL is supported on AM57x - EVE or C66x devices
-uint32_t Device::GetNumDevicesSupportingTIDL(DeviceType device_type)
+uint32_t Device::GetNumDevices(DeviceType device_type)
 {
     if (!PlatformIsAM57()) return 0;
 

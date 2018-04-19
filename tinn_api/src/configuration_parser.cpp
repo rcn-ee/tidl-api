@@ -39,7 +39,7 @@ namespace qi = boost::spirit::qi;
 namespace ascii = boost::spirit::ascii;
 namespace ph = boost::phoenix;
 
-using namespace tidl;
+using namespace tinn;
 
 template <typename Iterator>
 struct ConfigParser : qi::grammar<Iterator, ascii::space_type>

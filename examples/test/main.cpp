@@ -42,7 +42,7 @@
 
 bool __TI_show_debug_ = false;
 
-using namespace tidl;
+using namespace tinn;
 
 bool RunMultipleExecutors(const std::string& config_file_1,
                           const std::string& config_file_2,
@@ -77,11 +77,9 @@ int main(int argc, char *argv[])
     signal(SIGABRT, exit);
     signal(SIGTERM, exit);
 
-    // If there are no devices capable of offloading TIDL on the SoC, exit
-    uint32_t num_dla =
-                Executor::GetNumDevicesSupportingTIDL(DeviceType::DLA);
-    uint32_t num_dsp =
-                Executor::GetNumDevicesSupportingTIDL(DeviceType::DSP);
+    // If there are no devices capable of offloading TINN on the SoC, exit
+    uint32_t num_dla = Executor::GetNumDevices(DeviceType::DLA);
+    uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
     if (num_dla == 0 && num_dsp == 0)
     {
         std::cout << "TI DL not supported on this SoC." << std::endl;
@@ -224,7 +222,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
             __free_ddr(b);
 
     }
-    catch (tidl::Exception &e)
+    catch (tinn::Exception &e)
     {
         std::cerr << e.what() << std::endl;
         status = false;
@@ -237,7 +235,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     return status;
 }
 
-namespace tidl {
+namespace tinn {
 extern bool CompareFiles (const std::string &F1, const std::string &F2);
 extern bool CompareFrames(const std::string &F1, const std::string &F2,
                           int numFrames, int width, int height);

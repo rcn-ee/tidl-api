@@ -52,7 +52,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'TI Neural Network API User\'s Guide'
+project = u'TI Neural Network API'
 copyright = u'2018, Texas Instruments Incorporated'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -279,5 +279,5 @@ def setup(app):
 # -- Breathe extension to integrate doxygen output --
 
 breathe_projects = {
-"TIDL":"../../tinn_api/doxygen/xml/",
+"TINN":"../../tinn_api/doxygen/xml/",
 }

@@ -37,7 +37,9 @@ $(DSP_OUTFILE):
 $(TINN_LIB):
 	$(MAKE) -C $(TINN_DIR) $(TINN_LIB_NAME)
 
-clean::
-	$(RM) -f $(EXE) stats_tool_out.* *.out
+realclean: clean
 	$(MAKE) -C $(TINN_DIR) clean
 	$(MAKE) -C $(TINN_DIR)/dsp clean
+
+clean::
+	$(RM) -f $(EXE) stats_tool_out.* *.out

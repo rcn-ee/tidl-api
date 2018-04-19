@@ -33,7 +33,7 @@
 #include <string>
 #include <iostream>
 
-namespace tidl {
+namespace tinn {
 
 /*! @class Configuration
     @brief Specifies the configuration required for a network

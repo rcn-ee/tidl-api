@@ -8,6 +8,9 @@ TI Neural Network API User's Guide
    :maxdepth: 3
 
    intro
+   example
+   api
+   notice
    disclaimer
 
 .. image:: images/platform_red.png

@@ -29,7 +29,7 @@
 
 #include "trace.h"
 
-using namespace tidl;
+using namespace tinn;
 
 
 #if defined(OA_ENABLE_TRACE)

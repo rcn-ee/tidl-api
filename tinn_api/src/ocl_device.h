@@ -39,7 +39,7 @@
 #include <memory>
 #include "executor.h"
 
-namespace tidl
+namespace tinn
 {
 
 typedef std::vector<ArgInfo> KernelArgs;
@@ -71,7 +71,7 @@ class Device
 
         float GetFrequencyInMhz() const { return freq_in_mhz_m; }
 
-        static uint32_t GetNumDevicesSupportingTIDL(DeviceType device_type);
+        static uint32_t GetNumDevices(DeviceType device_type);
 
     protected:
 

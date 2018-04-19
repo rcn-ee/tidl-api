@@ -42,7 +42,7 @@
 #include "tidl_create_params.h" // for TIDL types
 #include "execution_object.h"
 
-namespace tidl {
+namespace tinn {
 
 
 // One instance across all devices available in the context
@@ -75,4 +75,4 @@ class ExecutorImpl
         DeviceType           core_type_m;
 };
 
-} // namespace tidl
+} // namespace tinn

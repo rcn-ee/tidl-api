@@ -28,7 +28,7 @@
 
 #pragma once
 
-namespace tidl {
+namespace tinn {
 namespace internal {
 
 const size_t DMEM0_SIZE             = 8*1024;
