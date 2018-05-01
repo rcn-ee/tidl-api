@@ -1,9 +1,9 @@
 numFrames   = 1
 preProcType = 0
-inData   = testvecs/input/000100_1024x512_bgr.y
+inData   = ../test/testvecs/input/000100_1024x512_bgr.y
 outData   = "./stats_tool_out.bin"
-netBinFile     = testvecs/config/tidl_models/tidl_net_dense_1x1.bin
-paramsBinFile  = testvecs/config/tidl_models/tidl_param_dense_1x1.bin
+netBinFile     = ../test/testvecs/config/tidl_models/tidl_net_dense_1x1.bin
+paramsBinFile  = ../test/testvecs/config/tidl_models/tidl_param_dense_1x1.bin
 inWidth = 1024
 inHeight = 512
 inNumChannels = 3

@@ -1,9 +1,9 @@
 numFrames   = 9
 preProcType = 0
-inData   = ./testvecs/input/000100_1024x512_bgr.y
+inData   = ../test/testvecs/input/000100_1024x512_bgr.y
 outData   = "./stats_tool_out.bin"
-netBinFile     = ./testvecs/config/tidl_models/jsegnet21/tidl_net_jsegnet21v2.bin
-paramsBinFile        = ./testvecs/config/tidl_models/jsegnet21/tidl_param_jsegnet21v2.bin
+netBinFile     = ../test/testvecs/config/tidl_models/jsegnet21/tidl_net_jsegnet21v2.bin
+paramsBinFile        = ../test/testvecs/config/tidl_models/jsegnet21/tidl_param_jsegnet21v2.bin
 inWidth = 1024
 inHeight = 512
 inNumChannels = 3

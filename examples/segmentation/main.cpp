@@ -39,26 +39,29 @@
 
 #include <queue>
 #include <vector>
+#include <cstdio>
 
 #include "executor.h"
 #include "execution_object.h"
 #include "configuration.h"
-#include "imagenet_classes.h"
-#include "imgutil.h"
 
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/highgui.hpp"
 #include "opencv2/videoio.hpp"
 
+#define NUM_VIDEO_FRAMES  100
+#define DEFAULT_CONFIG    "jseg21_tiscapes"
+#define DEFAULT_INPUT     "../test/testvecs/input/000100_1024x512_bgr.y"
 
 bool __TI_show_debug_ = false;
+bool is_default_input = false;
+bool is_preprocessed_input = false;
+bool is_camera_input       = false;
 
 using namespace tinn;
-using namespace tinn::imgutil;
 using namespace cv;
 
-#define NUM_VIDEO_FRAMES  100
 
 bool RunConfiguration(const std::string& config_file, int num_devices,
                       DeviceType device_type, std::string& input_file);
@@ -98,12 +101,17 @@ int main(int argc, char *argv[])
     }
 
     // Process arguments
-    std::string config      = "j11_v2";
-    std::string input_file  = "../test/testvecs/input/airshow.jpg";
+    std::string config      = DEFAULT_CONFIG;
+    std::string input_file  = DEFAULT_INPUT;
     int         num_devices = 1;
     DeviceType  device_type = DeviceType::DLA;
     ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
 
+    if (input_file == DEFAULT_INPUT)  is_default_input = true;
+    if (input_file == "camera")       is_camera_input = true;
+    if (input_file.length() > 2 &&
+        input_file.compare(input_file.length() - 2, 2, ".y") == 0)
+        is_preprocessed_input = true;
     std::cout << "Input: " << input_file << std::endl;
     std::string config_file = "../test/testvecs/config/infer/tidl_config_"
                               + config + ".txt";
@@ -112,11 +120,11 @@ int main(int argc, char *argv[])
 
     if (!status)
     {
-        std::cout << "imagenet FAILED" << std::endl;
+        std::cout << "segmentation FAILED" << std::endl;
         return EXIT_FAILURE;
     }
 
-    std::cout << "imagenet PASSED" << std::endl;
+    std::cout << "segmentation PASSED" << std::endl;
     return EXIT_SUCCESS;
 }
 
@@ -138,10 +146,10 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     }
 
     // setup input
-    int num_frames = 1;
+    int num_frames = is_default_input ? 3 : 1;
     VideoCapture cap;
     std::string image_file;
-    if (input_file == "camera")
+    if (is_camera_input)
     {
         cap = VideoCapture(1);  // cap = VideoCapture("test.mp4");
         if (! cap.isOpened())
@@ -150,7 +158,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
             return false;
         }
         num_frames = NUM_VIDEO_FRAMES;
-        namedWindow("ImageNet", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
+        namedWindow("Segmentation", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
     }
     else
     {
@@ -250,75 +258,118 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
 
     char*  frame_buffer = eo.GetInputBufferPtr();
     assert (frame_buffer != nullptr);
+    int channel_size = configuration.inWidth * configuration.inHeight;
 
     Mat image;
     if (! image_file.empty())
     {
-        image = cv::imread(image_file, CV_LOAD_IMAGE_COLOR);
-        if (image.empty())
+        if (is_preprocessed_input)
         {
-            std::cerr << "Unable to read from: " << image_file << std::endl;
-            return false;
+            std::ifstream ifs(image_file, std::ios::binary);
+            ifs.seekg(frame_idx * channel_size * 3);
+            ifs.read(frame_buffer, channel_size * 3);
+            bool ifs_status = ifs.good();
+            ifs.close();
+            return ifs_status;  // already PreProc-ed
+        }
+        else
+        {
+            image = cv::imread(image_file, CV_LOAD_IMAGE_COLOR);
+            if (image.empty())
+            {
+                std::cerr << "Unable to read from: " << image_file << std::endl;
+                return false;
+            }
         }
     }
     else
     {
-        Mat v_image;
+        // 640x480 camera input, process one in every 5 frames,
+        // can adjust number of skipped frames to match real time processing
         if (! cap.grab())  return false;
-        if (! cap.retrieve(v_image)) return false;
-        // Crop 640x480 camera input to center 256x256 input
-        image = Mat(v_image, Rect(192, 112, 256, 256));
-        cv::imshow("ImageNet", image);
-        waitKey(2);
+        if (! cap.grab())  return false;
+        if (! cap.grab())  return false;
+        if (! cap.grab())  return false;
+        if (! cap.grab())  return false;
+        if (! cap.retrieve(image)) return false;
     }
 
-    // TI DL image preprocessing, into frame_buffer
-    return PreProcImage(image, frame_buffer, 1, 3,
-                        configuration.inWidth, configuration.inHeight,
-                        configuration.inWidth,
-                        configuration.inWidth * configuration.inHeight,
-                        1, configuration.preProcType);
+    // scale to network input size 1024 x 512
+    Mat s_image, bgr_frames[3];
+    cv::resize(image, s_image,
+               Size(configuration.inWidth, configuration.inHeight),
+               0, 0, cv::INTER_AREA);
+    cv::split(s_image, bgr_frames);
+    memcpy(frame_buffer,                bgr_frames[0].ptr(), channel_size);
+    memcpy(frame_buffer+1*channel_size, bgr_frames[1].ptr(), channel_size);
+    memcpy(frame_buffer+2*channel_size, bgr_frames[2].ptr(), channel_size);
+    return true;
 }
 
-// Display top 5 classified imagenet classes with probabilities
+// Create Overlay mask for pixel-level segmentation
+void CreateMask(uchar *classes, uchar *mb, uchar *mg, uchar* mr)
+{
+  for (int i = 0; i < 1024 * 512; i++)
+  {
+    switch(classes[i])
+    {
+      case 0x00: mb[i] = 0xFF; mg[i] = 0xFF; mr[i] = 0xFF; break;
+      case 0x01: mb[i] = 0xFF; mg[i] = 0x00; mr[i] = 0x00; break;
+      case 0x02: mb[i] = 0x00; mg[i] = 0x00; mr[i] = 0xFF; break;
+      case 0x03: mb[i] = 0x00; mg[i] = 0xFF; mr[i] = 0x00; break;
+      case 0x04: mb[i] = 0x00; mg[i] = 0xFF; mr[i] = 0xFF; break;
+      default:   mb[i] = 0x00; mg[i] = 0x00; mr[i] = 0x00; break;
+    }
+  }
+}
+
+// Create frame overlayed with pixel-level segmentation
 bool WriteFrameOutput(const ExecutionObject &eo)
 {
     const int k = 5;
     unsigned char *out = (unsigned char *) eo.GetOutputBufferPtr();
     int out_size = eo.GetOutputBufferSizeInBytes();
 
-    // sort and get k largest values and corresponding indices
-    typedef std::pair<unsigned char, int> val_index;
-    auto constexpr cmp = [](val_index &left, val_index &right)
-                         { return left.first > right.first; };
-    std::priority_queue<val_index, std::vector<val_index>, decltype(cmp)>
-            queue(cmp);
-    // initialize priority queue with smallest value on top
-    for (int i = 0; i < k; i++)
-        queue.push(val_index(out[i], i));
+    Mat mask, frame, blend, bgr[3];
+    // Create overlay mask
+    bgr[0] = Mat(512, 1024, CV_8UC(1));
+    bgr[1] = Mat(512, 1024, CV_8UC(1));
+    bgr[2] = Mat(512, 1024, CV_8UC(1));
+    CreateMask(out, bgr[0].ptr(), bgr[1].ptr(), bgr[2].ptr());
+    cv::merge(bgr, 3, mask);
 
-    // for rest output, if larger than current min, pop min, push new val
-    for (int i = k; i < out_size; i++)
+    // Asseembly original frame
+    unsigned char *in = (unsigned char *) eo.GetInputBufferPtr();
+    bgr[0] = Mat(512, 1024, CV_8UC(1), in);
+    bgr[1] = Mat(512, 1024, CV_8UC(1), in + 512*1024);
+    bgr[2] = Mat(512, 1024, CV_8UC(1), in + 512*1024*2);
+    cv::merge(bgr, 3, frame);
+
+    // Create overlayed frame
+    cv::addWeighted(frame, 0.7, mask, 0.3, 0.0, blend);
+
+    if (is_camera_input)
     {
-        if (out[i] > queue.top().first)
+        Mat r_blend;
+        cv::resize(blend, r_blend, Size(640, 480));
+        cv::imshow("Segmentation", r_blend);
+        waitKey(1);
+    }
+    else
+    {
+        int frame_index = eo.GetFrameIndex();
+        char outfile_name[64];
+        if (is_preprocessed_input)
         {
-          queue.pop();
-          queue.push(val_index(out[i], i));
+            snprintf(outfile_name, 64, "frame_%d.png", frame_index);
+            cv::imwrite(outfile_name, frame);
+            printf("Saving frame %d to: %s\n", frame_index, outfile_name);
         }
-    }
 
-    // output top k values in reverse order: largest val first
-    std::vector<val_index> sorted;
-    while (! queue.empty())
-    {
-      sorted.push_back(queue.top());
-      queue.pop();
-    }
-
-    for (int i = k - 1; i >= 0; i--)
-    {
-        std::cout << k-i << ": " << imagenet_classes[sorted[i].second]
-                  << ", prob = " << (float) sorted[i].first / 256 << std::endl;
+        snprintf(outfile_name, 64, "overlay_%d.png", frame_index);
+        cv::imwrite(outfile_name, blend);
+        printf("Saving frame %d overlayed with segmentation to: %s\n",
+               frame_index, outfile_name);
     }
 
     return true;
@@ -393,15 +444,16 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
 
 void DisplayHelp()
 {
-    std::cout << "Usage: imagenet\n"
-                 "  Will run imagenet network to predict top 5 object"
-                 " classes for the input.\n  Use -c to run a"
-                 "  different imagenet network. Default is j11_v2.\n"
+    std::cout << "Usage: segmentation\n"
+                 "  Will run segmentation network to perform pixel-level"
+                 " classification.\n  Use -c to run a different"
+                 "  segmentation network. Default is jseg21_tiscapes.\n"
                  "Optional arguments:\n"
-                 " -c <config>          Valid configs: j11_bn, j11_prelu, j11_v2\n"
+                 " -c <config>          Valid configs: jseg21_tiscapes, jseg21\n"
                  " -n <number of cores> Number of cores to use (1 - 4)\n"
                  " -t <d|e>             Type of core. d -> DSP, e -> DLA\n"
                  " -i <image>           Path to the image file\n"
+                 "                      Default are 3 frames in testvecs\n"
                  " -i camera            Use camera as input\n"
                  " -v                   Verbose output during execution\n"
                  " -h                   Help\n";
