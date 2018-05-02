@@ -184,8 +184,8 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
         std::vector<void *> buffers;
         for (auto &eo : execution_objects)
         {
-            ArgInfo in  = { ArgInfo(malloc_ddr<char>(frame_sz), frame_sz)};
-            ArgInfo out = { ArgInfo(malloc_ddr<char>(frame_sz), frame_sz)};
+            ArgInfo in  = { ArgInfo(malloc(frame_sz), frame_sz)};
+            ArgInfo out = { ArgInfo(malloc(frame_sz), frame_sz)};
             eo->SetInputOutputBuffer(in, out);
 
             buffers.push_back(in.ptr());
@@ -235,7 +235,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
         }
 
         for (auto b : buffers)
-            __free_ddr(b);
+            free(b);
 
     }
     catch (tinn::Exception &e)
