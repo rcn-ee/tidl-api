@@ -74,7 +74,7 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
     up_malloc_ddr<TIDL_CreateParams> shared_createparam(
                                             malloc_ddr<TIDL_CreateParams>(),
                                             &__free_ddr);
-    InitializeNetworkCreateParam(shared_createparam.get());
+    InitializeNetworkCreateParam(shared_createparam.get(), configuration);
 
     // Read network from file into network struct in TIDL_CreateParams
     sTIDL_Network_t *net = &(shared_createparam.get())->net;
@@ -86,6 +86,14 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
 
     //TODO: Why is this set here?
     net->interElementSize = 4;
+
+    // Force to run full network if runFullNet is set
+    if (configuration.runFullNet)
+    {
+        for (int i = 0; i < net->numLayers; i++)
+            if (net->TIDLLayers[i].layerType != TIDL_DataLayer)
+                net->TIDLLayers[i].layersGroupId = configuration.layersGroupId;
+    }
 
     // Call a setup kernel to allocate and fill network parameters
     InitializeNetworkParams(shared_createparam.get());
@@ -176,10 +184,11 @@ void ExecutorImpl::Cleanup()
 }
 
 
-void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP)
+void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
+                                          const Configuration& configuration)
 {
-    CP->currCoreId           = tinn::internal::CURR_CORE_ID;
-    CP->currLayersGroupId    = tinn::internal::CURR_LAYERS_GROUP_ID;
+    CP->currCoreId           = configuration.layersGroupId;
+    CP->currLayersGroupId    = configuration.layersGroupId;
     CP->l1MemSize            = tinn::internal::DMEM0_SIZE;
     CP->l2MemSize            = tinn::internal::DMEM1_SIZE;
     CP->l3MemSize            = tinn::internal::OCMC_SIZE;

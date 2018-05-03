@@ -44,7 +44,7 @@
 #include "executor.h"
 #include "execution_object.h"
 #include "configuration.h"
-#include "object_classes.h"
+#include "../segmentation/object_classes.h"
 
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
@@ -52,8 +52,8 @@
 #include "opencv2/videoio.hpp"
 
 #define NUM_VIDEO_FRAMES  100
-#define DEFAULT_CONFIG    "jseg21_tiscapes"
-#define DEFAULT_INPUT     "../test/testvecs/input/000100_1024x512_bgr.y"
+#define DEFAULT_CONFIG    "jdetnet"
+#define DEFAULT_INPUT     "../test/testvecs/input/preproc_0_768x320.y"
 
 bool __TI_show_debug_ = false;
 bool is_default_input = false;
@@ -74,7 +74,6 @@ bool RunAllConfigurations(int32_t num_devices, DeviceType device_type);
 bool ReadFrame(ExecutionObject& eo, int frame_idx,
                const Configuration& configuration, int num_frames,
                std::string& image_file, VideoCapture &cap);
-
 bool WriteFrameOutput(const ExecutionObject &eo,
                       const Configuration& configuration);
 
@@ -131,11 +130,11 @@ int main(int argc, char *argv[])
 
     if (!status)
     {
-        std::cout << "segmentation FAILED" << std::endl;
+        std::cout << "ssd_multibox FAILED" << std::endl;
         return EXIT_FAILURE;
     }
 
-    std::cout << "segmentation PASSED" << std::endl;
+    std::cout << "ssd_multibox PASSED" << std::endl;
     return EXIT_SUCCESS;
 }
 
@@ -155,6 +154,8 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
                   << std::endl;
         return false;
     }
+    if (device_type == DeviceType::DLA || device_type == DeviceType::DSP)
+        configuration.runFullNet = 1;
 
     // setup input
     int num_frames = is_default_input ? 3 : 1;
@@ -169,7 +170,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
             return false;
         }
         num_frames = NUM_VIDEO_FRAMES;
-        namedWindow("Segmentation", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
+        namedWindow("SSD_Multibox", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
     }
     else
     {
@@ -307,7 +308,7 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
         if (! cap.retrieve(image)) return false;
     }
 
-    // scale to network input size 1024 x 512
+    // scale to network input size
     Mat s_image, bgr_frames[3];
     orig_width  = image.cols;
     orig_height = image.rows;
@@ -321,68 +322,72 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
     return true;
 }
 
-// Create Overlay mask for pixel-level segmentation
-void CreateMask(uchar *classes, uchar *mb, uchar *mg, uchar* mr,
-                int channel_size)
-{
-    for (int i = 0; i < channel_size; i++)
-    {
-        object_class_t *object_class = GetObjectClass(object_class_table,
-                                                      classes[i]);
-        mr[i] = object_class->color[0];
-        mg[i] = object_class->color[1];
-        mb[i] = object_class->color[2];
-    }
-}
-
-// Create frame overlayed with pixel-level segmentation
+// Create frame with boxes drawn around classified objects
 bool WriteFrameOutput(const ExecutionObject &eo,
                       const Configuration& configuration)
 {
-    unsigned char *out = (unsigned char *) eo.GetOutputBufferPtr();
-    int out_size       = eo.GetOutputBufferSizeInBytes();
-    int width          = configuration.inWidth;
-    int height         = configuration.inHeight;
-    int channel_size   = width * height;
-
-    Mat mask, frame, blend, r_blend, bgr[3];
-    // Create overlay mask
-    bgr[0] = Mat(height, width, CV_8UC(1));
-    bgr[1] = Mat(height, width, CV_8UC(1));
-    bgr[2] = Mat(height, width, CV_8UC(1));
-    CreateMask(out, bgr[0].ptr(), bgr[1].ptr(), bgr[2].ptr(), channel_size);
-    cv::merge(bgr, 3, mask);
-
     // Asseembly original frame
+    int width  = configuration.inWidth;
+    int height = configuration.inHeight;
+    int channel_size = width * height;
+    Mat frame, r_frame, bgr[3];
+
     unsigned char *in = (unsigned char *) eo.GetInputBufferPtr();
     bgr[0] = Mat(height, width, CV_8UC(1), in);
     bgr[1] = Mat(height, width, CV_8UC(1), in + channel_size);
     bgr[2] = Mat(height, width, CV_8UC(1), in + channel_size*2);
     cv::merge(bgr, 3, frame);
 
-    // Create overlayed frame
-    cv::addWeighted(frame, 0.7, mask, 0.3, 0.0, blend);
+    int frame_index = eo.GetFrameIndex();
+    char outfile_name[64];
+    if (! is_camera_input && is_preprocessed_input)
+    {
+        snprintf(outfile_name, 64, "frame_%d.png", frame_index);
+        cv::imwrite(outfile_name, frame);
+        printf("Saving frame %d to: %s\n", frame_index, outfile_name);
+    }
 
-    cv::resize(blend, r_blend, Size(orig_width, orig_height));
+    // Draw boxes around classified objects
+    float *out = (float *) eo.GetOutputBufferPtr();
+    int num_floats = eo.GetOutputBufferSizeInBytes() / sizeof(float);
+    for (int i = 0; i < num_floats / 7; i++)
+    {
+        int index = (int)    out[i * 7 + 0];
+        if (index < 0)  break;
+
+        int   label = (int)  out[i * 7 + 1];
+        float score =        out[i * 7 + 2];
+        int   xmin  = (int) (out[i * 7 + 3] * width);
+        int   ymin  = (int) (out[i * 7 + 4] * height);
+        int   xmax  = (int) (out[i * 7 + 5] * width);
+        int   ymax  = (int) (out[i * 7 + 6] * height);
+
+        object_class_t *object_class = GetObjectClass(object_class_table,
+                                                      label);
+        if (object_class == nullptr)  continue;
+
+#if 0
+        printf("(%d, %d) -> (%d, %d): %s, score=%f\n",
+               xmin, ymin, xmax, ymax, object_class->label, score);
+#endif
+
+        cv::rectangle(frame, Point(xmin, ymin), Point(xmax, ymax),
+                      Scalar(object_class->color[0], object_class->color[1],
+                             object_class->color[2]), 2);
+    }
+
+    // output
+    cv::resize(frame, r_frame, Size(orig_width, orig_height));
     if (is_camera_input)
     {
-        cv::imshow("Segmentation", r_blend);
+        cv::imshow("SSD_Multibox", r_frame);
         waitKey(1);
     }
     else
     {
-        int frame_index = eo.GetFrameIndex();
-        char outfile_name[64];
-        if (is_preprocessed_input)
-        {
-            snprintf(outfile_name, 64, "frame_%d.png", frame_index);
-            cv::imwrite(outfile_name, frame);
-            printf("Saving frame %d to: %s\n", frame_index, outfile_name);
-        }
-
-        snprintf(outfile_name, 64, "overlay_%d.png", frame_index);
-        cv::imwrite(outfile_name, r_blend);
-        printf("Saving frame %d overlayed with segmentation to: %s\n",
+        snprintf(outfile_name, 64, "multibox_%d.png", frame_index);
+        cv::imwrite(outfile_name, r_frame);
+        printf("Saving frame %d with SSD multiboxes to: %s\n",
                frame_index, outfile_name);
     }
 
@@ -425,11 +430,14 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
 
             case 't': if (*optarg == 'e')
                           device_type = DeviceType::DLA;
+#if 0
                       else if (*optarg == 'd')
                           device_type = DeviceType::DSP;
+#endif
                       else
                       {
-                          std::cerr << "Invalid argument to -t, only e or d"
+                          //std::cerr << "Invalid argument to -t, only e or d"
+                          std::cerr << "Invalid argument to -t, only e"
                                        " allowed" << std::endl;
                           exit(EXIT_FAILURE);
                       }
@@ -458,16 +466,17 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
 
 void DisplayHelp()
 {
-    std::cout << "Usage: segmentation\n"
-                 "  Will run segmentation network to perform pixel-level"
+    std::cout << "Usage: ssd_multibox\n"
+                 "  Will run ssd_multibox network to perform multi-objects"
                  " classification.\n  Use -c to run a different"
-                 "  segmentation network. Default is jseg21_tiscapes.\n"
+                 "  segmentation network. Default is jdetnet.\n"
                  "Optional arguments:\n"
-                 " -c <config>          Valid configs: jseg21_tiscapes, jseg21\n"
+                 " -c <config>          Valid configs: jdetnet, jdetnet_512x256\n"
                  " -n <number of cores> Number of cores to use (1 - 4)\n"
                  " -t <d|e>             Type of core. d -> DSP, e -> DLA\n"
+                 "                      Only support DLA for now\n"
                  " -i <image>           Path to the image file\n"
-                 "                      Default are 3 frames in testvecs\n"
+                 "                      Default is 1 frame in testvecs\n"
                  " -i camera            Use camera as input\n"
                  " -v                   Verbose output during execution\n"
                  " -h                   Help\n";

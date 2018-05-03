@@ -26,13 +26,23 @@
  *   THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
-#ifndef _IMAGENET_CLASSES_H_
-#define _IMAGENET_CLASSES_H_
+#ifndef _OBJECT_CLASSES_H_
+#define _OBJECT_CLASSES_H_
 
 #include <string>
 
-#define NUM_IMAGENET_CLASSES  1000
+typedef struct {
+    const char *label;
+    unsigned char color[3];  /* rgb */
+} object_class_t;
 
-extern std::string imagenet_classes[NUM_IMAGENET_CLASSES];
+typedef struct {
+    unsigned int num_classes;
+    object_class_t  classes[];
+} object_class_table_t;
+
+extern object_class_table_t* GetObjectClassTable(std::string &config);
+extern object_class_t*       GetObjectClass(object_class_table_t *table,
+                                         int index);
 
 #endif

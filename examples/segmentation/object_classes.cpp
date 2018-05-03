@@ -26,13 +26,43 @@
  *   THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
-#ifndef _IMAGENET_CLASSES_H_
-#define _IMAGENET_CLASSES_H_
+#include "object_classes.h"
 
-#include <string>
+object_class_table_t jseg21_table =
+{
+    5,
+    {
+        { "background",       { 127, 127, 127 } },
+        { "road",             {   0, 255,   0 } },
+        { "pedestrian",       { 255,   0,   0 } },
+        { "road sign",        { 255, 255,   0 } },
+        { "vehicle",          {   0,   0, 255 } },
+        { "unknown",          {   0,   0,   0 } }    /* guard */
+    }
+};
 
-#define NUM_IMAGENET_CLASSES  1000
+object_class_table_t jdetnet_table =
+{
+    4,
+    {
+        { "some class 1",     { 255,   0, 255 } },
+        { "vehicle",          {   0,   0, 255 } },
+        { "road sign",        { 255, 255,   0 } },
+        { "pedestrian",       { 255,   0,   0 } },
+        { "unknown",          {   0,   0,   0 } }    /* guard */
+    }
+};
 
-extern std::string imagenet_classes[NUM_IMAGENET_CLASSES];
+object_class_table_t* GetObjectClassTable(std::string &config)
+{
+     if (config.compare(0, 6, "jseg21") == 0)  return &jseg21_table;
+     else if (config == "jdetnet")             return &jdetnet_table;
+     else                                      return nullptr;
+}
 
-#endif
+object_class_t* GetObjectClass(object_class_table_t *table, int index)
+{
+    if (index < 0 || index >= table->num_classes)  index = table->num_classes;
+    return & (table->classes[index]);
+}
+

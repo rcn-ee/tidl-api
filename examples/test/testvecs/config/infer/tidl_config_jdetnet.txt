@@ -1,0 +1,9 @@
+numFrames     = 1
+preProcType   = 4
+netBinFile    = "../test/testvecs/config/tidl_models/tidl_net_jdetNet_ssd.bin"
+paramsBinFile = "../test/testvecs/config/tidl_models/tidl_param_jdetNet_ssd.bin"
+inWidth       = 768
+inHeight      = 320
+inNumChannels = 3
+inData        = "../test/testvecs/input/preproc_0_768x320.y"
+outData       = "./stats_tool_out.bin"

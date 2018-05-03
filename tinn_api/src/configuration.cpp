@@ -30,8 +30,20 @@
 #include <fstream>
 
 #include "configuration.h"
+#include "parameters.h"
 
 using namespace tinn;
+
+Configuration::Configuration(): numFrames(0), inHeight(0), inWidth(0),
+                     inNumChannels(0),
+                     noZeroCoeffsPercentage(100),
+                     preProcType(0),
+                     layersGroupId(tinn::internal::CURR_LAYERS_GROUP_ID),
+                     runFullNet(0),
+                     EXTMEM_HEAP_SIZE(64 << 20),  // 64MB for inceptionNetv1
+                     PARAM_HEAP_SIZE(9 << 20)     // 9MB for mobileNet1
+{
+}
 
 void Configuration::Print(std::ostream &os) const
 {
@@ -39,6 +51,8 @@ void Configuration::Print(std::ostream &os) const
        << "\nFrame=      " << numFrames << " " << inWidth << "x"
                            << inHeight << "x" << inNumChannels
        << "\nPreProcType              " << preProcType
+       << "\nLayersGroupId            " << layersGroupId
+       << "\nRunFullNet               " << runFullNet
        << "\nInputFile                " << inData
        << "\nOutputFile               " << outData
        << "\nNetwork                  " << netBinFile

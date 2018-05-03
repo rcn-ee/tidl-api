@@ -37,7 +37,7 @@ DSP_SRCFILE = dsp/ocl_wrapper.cl
 DSP_OUTFILE = dsp/ocl_wrapper.dsp_h
 LIB_IMGUTIL_NAME = tinn_imgutil.a
 
-all: $(LIB_NAME) $(DSP_OUTFILE) $(LIB_IMGUTIL_NAME)
+all: $(LIB_NAME) $(LIB_IMGUTIL_NAME)
 
 include make.inc
 RM = rm
@@ -56,9 +56,10 @@ HOST_OBJ_FILES = $(addprefix obj/,$(OBJS))
 HOST_SRC_IMGUTIL_FILES = $(addprefix src/,$(SRCS_IMGUTIL))
 HOST_OBJ_IMGUTIL_FILES = $(addprefix obj/,$(OBJS_IMGUTIL))
 
-HEADERS = src/ocl_device.h src/trace.h src/common_defines.h src/util.h
-HEADERS += src/executor_impl.h inc/executor.h inc/configuration.h
-HEADERS += ${DSP_OUTFILE}
+HEADERS  = src/common_defines.h src/executor_impl.h src/ocl_device.h
+HEADERS += src/parameters.h src/tidl_create_params.h src/trace.h src/util.h
+HEADERS += inc/configuration.h inc/execution_object.h inc/executor.h
+HEADERS += inc/imgutil.h
 
 .PHONY: $(BUILD_ID)
 BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
@@ -82,6 +83,8 @@ CXXFLAGS += $(BUILD_ID)
 $(DSP_OUTFILE): $(DSP_SRCFILE)
 	$(MAKE) -C dsp
 
+src/ocl_device.cpp: $(DSP_OUTFILE)
+
 obj/%.o: src/%.cpp $(HEADERS)
 	@mkdir -p obj
 	@echo Compiling $< ...
@@ -91,7 +94,6 @@ $(LIB_NAME): $(HOST_OBJ_FILES)
 	$(AR) cr $@ $(HOST_OBJ_FILES)
 
 
-$(LIB_IMGUTIL_NAME): HEADERS = inc/imgutil.h
 $(LIB_IMGUTIL_NAME): CXXFLAGS += $(shell pkg-config --cflags opencv)
 
 $(LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
