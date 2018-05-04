@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
 
     // Process arguments
     std::string config      = "j11_v2";
-    std::string input_file  = "../test/testvecs/input/airshow.jpg";
+    std::string input_file  = "../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg";
     int         num_devices = 1;
     DeviceType  device_type = DeviceType::DLA;
     ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
