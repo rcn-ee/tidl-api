@@ -30,15 +30,20 @@
 #define _OBJECT_CLASSES_H_
 
 #include <string>
+#include <vector>
 
 typedef struct {
     const char *label;
-    unsigned char color[3];  /* rgb */
+    struct {
+        unsigned char red;
+        unsigned char green;
+        unsigned char blue;
+    } color;
 } object_class_t;
 
 typedef struct {
-    unsigned int num_classes;
-    object_class_t  classes[];
+    unsigned int                 num_classes;
+    std::vector<object_class_t>  classes;
 } object_class_table_t;
 
 extern object_class_table_t* GetObjectClassTable(std::string &config);

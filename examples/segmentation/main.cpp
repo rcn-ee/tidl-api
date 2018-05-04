@@ -329,9 +329,9 @@ void CreateMask(uchar *classes, uchar *mb, uchar *mg, uchar* mr,
     {
         object_class_t *object_class = GetObjectClass(object_class_table,
                                                       classes[i]);
-        mr[i] = object_class->color[0];
-        mg[i] = object_class->color[1];
-        mb[i] = object_class->color[2];
+        mb[i] = object_class->color.blue;
+        mg[i] = object_class->color.green;
+        mr[i] = object_class->color.red;
     }
 }
 

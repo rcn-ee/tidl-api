@@ -46,9 +46,9 @@ object_class_table_t jdetnet_table =
     4,
     {
         { "some class 1",     { 255,   0, 255 } },
-        { "vehicle",          {   0,   0, 255 } },
-        { "road sign",        { 255, 255,   0 } },
         { "pedestrian",       { 255,   0,   0 } },
+        { "road sign",        { 255, 255,   0 } },
+        { "vehicle",          {   0,   0, 255 } },
         { "unknown",          {   0,   0,   0 } }    /* guard */
     }
 };

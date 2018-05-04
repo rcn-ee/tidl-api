@@ -372,8 +372,9 @@ bool WriteFrameOutput(const ExecutionObject &eo,
 #endif
 
         cv::rectangle(frame, Point(xmin, ymin), Point(xmax, ymax),
-                      Scalar(object_class->color[0], object_class->color[1],
-                             object_class->color[2]), 2);
+                      Scalar(object_class->color.blue,
+                             object_class->color.green,
+                             object_class->color.red), 2);
     }
 
     // output
