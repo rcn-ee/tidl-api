@@ -150,10 +150,6 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     assert (input_data_file.good());
     assert (output_data_file.good());
 
-    // Determine input frame size from configuration
-    size_t frame_sz = configuration.inWidth * configuration.inHeight *
-                      configuration.inNumChannels;
-
     try
     {
         // Create a executor with the approriate core type, number of cores
@@ -169,8 +165,10 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
         std::vector<void *> buffers;
         for (auto &eo : execution_objects)
         {
-            ArgInfo in  = { ArgInfo(malloc(frame_sz), frame_sz)};
-            ArgInfo out = { ArgInfo(malloc(frame_sz), frame_sz)};
+            size_t in_size  = eo->GetInputBufferSizeInBytes();
+            size_t out_size = eo->GetOutputBufferSizeInBytes();
+            ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
+            ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
             eo->SetInputOutputBuffer(in, out);
 
             buffers.push_back(in.ptr());

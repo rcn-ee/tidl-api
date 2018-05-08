@@ -84,6 +84,7 @@ $(DSP_OUTFILE): $(DSP_SRCFILE)
 	$(MAKE) -C dsp
 
 src/ocl_device.cpp: $(DSP_OUTFILE)
+	touch $@
 
 obj/%.o: src/%.cpp $(HEADERS)
 	@mkdir -p obj
