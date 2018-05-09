@@ -26,7 +26,7 @@
 
 TARGET ?= arm
 
-EXE = $(TARGET)/network_display
+EXE = $(TARGET)/netviz
 
 TINN_API_DIR=../tinn_api
 
@@ -34,15 +34,18 @@ include $(TINN_API_DIR)/make.inc
 
 UNAME_M :=$(shell uname -m)
 
+# -m32 required on x86 to ensure consistent layout of struct sTIDL_Network_t
 ifeq ($(TARGET),x86)
 	CXX = g++
-	CXXFLAGS = -m32
+	CXXFLAGS = -m32 -static
 	LDFLAGS =
 endif
 
-CXXFLAGS += -o3 --std=c++11 -Wall -Werror
+CXXFLAGS += -o3
+#CXXFLAGS += -g -ggdb
+CXXFLAGS += --std=c++11 -Wall -Werror
 CXXFLAGS += -Iinc -I$(TINN_API_DIR)/inc -I$(TINN_API_DIR)/src
-SOURCES = main.cpp src/tinn_utils.cpp $(TINN_API_DIR)/src/util.cpp
+SOURCES = main.cpp src/tinn_utils.cpp src/dot_graph.cpp $(TINN_API_DIR)/src/util.cpp
 
 $(EXE): $(TINN_LIB) $(HEADERS) $(SOURCES)
 	mkdir -p $(TARGET)

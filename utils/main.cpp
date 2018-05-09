@@ -32,14 +32,22 @@
 #include <fstream>
 #include <cassert>
 #include <string>
+#include <cstdlib>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 
 #include "tinn_utils.h"
 
+using namespace tinn;
 
 static void ProcessArgs(int argc, char *argv[], std::string& network_file,
                         bool& do_print, std::string& dot_file);
 
 static void DisplayHelp();
+static bool fs_exists(std::string path);
 
 int main(int argc, char *argv[])
 {
@@ -55,11 +63,23 @@ int main(int argc, char *argv[])
 
     bool status = true;
 
+    // Dump network to stdout if requested
     if (do_print)
-        status &= tinn::util::PrintNetwork(network_file);
+        status &= util::PrintNetwork(network_file);
 
-    if (!dot_file.empty())
-        status &= tinn::util::GenerateDotGraphForNetwork(network_file, dot_file);
+    // Generate a dot file
+    status &= util::GenerateDotGraphForNetwork(network_file, dot_file);
+
+    // If the dot utility exists, generate a SVG file
+    const std::string dot_bin("/usr/bin/dot");
+    if (fs_exists(dot_bin))
+    {
+        std::string command = dot_bin;
+        command += " -Tsvg " + dot_file + " -o " + dot_file + ".svg";
+        int x = std::system(command.c_str());
+        if (x != 0) status = false;
+
+    }
 
     if (!status)
         return EXIT_FAILURE;
@@ -71,7 +91,7 @@ int main(int argc, char *argv[])
 void ProcessArgs(int argc, char *argv[], std::string& network_file,
                  bool& do_print, std::string& dot_file)
 {
-    if (argc < 2)
+    if (argc < 4)
     {
         DisplayHelp();
         exit(EXIT_SUCCESS);
@@ -119,13 +139,28 @@ void ProcessArgs(int argc, char *argv[], std::string& network_file,
                       break;
         }
     }
+
+    if (dot_file.empty())
+    {
+        std::cerr << "ERROR: output dot file not specified." << std::endl;
+        DisplayHelp();
+        exit(EXIT_FAILURE);
+    }
 }
 
 void DisplayHelp()
 {
-    std::cout << "Usage: tinn_display [option] <Network binary file>\n"
+    std::cout << "Usage: netviz -d <dot file name> <network binary file>\n"
                  "Options:  \n"
                  " -p              Print network layer info\n"
-                 " -d <file name>  Generate network graph (dot file)\n"
                  " -h              Display this help message\n";
 }
+
+bool fs_exists(std::string path)
+{
+    struct stat statbuf;
+    if (stat(path.c_str(), &statbuf) == 0) return true;
+    else                                   return false;
+}
+
+
