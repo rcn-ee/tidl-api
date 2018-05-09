@@ -38,6 +38,7 @@
 #include <exception>
 
 #include "configuration.h"
+#include "custom.h"
 
 namespace tinn {
 
@@ -114,6 +115,16 @@ class Executor
         std::unique_ptr<ExecutorImpl> pimpl_m;
 };
 
+/*! @class PipeInfo
+ *  @brief Describe input and output required by piping output and input
+ *         between Execution Objects
+ */
+class PipeInfo
+{
+    public:
+        uint32_t dataQ_m[OCL_TIDL_MAX_IN_BUFS];
+        uint32_t bufAddr_m[OCL_TIDL_MAX_IN_BUFS];
+};
 
 /*! @class ArgInfo
  *  @brief Describe input and output buffers required by ExecutionObjects
@@ -130,7 +141,8 @@ class ArgInfo
         //! and its size.
         ArgInfo(void *p, size_t size) :
             ptr_m(p), size_m(size),
-            access_m(DeviceAccess::RW), kind_m(Kind::BUFFER) {}
+            access_m(DeviceAccess::RW), kind_m(Kind::BUFFER)
+        { pipe_m = std::make_shared<PipeInfo>(); }
 
         //! Construct an ArgInfo object from a pointer to a chunk of memory
         //! its size and kind
@@ -145,13 +157,17 @@ class ArgInfo
 
         // Only used by tinn::Device
         Kind   kind() const { return kind_m; }
-        bool   isLocal() const { return (ptr_m == nullptr); }
+        bool   isLocal() const { return (ptr_m == nullptr) && (size_m > 0); }
+
+        // Only used by tinn::ExecutionObject::Impl
+        PipeInfo *GetPipe() const { return pipe_m.get(); }
 
     private:
         void*        ptr_m;
         size_t       size_m;
         DeviceAccess access_m;
         Kind         kind_m;
+        std::shared_ptr<PipeInfo> pipe_m;
 };
 
 

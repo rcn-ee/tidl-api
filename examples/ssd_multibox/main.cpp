@@ -59,6 +59,7 @@ bool __TI_show_debug_ = false;
 bool is_default_input = false;
 bool is_preprocessed_input = false;
 bool is_camera_input       = false;
+bool is_partitioned        = true;
 int  orig_width;
 int  orig_height;
 object_class_table_t *object_class_table;
@@ -67,19 +68,21 @@ using namespace tinn;
 using namespace cv;
 
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
+bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
                       DeviceType device_type, std::string& input_file);
-bool RunAllConfigurations(int32_t num_devices, DeviceType device_type);
-
 bool ReadFrame(ExecutionObject& eo, int frame_idx,
                const Configuration& configuration, int num_frames,
                std::string& image_file, VideoCapture &cap);
-bool WriteFrameOutput(const ExecutionObject &eo,
+bool WriteFrameOutput(const ExecutionObject &eo_in,
+                      const ExecutionObject &eo_out,
                       const Configuration& configuration);
+
+void ReportTime(int frame_index, std::string device_name, double elapsed_host,
+                double elapsed_device);
 
 static void ProcessArgs(int argc, char *argv[],
                         std::string& config,
-                        int& num_devices,
+                        uint32_t& num_devices,
                         DeviceType& device_type,
                         std::string& input_file);
 
@@ -107,10 +110,18 @@ int main(int argc, char *argv[])
     // Process arguments
     std::string config      = DEFAULT_CONFIG;
     std::string input_file  = DEFAULT_INPUT;
-    int         num_devices = 1;
+    uint32_t num_devices    = 1;
     DeviceType  device_type = DeviceType::DLA;
     ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
 
+    if (is_partitioned)
+        num_devices = std::min(num_devices, std::min(num_dla, num_dsp));
+    if (num_devices == 0)
+    {
+        std::cout << "Partitioned execution requires at least 1 DLA and 1 DSP."
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
     if ((object_class_table = GetObjectClassTable(config)) == nullptr)
     {
         std::cout << "No object classes defined for this config." << std::endl;
@@ -138,7 +149,7 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
+bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
                       DeviceType device_type, std::string& input_file)
 {
     DeviceIds ids;
@@ -154,8 +165,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
                   << std::endl;
         return false;
     }
-    if (device_type == DeviceType::DLA || device_type == DeviceType::DSP)
-        configuration.runFullNet = 1;
+    configuration.runFullNet = is_partitioned ? 0 : 1;
 
     // setup input
     int num_frames = is_default_input ? 3 : 1;
@@ -181,72 +191,111 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     {
         // Create a executor with the approriate core type, number of cores
         // and configuration specified
-        Executor executor(device_type, ids, configuration);
+        configuration.layersGroupId = 1;
+        Executor *executor_1 = new Executor(device_type, ids, configuration);
+        Executor *executor_2 = nullptr;
+        if (is_partitioned)
+        {
+            configuration.layersGroupId       = 2;
+            configuration.enableInternalInput = 1;  // 0 is also valid
+            executor_2 = new Executor(DeviceType::DSP, ids, configuration);
+        }
 
         // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects =
-                                                executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
+        const ExecutionObjects *execution_objects_1, *execution_objects_2;
+        execution_objects_1 = & executor_1->GetExecutionObjects();
+        int num_eos = execution_objects_1->size();
+        if (is_partitioned)
+            execution_objects_2 = & executor_2->GetExecutionObjects();
 
         // Allocate input and output buffers for each execution object
         std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
+        for (int i = 0; i < num_eos; i++)
         {
-            size_t in_size  = eo->GetInputBufferSizeInBytes();
-            size_t out_size = eo->GetOutputBufferSizeInBytes();
+            ExecutionObject *eo1 = execution_objects_1->at(i).get();
+            size_t in_size  = eo1->GetInputBufferSizeInBytes();
+            size_t out_size = eo1->GetOutputBufferSizeInBytes();
             ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
-            ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
-            eo->SetInputOutputBuffer(in, out);
+            ArgInfo out = { ArgInfo(nullptr, 0) };
+            if (configuration.enableInternalInput == 0)
+                out = ArgInfo(malloc(out_size), out_size);
+            eo1->SetInputOutputBuffer(in, out);
 
             buffers.push_back(in.ptr());
             buffers.push_back(out.ptr());
+
+            if (is_partitioned)
+            {
+                ExecutionObject *eo2 = execution_objects_2->at(i).get();
+                size_t out2_size = eo2->GetOutputBufferSizeInBytes();
+                ArgInfo out2 = { ArgInfo(malloc(out2_size), out2_size) };
+                eo2->SetInputOutputBuffer(out, out2);
+                buffers.push_back(out2.ptr());
+            }
         }
 
         #define MAX_NUM_EOS  4
-        struct timespec t0[MAX_NUM_EOS], t1;
+        struct timespec t0[MAX_NUM_EOS], t1, tloop0, tloop1;
+        clock_gettime(CLOCK_MONOTONIC, &tloop0);
 
         // Process frames with available execution objects in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
+        ExecutionObject *eo1, *eo2, *eo_wait, *eo_input;
         for (int frame_idx = 0;
              frame_idx < num_frames + num_eos; frame_idx++)
         {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
+            eo1 = execution_objects_1->at(frame_idx % num_eos).get();
+            eo_wait = eo1;
+            if (is_partitioned)
+            {
+                eo2 = execution_objects_2->at(frame_idx % num_eos).get();
+                eo_wait = eo2;
+            }
 
             // Wait for previous frame on the same eo to finish processing
-            if (eo->ProcessFrameWait())
+            if (eo_wait->ProcessFrameWait())
             {
+                int finished_idx = eo_wait->GetFrameIndex();
                 clock_gettime(CLOCK_MONOTONIC, &t1);
-                double elapsed_host =
-                                ms_diff(t0[eo->GetFrameIndex() % num_eos], t1);
-                double elapsed_device = eo->GetProcessTimeInMilliSeconds();
-                double overhead = 100 - (elapsed_device/elapsed_host*100);
+                ReportTime(finished_idx,
+                           (is_partitioned || device_type == DeviceType::DSP) ?
+                           "DSP" : "DLA",
+                           ms_diff(t0[finished_idx % num_eos], t1),
+                           eo_wait->GetProcessTimeInMilliSeconds());
 
-                std::cout << "frame[" << eo->GetFrameIndex() << "]: "
-                          << "Time on device: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_device << "ms, "
-                          << "host: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_host << "ms ";
-                std::cout << "API overhead: "
-                          << std::setw(6) << std::setprecision(3)
-                          << overhead << " %" << std::endl;
-
-                WriteFrameOutput(*eo, configuration);
+                eo_input = execution_objects_1->at(finished_idx %num_eos).get();
+                WriteFrameOutput(*eo_input, *eo_wait, configuration);
             }
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo, frame_idx, configuration, num_frames,
+            if (ReadFrame(*eo1, frame_idx, configuration, num_frames,
                           image_file, cap))
             {
                 clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
-                eo->ProcessFrameStartAsync();
+                eo1->ProcessFrameStartAsync();
+
+                if (is_partitioned && eo1->ProcessFrameWait())
+                {
+                    clock_gettime(CLOCK_MONOTONIC, &t1);
+                    ReportTime(frame_idx, "DLA",
+                           ms_diff(t0[frame_idx % num_eos], t1),
+                           eo1->GetProcessTimeInMilliSeconds());
+
+                    clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
+                    eo2->ProcessFrameStartAsync();
+                }
             }
         }
 
+        clock_gettime(CLOCK_MONOTONIC, &tloop1);
+        std::cout << "Loop total time (including read/write/print/etc): "
+                  << std::setw(6) << std::setprecision(4)
+                  << ms_diff(tloop0, tloop1) << "ms" << std::endl;
+
+        delete executor_1;
+        delete executor_2;
         for (auto b : buffers)
             free(b);
-
     }
     catch (tinn::Exception &e)
     {
@@ -255,6 +304,22 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     }
 
     return status;
+}
+
+void ReportTime(int frame_index, std::string device_name, double elapsed_host,
+                double elapsed_device)
+{
+    double overhead = 100 - (elapsed_device/elapsed_host*100);
+    std::cout << "frame[" << frame_index << "]: "
+              << "Time on " << device_name << ": "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_device << "ms, "
+              << "host: "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_host << "ms ";
+    std::cout << "API overhead: "
+              << std::setw(6) << std::setprecision(3)
+              << overhead << " %" << std::endl;
 }
 
 
@@ -321,7 +386,8 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
 }
 
 // Create frame with boxes drawn around classified objects
-bool WriteFrameOutput(const ExecutionObject &eo,
+bool WriteFrameOutput(const ExecutionObject &eo_in,
+                      const ExecutionObject &eo_out,
                       const Configuration& configuration)
 {
     // Asseembly original frame
@@ -330,13 +396,13 @@ bool WriteFrameOutput(const ExecutionObject &eo,
     int channel_size = width * height;
     Mat frame, r_frame, bgr[3];
 
-    unsigned char *in = (unsigned char *) eo.GetInputBufferPtr();
+    unsigned char *in = (unsigned char *) eo_in.GetInputBufferPtr();
     bgr[0] = Mat(height, width, CV_8UC(1), in);
     bgr[1] = Mat(height, width, CV_8UC(1), in + channel_size);
     bgr[2] = Mat(height, width, CV_8UC(1), in + channel_size*2);
     cv::merge(bgr, 3, frame);
 
-    int frame_index = eo.GetFrameIndex();
+    int frame_index = eo_in.GetFrameIndex();
     char outfile_name[64];
     if (! is_camera_input && is_preprocessed_input)
     {
@@ -346,8 +412,8 @@ bool WriteFrameOutput(const ExecutionObject &eo,
     }
 
     // Draw boxes around classified objects
-    float *out = (float *) eo.GetOutputBufferPtr();
-    int num_floats = eo.GetOutputBufferSizeInBytes() / sizeof(float);
+    float *out = (float *) eo_out.GetOutputBufferPtr();
+    int num_floats = eo_out.GetOutputBufferSizeInBytes() / sizeof(float);
     for (int i = 0; i < num_floats / 7; i++)
     {
         int index = (int)    out[i * 7 + 0];
@@ -395,7 +461,7 @@ bool WriteFrameOutput(const ExecutionObject &eo,
 
 
 void ProcessArgs(int argc, char *argv[], std::string& config,
-                 int& num_devices, DeviceType& device_type,
+                 uint32_t& num_devices, DeviceType& device_type,
                  std::string& input_file)
 {
     const struct option long_options[] =
@@ -428,10 +494,16 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
                       break;
 
             case 't': if (*optarg == 'e')
+                      {
                           device_type = DeviceType::DLA;
+                          is_partitioned = false;
+                      }
 #if 0
                       else if (*optarg == 'd')
+                      {
                           device_type = DeviceType::DSP;
+                          is_partitioned = false;
+                      }
 #endif
                       else
                       {
@@ -473,7 +545,9 @@ void DisplayHelp()
                  " -c <config>          Valid configs: jdetnet, jdetnet_512x256\n"
                  " -n <number of cores> Number of cores to use (1 - 4)\n"
                  " -t <d|e>             Type of core. d -> DSP, e -> DLA\n"
-                 "                      Only support DLA for now\n"
+                 "                      DSP not supported at this time\n"
+                 "                      Default to partitioned execution: \n"
+                 "                          part 1 on DLA, part 2 on DSP\n"
                  " -i <image>           Path to the image file\n"
                  "                      Default is 1 frame in testvecs\n"
                  " -i camera            Use camera as input\n"

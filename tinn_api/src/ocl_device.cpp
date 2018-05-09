@@ -281,7 +281,7 @@ Kernel::Kernel(Device* device, const std::string& name,
                 clSetKernelArg(kernel_m, arg_index++, sizeof(cl_mem), &buffer);
                 TRACE::print("  Arg[%d]: %p\n", arg_index-1, buffer);
 
-                buffers_m.push_back(buffer);
+                if (buffer != nullptr)  buffers_m.push_back(buffer);
             }
             else if (arg.kind() == ArgInfo::Kind::SCALAR)
             {
@@ -345,6 +345,12 @@ cl_mem Device::CreateBuffer(const ArgInfo &Arg)
 {
     size_t  size     = Arg.size();
     void   *host_ptr = Arg.ptr();
+
+    if (host_ptr == nullptr)
+    {
+        TRACE::print("\tOCL Create B:%p\n", nullptr);
+        return nullptr;
+    }
 
     bool hostPtrInCMEM = __is_in_malloced_region(host_ptr);
 

@@ -50,7 +50,8 @@ class ExecutionObject
         ExecutionObject(Device* d, uint8_t device_index,
                         const  ArgInfo& create_arg,
                         const  ArgInfo& param_heap_arg,
-                        size_t extmem_heap_size);
+                        size_t extmem_heap_size,
+                        uint32_t internal_input);
         //! @private
         ~ExecutionObject();
 

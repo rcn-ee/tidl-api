@@ -45,7 +45,8 @@ class ExecutionObject::Impl
         Impl(Device* d, uint8_t device_index,
              const ArgInfo& create_arg,
              const ArgInfo& param_heap_arg,
-             size_t extmem_heap_size);
+             size_t extmem_heap_size,
+             uint32_t internal_input);
         ~Impl() {}
 
         bool RunAsync(CallType ct);
@@ -65,8 +66,8 @@ class ExecutionObject::Impl
         up_malloc_ddr<OCL_TIDL_InitializeParams> shared_initialize_params_m;
         up_malloc_ddr<OCL_TIDL_ProcessParams>    shared_process_params_m;
 
-        size_t                          in_size;
-        size_t                          out_size;
+        size_t                          in_size_m;
+        size_t                          out_size_m;
         ArgInfo                         in_m;
         ArgInfo                         out_m;
 
@@ -82,13 +83,15 @@ ExecutionObject::ExecutionObject(Device* d,
                                  uint8_t device_index,
                                  const ArgInfo& create_arg,
                                  const ArgInfo& param_heap_arg,
-                                 size_t extmem_heap_size)
+                                 size_t extmem_heap_size,
+                                 uint32_t internal_input)
 {
     pimpl_m = std::unique_ptr<ExecutionObject::Impl>
               { new ExecutionObject::Impl(d, device_index,
                                           create_arg,
                                           param_heap_arg,
-                                          extmem_heap_size) };
+                                          extmem_heap_size,
+                                          internal_input) };
 }
 
 
@@ -96,7 +99,8 @@ ExecutionObject::Impl::Impl(Device* d,
                                  uint8_t device_index,
                                  const ArgInfo& create_arg,
                                  const ArgInfo& param_heap_arg,
-                                 size_t extmem_heap_size):
+                                 size_t extmem_heap_size,
+                                 uint32_t internal_input):
     device_m(d),
     k_initialize_m(nullptr),
     k_process_m(nullptr),
@@ -104,8 +108,8 @@ ExecutionObject::Impl::Impl(Device* d,
     tidl_extmem_heap_m (nullptr, &__free_ddr),
     shared_initialize_params_m(nullptr, &__free_ddr),
     shared_process_params_m(nullptr, &__free_ddr),
-    in_size(0),
-    out_size(0),
+    in_size_m(0),
+    out_size_m(0),
     in_m(nullptr, 0),
     out_m(nullptr, 0),
     device_index_m(device_index),
@@ -129,6 +133,7 @@ ExecutionObject::Impl::Impl(Device* d,
     shared_initialize_params_m->l2HeapSize   = tinn::internal::DMEM1_SIZE;
     shared_initialize_params_m->l1HeapSize   = tinn::internal::DMEM0_SIZE;
     shared_initialize_params_m->enableTrace  = OCL_TIDL_TRACE_OFF;
+    shared_initialize_params_m->enableInternalInput = internal_input;
 
     // Setup kernel arguments for initialize
     KernelArgs args = { create_arg,
@@ -157,7 +162,7 @@ char* ExecutionObject::GetInputBufferPtr() const
 
 size_t ExecutionObject::GetInputBufferSizeInBytes() const
 {
-    if (pimpl_m->in_m.ptr() == nullptr)  return pimpl_m->in_size;
+    if (pimpl_m->in_m.ptr() == nullptr)  return pimpl_m->in_size_m;
     else                                 return pimpl_m->in_m.size();
 }
 
@@ -168,7 +173,7 @@ char* ExecutionObject::GetOutputBufferPtr() const
 
 size_t ExecutionObject::GetOutputBufferSizeInBytes() const
 {
-    if (pimpl_m->out_m.ptr() == nullptr)  return pimpl_m->out_size;
+    if (pimpl_m->out_m.ptr() == nullptr)  return pimpl_m->out_size_m;
     else           return pimpl_m->shared_process_params_m.get()->bytesWritten;
 }
 
@@ -184,9 +189,6 @@ int ExecutionObject::GetFrameIndex() const
 
 void ExecutionObject::SetInputOutputBuffer(const ArgInfo& in, const ArgInfo& out)
 {
-    assert (in.ptr() != nullptr && in.size() > 0);
-    assert (out.ptr() != nullptr && out.size() > 0);
-
     pimpl_m->SetupProcessKernel(in, out);
 }
 
@@ -238,7 +240,12 @@ ExecutionObject::Impl::SetupProcessKernel(const ArgInfo& in, const ArgInfo& out)
 
     shared_process_params_m.reset(malloc_ddr<OCL_TIDL_ProcessParams>());
     shared_process_params_m->enableTrace = OCL_TIDL_TRACE_OFF;
+    shared_process_params_m->enableInternalInput = 
+                               shared_initialize_params_m->enableInternalInput;
     shared_process_params_m->cycles = 0;
+
+    if (shared_process_params_m->enableInternalInput == 0)
+        assert(in.ptr() != nullptr && in.size() > 0);
 
     KernelArgs args = { ArgInfo(shared_process_params_m.get(),
                                 sizeof(OCL_TIDL_ProcessParams)),
@@ -287,60 +294,94 @@ static size_t writeDataS8(char *writePtr, const char *ptr, int n, int width,
 
 void ExecutionObject::Impl::HostWriteNetInput()
 {
-    char* readPtr = (char *) in_m.ptr();
+    char* readPtr  = (char *) in_m.ptr();
+    PipeInfo *pipe = in_m.GetPipe();
+
     for (unsigned int i = 0; i < shared_initialize_params_m->numInBufs; i++)
     {
         OCL_TIDL_BufParams *inBuf = &shared_initialize_params_m->inBufs[i];
-        readPtr += readDataS8(
-            readPtr,
-            (char *) tidl_extmem_heap_m.get() + inBuf->bufPlaneBufOffset
-                + inBuf->bufPlaneWidth * OCL_TIDL_MAX_PAD_SIZE
-                + OCL_TIDL_MAX_PAD_SIZE,
-            inBuf->numROIs,
-            inBuf->numChannels,
-            inBuf->ROIWidth,
-            inBuf->ROIHeight,
-            inBuf->bufPlaneWidth,
-            inBuf->bufPlaneWidth
-                * (inBuf->ROIHeight + 2 * OCL_TIDL_MAX_PAD_SIZE) );
+
+        if (shared_process_params_m->enableInternalInput == 0)
+        {
+            readPtr += readDataS8(
+                readPtr,
+                (char *) tidl_extmem_heap_m.get() + inBuf->bufPlaneBufOffset
+                    + inBuf->bufPlaneWidth * OCL_TIDL_MAX_PAD_SIZE
+                    + OCL_TIDL_MAX_PAD_SIZE,
+                inBuf->numROIs,
+                inBuf->numChannels,
+                inBuf->ROIWidth,
+                inBuf->ROIHeight,
+                inBuf->bufPlaneWidth,
+                ((inBuf->bufPlaneWidth * inBuf->bufPlaneHeight) /
+                 inBuf->numChannels));
+        }
+        else
+        {
+            shared_process_params_m->inBufAddr[i] = pipe->bufAddr_m[i];
+        }
+
+        shared_process_params_m->inDataQ[i]   = pipe->dataQ_m[i];
     }
 }
 
 void ExecutionObject::Impl::HostReadNetOutput()
 {
     char* writePtr = (char *) out_m.ptr();
+    PipeInfo *pipe = out_m.GetPipe();
+
     for (unsigned int i = 0; i < shared_initialize_params_m->numOutBufs; i++)
     {
         OCL_TIDL_BufParams *outBuf = &shared_initialize_params_m->outBufs[i];
-        writePtr += writeDataS8(
-            writePtr,
-            (char *) tidl_extmem_heap_m.get() + outBuf->bufPlaneBufOffset
-                + outBuf->bufPlaneWidth * OCL_TIDL_MAX_PAD_SIZE
-                + OCL_TIDL_MAX_PAD_SIZE,
-            outBuf->numChannels,
-            outBuf->ROIWidth,
-            outBuf->ROIHeight,
-            outBuf->bufPlaneWidth,
-            ((outBuf->bufPlaneWidth * outBuf->bufPlaneHeight)/
-             outBuf->numChannels));
+        if (writePtr != nullptr)
+        {
+            writePtr += writeDataS8(
+                writePtr,
+                (char *) tidl_extmem_heap_m.get() + outBuf->bufPlaneBufOffset
+                    + outBuf->bufPlaneWidth * OCL_TIDL_MAX_PAD_SIZE
+                    + OCL_TIDL_MAX_PAD_SIZE,
+                outBuf->numChannels,
+                outBuf->ROIWidth,
+                outBuf->ROIHeight,
+                outBuf->bufPlaneWidth,
+                ((outBuf->bufPlaneWidth * outBuf->bufPlaneHeight)/
+                 outBuf->numChannels));
+        }
+
+        pipe->dataQ_m[i]   = shared_process_params_m->outDataQ[i];
+        pipe->bufAddr_m[i] = shared_initialize_params_m->bufAddrBase
+                           + outBuf->bufPlaneBufOffset;
     }
     shared_process_params_m->bytesWritten = writePtr - (char *) out_m.ptr();
 }
 
 void ExecutionObject::Impl::ComputeInputOutputSizes()
 {
-    in_size  = 0;
-    out_size = 0;
+    if (shared_initialize_params_m->errorCode != OCL_TIDL_SUCCESS)  return;
+
+    if (shared_initialize_params_m->numInBufs > OCL_TIDL_MAX_IN_BUFS ||
+        shared_initialize_params_m->numOutBufs > OCL_TIDL_MAX_OUT_BUFS)
+    {
+        std::cout << "Num input/output bufs ("
+                  << shared_initialize_params_m->numInBufs << ", "
+                  << shared_initialize_params_m->numOutBufs
+                  << ") exceeded limit!" << std::endl;
+        shared_initialize_params_m->errorCode = OCL_TIDL_INIT_FAIL;
+        return;
+    }
+
+    in_size_m  = 0;
+    out_size_m = 0;
     for (unsigned int i = 0; i < shared_initialize_params_m->numInBufs; i++)
     {
         OCL_TIDL_BufParams *inBuf = &shared_initialize_params_m->inBufs[i];
-        in_size += inBuf->numROIs * inBuf->numChannels * inBuf->ROIWidth *
-                   inBuf->ROIHeight;
+        in_size_m += inBuf->numROIs * inBuf->numChannels * inBuf->ROIWidth *
+                     inBuf->ROIHeight;
     }
     for (unsigned int i = 0; i < shared_initialize_params_m->numOutBufs; i++)
     {
         OCL_TIDL_BufParams *outBuf = &shared_initialize_params_m->outBufs[i];
-        out_size += outBuf->numChannels * outBuf->ROIWidth * outBuf->ROIHeight;
+        out_size_m += outBuf->numChannels * outBuf->ROIWidth *outBuf->ROIHeight;
     }
 }
 
@@ -384,10 +425,10 @@ bool ExecutionObject::Impl::Wait(CallType ct)
 
             if (has_work)
             {
+                ComputeInputOutputSizes();
                 if (shared_initialize_params_m->errorCode != OCL_TIDL_SUCCESS)
                     throw Exception(shared_initialize_params_m->errorCode,
                                     __FILE__, __FUNCTION__, __LINE__);
-                ComputeInputOutputSizes();
             }
             return has_work;
         }

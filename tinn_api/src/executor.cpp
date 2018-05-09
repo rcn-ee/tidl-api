@@ -109,7 +109,8 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
              unique_ptr<ExecutionObject>
              {new ExecutionObject(device_m.get(), index,
                                   create_arg, param_heap_arg,
-                                  configuration_m.EXTMEM_HEAP_SIZE)} );
+                                  configuration_m.EXTMEM_HEAP_SIZE,
+                                  configuration_m.enableInternalInput)} );
     }
 
     for (auto &eo : execution_objects_m)
