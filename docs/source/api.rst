@@ -1,9 +1,9 @@
 ******************
-TINN API Reference
+TIDL API Reference
 ******************
 
 .. doxygennamespace:: tinn
-    :project: TINN
+    :project: TIDL
     :members:
 
 

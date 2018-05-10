@@ -54,7 +54,7 @@ help:
 clean:
 	rm -rf $(BUILDDIR)/*
 
-html: 
+html: api-xml 
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)
 	@echo
 	@echo "Build finished. The HTML pages are in $(BUILDDIR)."
@@ -196,3 +196,6 @@ pseudoxml:
 
 artifacts:
 	$(MAKE) -c artifacts
+
+api-xml:
+	(cd ../tinn_api/doxygen; doxygen)

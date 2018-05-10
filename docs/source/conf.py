@@ -52,7 +52,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'TI Neural Network API'
+project = u'TI Deep Learning'
 copyright = u'2018, Texas Instruments Incorporated'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -127,7 +127,7 @@ html_theme_path = ["_themes"]
 
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
-html_title = 'TINN API User\'s Guide'
+html_title = 'TIDL API User\'s Guide'
 
 # A shorter title for the navigation bar.  Default is the same as html_title.
 #html_short_title = None
@@ -207,7 +207,7 @@ html_search_language = 'en'
 html_search_scorer = ''
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'TINNDoc'
+htmlhelp_basename = 'TIDLDoc'
 
 # -- Options for LaTeX output ---------------------------------------------
 
@@ -226,7 +226,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-  (master_doc, 'TINN.tex', u'TI Neural Network API Documentation',
+  (master_doc, 'TIDL.tex', u'TI Neural Network API Documentation',
    u'Texas Instruments Incorporated', u'manual'),
 ]
 
@@ -279,5 +279,5 @@ def setup(app):
 # -- Breathe extension to integrate doxygen output --
 
 breathe_projects = {
-"TINN":"../../tinn_api/doxygen/xml/",
+"TIDL":"../../tinn_api/doxygen/xml/",
 }
