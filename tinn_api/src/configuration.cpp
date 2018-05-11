@@ -38,7 +38,6 @@ Configuration::Configuration(): numFrames(0), inHeight(0), inWidth(0),
                      inNumChannels(0),
                      noZeroCoeffsPercentage(100),
                      preProcType(0),
-                     layersGroupId(tinn::internal::CURR_LAYERS_GROUP_ID),
                      runFullNet(0),
                      enableInternalInput(0),
                      EXTMEM_HEAP_SIZE(64 << 20),  // 64MB for inceptionNetv1
@@ -52,7 +51,6 @@ void Configuration::Print(std::ostream &os) const
        << "\nFrame=      " << numFrames << " " << inWidth << "x"
                            << inHeight << "x" << inNumChannels
        << "\nPreProcType              " << preProcType
-       << "\nLayersGroupId            " << layersGroupId
        << "\nRunFullNet               " << runFullNet
        << "\nEnableInternalInput      " << enableInternalInput
        << "\nInputFile                " << inData

@@ -11,10 +11,10 @@ using namespace tinn;
 using std::unique_ptr;
 
 Executor::Executor(DeviceType core_type, const DeviceIds& ids,
-                   const Configuration& configuration)
+                   const Configuration& configuration, int layers_group_id)
 {
     pimpl_m = unique_ptr<ExecutorImpl>
-              { new ExecutorImpl(core_type, ids) };
+              { new ExecutorImpl(core_type, ids, layers_group_id) };
     pimpl_m->Initialize(configuration);
 }
 
@@ -45,11 +45,13 @@ std::string Executor::GetAPIVersion()
 }
 
 
-ExecutorImpl::ExecutorImpl(DeviceType core_type, const DeviceIds& ids):
+ExecutorImpl::ExecutorImpl(DeviceType core_type, const DeviceIds& ids,
+                           int layers_group_id):
     configuration_m(),
     shared_networkparam_heap_m(nullptr, &__free_ddr),
     device_ids_m(ids),
-    core_type_m(core_type)
+    core_type_m(core_type),
+    layers_group_id_m(layers_group_id)
 {
     std::string name;
     if (core_type_m == DeviceType::DSP)
@@ -92,7 +94,7 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
     {
         for (int i = 0; i < net->numLayers; i++)
             if (net->TIDLLayers[i].layerType != TIDL_DataLayer)
-                net->TIDLLayers[i].layersGroupId = configuration.layersGroupId;
+                net->TIDLLayers[i].layersGroupId = layers_group_id_m;
     }
 
     // Call a setup kernel to allocate and fill network parameters
@@ -188,8 +190,8 @@ void ExecutorImpl::Cleanup()
 void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
                                           const Configuration& configuration)
 {
-    CP->currCoreId           = configuration.layersGroupId;
-    CP->currLayersGroupId    = configuration.layersGroupId;
+    CP->currCoreId           = layers_group_id_m;
+    CP->currLayersGroupId    = layers_group_id_m;
     CP->l1MemSize            = tinn::internal::DMEM0_SIZE;
     CP->l2MemSize            = tinn::internal::DMEM1_SIZE;
     CP->l3MemSize            = tinn::internal::OCMC_SIZE;

@@ -51,7 +51,7 @@ class ExecutionObject
                         const  ArgInfo& create_arg,
                         const  ArgInfo& param_heap_arg,
                         size_t extmem_heap_size,
-                        uint32_t internal_input);
+                        bool   internal_input);
         //! @private
         ~ExecutionObject();
 

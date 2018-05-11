@@ -46,7 +46,7 @@ class ExecutionObject::Impl
              const ArgInfo& create_arg,
              const ArgInfo& param_heap_arg,
              size_t extmem_heap_size,
-             uint32_t internal_input);
+             bool   internal_input);
         ~Impl() {}
 
         bool RunAsync(CallType ct);
@@ -84,7 +84,7 @@ ExecutionObject::ExecutionObject(Device* d,
                                  const ArgInfo& create_arg,
                                  const ArgInfo& param_heap_arg,
                                  size_t extmem_heap_size,
-                                 uint32_t internal_input)
+                                 bool   internal_input)
 {
     pimpl_m = std::unique_ptr<ExecutionObject::Impl>
               { new ExecutionObject::Impl(d, device_index,
@@ -100,7 +100,7 @@ ExecutionObject::Impl::Impl(Device* d,
                                  const ArgInfo& create_arg,
                                  const ArgInfo& param_heap_arg,
                                  size_t extmem_heap_size,
-                                 uint32_t internal_input):
+                                 bool   internal_input):
     device_m(d),
     k_initialize_m(nullptr),
     k_process_m(nullptr),
@@ -133,7 +133,7 @@ ExecutionObject::Impl::Impl(Device* d,
     shared_initialize_params_m->l2HeapSize   = tinn::internal::DMEM1_SIZE;
     shared_initialize_params_m->l1HeapSize   = tinn::internal::DMEM0_SIZE;
     shared_initialize_params_m->enableTrace  = OCL_TIDL_TRACE_OFF;
-    shared_initialize_params_m->enableInternalInput = internal_input;
+    shared_initialize_params_m->enableInternalInput = internal_input ? 1 : 0;
 
     // Setup kernel arguments for initialize
     KernelArgs args = { create_arg,

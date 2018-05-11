@@ -85,8 +85,10 @@ class Executor
         //! @param device_type DSP or EVE/DLA device
         //! @param ids Set of devices uses by this instance of the Executor
         //! @param configuration Configuration used to initialize the Executor
+        //! @param layers_group_id Layers group that this Executor should run
         Executor(DeviceType device_type, const DeviceIds& ids,
-                 const Configuration& configuration);
+                 const Configuration& configuration,
+                 int layers_group_id = OCL_TIDL_DEFAULT_LAYERS_GROUP_ID);
 
         //! @brief Tear down an Executor and free resources used by the
         //! Executor object

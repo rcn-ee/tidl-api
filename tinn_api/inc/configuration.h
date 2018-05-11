@@ -59,9 +59,6 @@ class Configuration
     //! Specific to each network, can take values from 0 to 4, default is 0
     int     preProcType;
 
-    //! layersGroupId in the network that the executor should work on
-    int     layersGroupId;
-
     //! Force to run all layers, regardless of layersGroupId partitioning
     int     runFullNet;
 

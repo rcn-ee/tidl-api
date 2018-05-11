@@ -59,7 +59,6 @@ bool __TI_show_debug_ = false;
 bool is_default_input = false;
 bool is_preprocessed_input = false;
 bool is_camera_input       = false;
-bool is_partitioned        = true;
 int  orig_width;
 int  orig_height;
 object_class_table_t *object_class_table;
@@ -114,8 +113,8 @@ int main(int argc, char *argv[])
     DeviceType  device_type = DeviceType::DLA;
     ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
 
-    if (is_partitioned)
-        num_devices = std::min(num_devices, std::min(num_dla, num_dsp));
+    // Use same number of DLAs and DSPs
+    num_devices = std::min(num_devices, std::min(num_dla, num_dsp));
     if (num_devices == 0)
     {
         std::cout << "Partitioned execution requires at least 1 DLA and 1 DSP."
@@ -165,7 +164,6 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
                   << std::endl;
         return false;
     }
-    configuration.runFullNet = is_partitioned ? 0 : 1;
 
     // setup input
     int num_frames = is_default_input ? 3 : 1;
@@ -191,47 +189,39 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
     {
         // Create a executor with the approriate core type, number of cores
         // and configuration specified
-        configuration.layersGroupId = 1;
-        Executor *executor_1 = new Executor(device_type, ids, configuration);
-        Executor *executor_2 = nullptr;
-        if (is_partitioned)
-        {
-            configuration.layersGroupId       = 2;
-            configuration.enableInternalInput = 1;  // 0 is also valid
-            executor_2 = new Executor(DeviceType::DSP, ids, configuration);
-        }
+        // DLA will run layersGroupId 1 in the network, while
+        // DSP will run layersGroupId 2 in the network
+        Executor executor_dla(DeviceType::DLA, ids, configuration, 1);
+        Executor executor_dsp(DeviceType::DSP, ids, configuration, 2);
 
         // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects *execution_objects_1, *execution_objects_2;
-        execution_objects_1 = & executor_1->GetExecutionObjects();
-        int num_eos = execution_objects_1->size();
-        if (is_partitioned)
-            execution_objects_2 = & executor_2->GetExecutionObjects();
+        const ExecutionObjects& execution_objects_dla =
+                                            executor_dla.GetExecutionObjects();
+        const ExecutionObjects& execution_objects_dsp =
+                                            executor_dsp.GetExecutionObjects();
+        int num_eos = execution_objects_dla.size();
 
         // Allocate input and output buffers for each execution object
+        // Note that "out" is both the output of eo_dla and the input of eo_dsp
+        // This is how two layersGroupIds, 1 and 2, are tied together
         std::vector<void *> buffers;
         for (int i = 0; i < num_eos; i++)
         {
-            ExecutionObject *eo1 = execution_objects_1->at(i).get();
-            size_t in_size  = eo1->GetInputBufferSizeInBytes();
-            size_t out_size = eo1->GetOutputBufferSizeInBytes();
-            ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
-            ArgInfo out = { ArgInfo(nullptr, 0) };
-            if (configuration.enableInternalInput == 0)
-                out = ArgInfo(malloc(out_size), out_size);
-            eo1->SetInputOutputBuffer(in, out);
+            ExecutionObject *eo_dla = execution_objects_dla[i].get();
+            size_t in_size  = eo_dla->GetInputBufferSizeInBytes();
+            size_t out_size = eo_dla->GetOutputBufferSizeInBytes();
+            ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)  };
+            ArgInfo out = { ArgInfo(malloc(out_size), out_size) };
+            eo_dla->SetInputOutputBuffer(in, out);
+
+            ExecutionObject *eo_dsp = execution_objects_dsp[i].get();
+            size_t out2_size = eo_dsp->GetOutputBufferSizeInBytes();
+            ArgInfo out2 = { ArgInfo(malloc(out2_size), out2_size) };
+            eo_dsp->SetInputOutputBuffer(out, out2);
 
             buffers.push_back(in.ptr());
             buffers.push_back(out.ptr());
-
-            if (is_partitioned)
-            {
-                ExecutionObject *eo2 = execution_objects_2->at(i).get();
-                size_t out2_size = eo2->GetOutputBufferSizeInBytes();
-                ArgInfo out2 = { ArgInfo(malloc(out2_size), out2_size) };
-                eo2->SetInputOutputBuffer(out, out2);
-                buffers.push_back(out2.ptr());
-            }
+            buffers.push_back(out2.ptr());
         }
 
         #define MAX_NUM_EOS  4
@@ -240,49 +230,42 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
 
         // Process frames with available execution objects in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
-        ExecutionObject *eo1, *eo2, *eo_wait, *eo_input;
+        ExecutionObject *eo_dla, *eo_dsp, *eo_input;
         for (int frame_idx = 0;
              frame_idx < num_frames + num_eos; frame_idx++)
         {
-            eo1 = execution_objects_1->at(frame_idx % num_eos).get();
-            eo_wait = eo1;
-            if (is_partitioned)
-            {
-                eo2 = execution_objects_2->at(frame_idx % num_eos).get();
-                eo_wait = eo2;
-            }
+            eo_dla = execution_objects_dla[frame_idx % num_eos].get();
+            eo_dsp = execution_objects_dsp[frame_idx % num_eos].get();
 
             // Wait for previous frame on the same eo to finish processing
-            if (eo_wait->ProcessFrameWait())
+            if (eo_dsp->ProcessFrameWait())
             {
-                int finished_idx = eo_wait->GetFrameIndex();
+                int finished_idx = eo_dsp->GetFrameIndex();
                 clock_gettime(CLOCK_MONOTONIC, &t1);
-                ReportTime(finished_idx,
-                           (is_partitioned || device_type == DeviceType::DSP) ?
-                           "DSP" : "DLA",
+                ReportTime(finished_idx, "DSP",
                            ms_diff(t0[finished_idx % num_eos], t1),
-                           eo_wait->GetProcessTimeInMilliSeconds());
+                           eo_dsp->GetProcessTimeInMilliSeconds());
 
-                eo_input = execution_objects_1->at(finished_idx %num_eos).get();
-                WriteFrameOutput(*eo_input, *eo_wait, configuration);
+                eo_input = execution_objects_dla[finished_idx % num_eos].get();
+                WriteFrameOutput(*eo_input, *eo_dsp, configuration);
             }
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo1, frame_idx, configuration, num_frames,
+            if (ReadFrame(*eo_dla, frame_idx, configuration, num_frames,
                           image_file, cap))
             {
                 clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
-                eo1->ProcessFrameStartAsync();
+                eo_dla->ProcessFrameStartAsync();
 
-                if (is_partitioned && eo1->ProcessFrameWait())
+                if (eo_dla->ProcessFrameWait())
                 {
                     clock_gettime(CLOCK_MONOTONIC, &t1);
                     ReportTime(frame_idx, "DLA",
-                           ms_diff(t0[frame_idx % num_eos], t1),
-                           eo1->GetProcessTimeInMilliSeconds());
+                               ms_diff(t0[frame_idx % num_eos], t1),
+                               eo_dla->GetProcessTimeInMilliSeconds());
 
                     clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
-                    eo2->ProcessFrameStartAsync();
+                    eo_dsp->ProcessFrameStartAsync();
                 }
             }
         }
@@ -292,8 +275,6 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
                   << std::setw(6) << std::setprecision(4)
                   << ms_diff(tloop0, tloop1) << "ms" << std::endl;
 
-        delete executor_1;
-        delete executor_2;
         for (auto b : buffers)
             free(b);
     }
@@ -468,7 +449,6 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
     {
         {"config",      required_argument, 0, 'c'},
         {"num_devices", required_argument, 0, 'n'},
-        {"device_type", required_argument, 0, 't'},
         {"image_file",  required_argument, 0, 'i'},
         {"help",        no_argument,       0, 'h'},
         {"verbose",     no_argument,       0, 'v'},
@@ -479,7 +459,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
 
     while (true)
     {
-        int c = getopt_long(argc, argv, "c:n:t:i:hv", long_options, &option_index);
+        int c = getopt_long(argc, argv, "c:n:i:hv", long_options, &option_index);
 
         if (c == -1)
             break;
@@ -491,27 +471,6 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
 
             case 'n': num_devices = atoi(optarg);
                       assert (num_devices > 0 && num_devices <= 4);
-                      break;
-
-            case 't': if (*optarg == 'e')
-                      {
-                          device_type = DeviceType::DLA;
-                          is_partitioned = false;
-                      }
-#if 0
-                      else if (*optarg == 'd')
-                      {
-                          device_type = DeviceType::DSP;
-                          is_partitioned = false;
-                      }
-#endif
-                      else
-                      {
-                          //std::cerr << "Invalid argument to -t, only e or d"
-                          std::cerr << "Invalid argument to -t, only e"
-                                       " allowed" << std::endl;
-                          exit(EXIT_FAILURE);
-                      }
                       break;
 
             case 'i': input_file = optarg;
@@ -538,16 +497,16 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
 void DisplayHelp()
 {
     std::cout << "Usage: ssd_multibox\n"
-                 "  Will run ssd_multibox network to perform multi-objects"
-                 " classification.\n  Use -c to run a different"
-                 "  segmentation network. Default is jdetnet.\n"
+                 "  Will run partitioned ssd_multibox network to perform "
+                 "multi-objects detection\n"
+                 "  and classification.  First part of network "
+                 "(layersGroupId 1) runs on DLA,\n"
+                 "  second part (layersGroupId 2) runs on DSP.\n"
+                 "  Use -c to run a different segmentation network. "
+                 "Default is jdetnet.\n"
                  "Optional arguments:\n"
-                 " -c <config>          Valid configs: jdetnet, jdetnet_512x256\n"
+                 " -c <config>          Valid configs: jdetnet \n"
                  " -n <number of cores> Number of cores to use (1 - 4)\n"
-                 " -t <d|e>             Type of core. d -> DSP, e -> DLA\n"
-                 "                      DSP not supported at this time\n"
-                 "                      Default to partitioned execution: \n"
-                 "                          part 1 on DLA, part 2 on DSP\n"
                  " -i <image>           Path to the image file\n"
                  "                      Default is 1 frame in testvecs\n"
                  " -i camera            Use camera as input\n"

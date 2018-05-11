@@ -50,7 +50,8 @@ namespace tinn {
 class ExecutorImpl
 {
     public:
-        ExecutorImpl(DeviceType core_type, const DeviceIds& ids);
+        ExecutorImpl(DeviceType core_type, const DeviceIds& ids,
+                     int layersGroupId);
         ~ExecutorImpl() { Cleanup(); }
 
         bool Initialize(const Configuration& configuration);
@@ -74,6 +75,7 @@ class ExecutorImpl
         up_malloc_ddr<char>  shared_networkparam_heap_m;
         DeviceIds            device_ids_m;
         DeviceType           core_type_m;
+        int                  layers_group_id_m;
 };
 
 } // namespace tinn
