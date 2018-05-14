@@ -29,9 +29,9 @@
 #include <iostream>
 #include "imgutil.h"
 
-using namespace tinn;
+using namespace tidl;
 
-bool tinn::imgutil::PreProcImage(
+bool tidl::imgutil::PreProcImage(
                   Mat& image, char *ptr, int16_t roi, int16_t n,
                   int16_t width, int16_t height, int16_t pitch,
                   int32_t chOffset, int32_t frameCount, int32_t preProcType)

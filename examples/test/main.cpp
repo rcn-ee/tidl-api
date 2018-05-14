@@ -42,7 +42,7 @@
 
 bool __TI_show_debug_ = false;
 
-using namespace tinn;
+using namespace tidl;
 
 bool RunMultipleExecutors(const std::string& config_file_1,
                           const std::string& config_file_2,
@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
     signal(SIGABRT, exit);
     signal(SIGTERM, exit);
 
-    // If there are no devices capable of offloading TINN on the SoC, exit
+    // If there are no devices capable of offloading TIDL on the SoC, exit
     uint32_t num_dla = Executor::GetNumDevices(DeviceType::DLA);
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
     if (num_dla == 0 && num_dsp == 0)
@@ -220,7 +220,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
             free(b);
 
     }
-    catch (tinn::Exception &e)
+    catch (tidl::Exception &e)
     {
         std::cerr << e.what() << std::endl;
         status = false;
@@ -233,7 +233,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     return status;
 }
 
-namespace tinn {
+namespace tidl {
 extern bool CompareFiles (const std::string &F1, const std::string &F2);
 extern bool CompareFrames(const std::string &F1, const std::string &F2,
                           int numFrames, int width, int height);
@@ -398,7 +398,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
 
 void DisplayHelp()
 {
-    std::cout << "Usage: test_tinn\n"
+    std::cout << "Usage: test_tidl\n"
                  "  Will run all available networks if invoked without"
                  " any arguments.\n  Use -c to run a single network.\n"
                  "Optional arguments:\n"

@@ -32,10 +32,10 @@ ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
 BUILD_SHA?=$(shell git rev-parse --short HEAD)
 endif
 
-LIB_NAME = tinn_api.a
+LIB_NAME = tidl_api.a
 DSP_SRCFILE = dsp/ocl_wrapper.cl
 DSP_OUTFILE = dsp/ocl_wrapper.dsp_h
-LIB_IMGUTIL_NAME = tinn_imgutil.a
+LIB_IMGUTIL_NAME = tidl_imgutil.a
 
 all: $(LIB_NAME) $(LIB_IMGUTIL_NAME)
 

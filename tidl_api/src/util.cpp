@@ -31,9 +31,9 @@
 #include <fstream>
 #include <assert.h>
 
-using namespace tinn;
+using namespace tidl;
 
-std::size_t tinn::GetBinaryFileSize(const std::string &F)
+std::size_t tidl::GetBinaryFileSize(const std::string &F)
 {
     std::ifstream is;
     is.open (F, std::ios::binary );
@@ -52,7 +52,7 @@ std::size_t tinn::GetBinaryFileSize(const std::string &F)
 }
 
 
-bool tinn::ReadBinary(const std::string &F, char* buffer, int size)
+bool tidl::ReadBinary(const std::string &F, char* buffer, int size)
 {
     std::ifstream is;
     is.open (F, std::ios::binary );
@@ -80,7 +80,7 @@ bool tinn::ReadBinary(const std::string &F, char* buffer, int size)
     return true;
 }
 
-bool tinn::CompareFiles(const std::string &F1, const std::string &F2)
+bool tidl::CompareFiles(const std::string &F1, const std::string &F2)
 {
     std::size_t s1 = GetBinaryFileSize(F1);
     std::size_t s2 = GetBinaryFileSize(F2);
@@ -115,7 +115,7 @@ bool tinn::CompareFiles(const std::string &F1, const std::string &F2)
     return false;
 }
 
-bool tinn::CompareFrames(const std::string &F1, const std::string &F2,
+bool tidl::CompareFrames(const std::string &F1, const std::string &F2,
                          int numFrames, int width, int height)
 {
     bool status = true;

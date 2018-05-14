@@ -40,7 +40,7 @@
 #include "configuration.h"
 #include "custom.h"
 
-namespace tinn {
+namespace tidl {
 
 //! Enumerates types of devices available to offload the network.
 enum class DeviceType { DSP, /**< Offload to C66x DSP */
@@ -157,11 +157,11 @@ class ArgInfo
         //! @return The size of the buffer or scalar represented by ArgInfo
         size_t size() const { return size_m; }
 
-        // Only used by tinn::Device
+        // Only used by tidl::Device
         Kind   kind() const { return kind_m; }
         bool   isLocal() const { return (ptr_m == nullptr) && (size_m > 0); }
 
-        // Only used by tinn::ExecutionObject::Impl
+        // Only used by tidl::ExecutionObject::Impl
         PipeInfo *GetPipe() const { return pipe_m.get(); }
 
     private:
@@ -221,4 +221,4 @@ class Exception : public std::exception
         std::string message_m;
 };
 
-} // namespace tinn
+} // namespace tidl

@@ -39,9 +39,9 @@
 #include <unistd.h>
 
 
-#include "tinn_utils.h"
+#include "tidl_viewer.h"
 
-using namespace tinn;
+using namespace tidl;
 
 static void ProcessArgs(int argc, char *argv[], std::string& network_file,
                         bool& do_print, std::string& dot_file);
@@ -150,7 +150,7 @@ void ProcessArgs(int argc, char *argv[], std::string& network_file,
 
 void DisplayHelp()
 {
-    std::cout << "Usage: netviz -d <dot file name> <network binary file>\n"
+    std::cout << "Usage: tidl_viewer -d <dot file name> <network binary file>\n"
                  "Options:  \n"
                  " -p              Print network layer info\n"
                  " -h              Display this help message\n";

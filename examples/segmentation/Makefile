@@ -7,8 +7,8 @@ LIBS     += $(shell pkg-config --libs --static opencv)
 
 SOURCES = main.cpp object_classes.cpp
 
-$(EXE): $(TINN_LIB) $(HEADERS) $(SOURCES)
-	$(CXX) $(CXXFLAGS) $(SOURCES) $(TINN_LIB) \
+$(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
+	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) \
 	    $(LDFLAGS) $(LIBS) -o $@
 
 clean::

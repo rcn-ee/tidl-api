@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2017-18 Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (c) 2018 Texas Instruments Incorporated - http://www.ti.com/
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -25,18 +25,32 @@
  *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
  *  THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
-//! @file utils.h
+
+//! @file imgutil.h
 
 #pragma once
+#include "opencv2/core.hpp"
+#include "opencv2/imgproc.hpp"
+using namespace cv;
 
-#include <string>
-#include <ostream>
+namespace tidl {
+namespace imgutil {
 
+//! PreProcImage - preprocess image data into the value ranges that
+//! the DL network expects
+//! @param image        Input image data (OpenCV data structure)
+//! @param ptr          Output buffer that TI DL takes as input
+//! @param roi          Number of Region-Of-Interests
+//! @param n            Number of channels
+//! @param width        Input image width
+//! @param height       Input image height
+//! @param pitch        Output buffer (ptr) pitch for each line
+//! @param chOffset     Output buffer (ptr) offset for each channel
+//! @param frameCount   Number of frames in input image data
+//! @param preProcType  Preprocessing type, specified in network config
+bool PreProcImage(Mat& image, char *ptr, int16_t roi, int16_t n,
+                  int16_t width, int16_t height, int16_t pitch,
+                  int32_t chOffset, int32_t frameCount, int32_t preProcType);
 
-namespace tinn { namespace util {
-
-bool PrintNetwork(const std::string& network_binary, std::ostream& os = std::cout);
-bool GenerateDotGraphForNetwork(const std::string& network_binary,
-                                const std::string& dot_file);
-
-}} // namespace tinn::util
+} // namesapce tidl::imgutil
+} // namespace tidl

@@ -26,12 +26,12 @@
  *  THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 #include "util.h"
-#include "tinn_utils.h"
+#include "tidl_viewer.h"
 #include "dot_graph.h"
 
-using namespace tinn::util;
+using namespace tidl::util;
 
-bool tinn::util::PrintNetwork(const std::string& network_binary,
+bool tidl::util::PrintNetwork(const std::string& network_binary,
                               std::ostream& os)
 {
     if (network_binary.empty())
@@ -88,7 +88,7 @@ bool tinn::util::PrintNetwork(const std::string& network_binary,
 }
 
 
-bool tinn::util::GenerateDotGraphForNetwork(const std::string& network_binary,
+bool tidl::util::GenerateDotGraphForNetwork(const std::string& network_binary,
                                             const std::string& dot_file)
 {
     if (network_binary.empty())

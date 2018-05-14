@@ -54,8 +54,8 @@
 
 bool __TI_show_debug_ = false;
 
-using namespace tinn;
-using namespace tinn::imgutil;
+using namespace tidl;
+using namespace tidl::imgutil;
 using namespace cv;
 
 #define NUM_VIDEO_FRAMES  100
@@ -228,7 +228,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
             free(b);
 
     }
-    catch (tinn::Exception &e)
+    catch (tidl::Exception &e)
     {
         std::cerr << e.what() << std::endl;
         status = false;

@@ -39,7 +39,7 @@
 #include <memory>
 #include "executor.h"
 
-namespace tinn
+namespace tidl
 {
 
 typedef std::vector<ArgInfo> KernelArgs;

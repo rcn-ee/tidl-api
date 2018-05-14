@@ -32,7 +32,7 @@
 #include "configuration.h"
 #include "parameters.h"
 
-using namespace tinn;
+using namespace tidl;
 
 Configuration::Configuration(): numFrames(0), inHeight(0), inWidth(0),
                      inNumChannels(0),

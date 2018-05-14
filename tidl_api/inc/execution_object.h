@@ -32,7 +32,7 @@
 
 #include <memory>
 
-namespace tinn {
+namespace tidl {
 
 class Kernel;
 class Device;
@@ -115,4 +115,4 @@ class ExecutionObject
         std::unique_ptr<Impl> pimpl_m;
 };
 
-} // namespace tinn
+} // namespace tidl

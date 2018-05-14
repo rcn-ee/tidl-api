@@ -2,13 +2,13 @@ RM = rm
 AR = ar
 CP = cp
 
-TINN_DIR = ../../tinn_api
-TINN_LIB_NAME = tinn_api.a
-TINN_LIB = $(TINN_DIR)/$(TINN_LIB_NAME)
-TINN_LIB_IMGUTIL_NAME = tinn_imgutil.a
-TINN_LIB_IMGUTIL = $(TINN_DIR)/$(TINN_LIB_IMGUTIL_NAME)
+TIDL_API_DIR = ../../tidl_api
+TIDL_API_LIB_NAME = tidl_api.a
+TIDL_API_LIB = $(TIDL_API_DIR)/$(TIDL_API_LIB_NAME)
+TIDL_API_LIB_IMGUTIL_NAME = tidl_imgutil.a
+TIDL_API_LIB_IMGUTIL = $(TIDL_API_DIR)/$(TIDL_API_LIB_IMGUTIL_NAME)
 
-include $(TINN_DIR)/make.inc
+include $(TIDL_API_DIR)/make.inc
 
 ifeq ($(BUILD), debug)
 	CXXFLAGS += -Og -g -ggdb
@@ -16,7 +16,7 @@ else
 	CXXFLAGS += -O3
 endif
 
-CXXFLAGS += -I. -I$(TINN_DIR)/inc -std=c++11
+CXXFLAGS += -I. -I$(TIDL_API_DIR)/inc -std=c++11
 CXXFLAGS += -I$(TI_OCL_INSTALL)/usr/share/ti/opencl
 CXXFLAGS += -I$(TARGET_ROOTDIR)/usr/share/ti/opencl
 
@@ -25,17 +25,17 @@ LIBS    = -lOpenCL -locl_util -lpthread
 
 all: $(EXE)
 
-.PHONY: $(TINN_LIB)
-$(TINN_LIB):
-	$(MAKE) -C $(TINN_DIR) $(TINN_LIB_NAME)
+.PHONY: $(TIDL_API_LIB)
+$(TIDL_API_LIB):
+	$(MAKE) -C $(TIDL_API_DIR) $(TIDL_API_LIB_NAME)
 
-.PHONY: $(TINN_LIB_IMGUTIL)
-$(TINN_LIB_IMGUTIL):
-	$(MAKE) -C $(TINN_DIR) $(TINN_LIB_IMGUTIL_NAME)
+.PHONY: $(TIDL_API_LIB_IMGUTIL)
+$(TIDL_API_LIB_IMGUTIL):
+	$(MAKE) -C $(TIDL_API_DIR) $(TIDL_API_LIB_IMGUTIL_NAME)
 
 realclean: clean
-	$(MAKE) -C $(TINN_DIR) clean
-	$(MAKE) -C $(TINN_DIR)/dsp clean
+	$(MAKE) -C $(TIDL_API_DIR) clean
+	$(MAKE) -C $(TIDL_API_DIR)/dsp clean
 
 clean::
 	$(RM) -f $(EXE) stats_tool_out.* *.out

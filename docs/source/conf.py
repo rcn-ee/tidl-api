@@ -279,5 +279,5 @@ def setup(app):
 # -- Breathe extension to integrate doxygen output --
 
 breathe_projects = {
-"TIDL":"../../tinn_api/doxygen/xml/",
+"TIDL":"../../tidl_api/doxygen/xml/",
 }

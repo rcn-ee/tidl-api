@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2017, Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (c) 2018, Texas Instruments Incorporated - http://www.ti.com/
  *   All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,19 +26,25 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
+
 #pragma once
 
-namespace tinn {
-namespace internal {
+#define OA_ENABLE_TRACE (1)
 
-const size_t DMEM0_SIZE             = 8*1024;
-const size_t DMEM1_SIZE             = 128*1024;
-const size_t OCMC_SIZE              = 320*1024;
-const int    QUANT_HISTORY_PARAM1   = 20;
-const int    QUANT_HISTORY_PARAM2   = 5;
-const int    QUANT_MARGIN           = 0;
-const int    CURR_LAYERS_GROUP_ID   = 1;
-const int    CURR_CORE_ID           = 1;
+#include <cstdio>
+#include <cstdarg>
 
+namespace tidl {
+
+/// Used to emit trace messages from runtime
+class TRACE
+{
+    public:
+        static void print(const char *fmt, ...);
+};
+
+#if !defined(OA_ENABLE_TRACE)
+inline void TRACE::print(const char * __attribute__ ((unused)) fmt, ...) {}
+#endif
 }
-}
+

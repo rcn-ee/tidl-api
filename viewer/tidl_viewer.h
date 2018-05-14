@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2017 Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (c) 2017-18 Texas Instruments Incorporated - http://www.ti.com/
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -25,57 +25,18 @@
  *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
  *  THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
+//! @file utils.h
 
 #pragma once
 
-#include <assert.h>
-#include <type_traits>
-#include <cstddef>
-#include <vector>
-#include <memory>
-#include <fstream>
-
-#include "configuration.h"
-#include "ocl_device.h"
-
-#include "common_defines.h"
-#include "tidl_create_params.h" // for TIDL types
-#include "execution_object.h"
-
-namespace tinn {
+#include <string>
+#include <ostream>
 
 
-// One instance across all devices available in the context
-// Also need this to work in host emulation mode
-class ExecutorImpl
-{
-    public:
-        ExecutorImpl(DeviceType core_type, const DeviceIds& ids,
-                     int layersGroupId);
-        ~ExecutorImpl() { Cleanup(); }
+namespace tidl { namespace util {
 
-        bool Initialize(const Configuration& configuration);
+bool PrintNetwork(const std::string& network_binary, std::ostream& os = std::cout);
+bool GenerateDotGraphForNetwork(const std::string& network_binary,
+                                const std::string& dot_file);
 
-        ExecutionObjects& GetExecutionObjects()
-        { return execution_objects_m; }
-
-        ExecutorImpl(const ExecutorImpl&)            = delete;
-        ExecutorImpl& operator=(const ExecutorImpl&) = delete;
-
-        ExecutionObjects execution_objects_m;
-
-    private:
-        void InitializeNetworkCreateParam(TIDL_CreateParams *cp,
-                                          const Configuration& configuration);
-        bool InitializeNetworkParams(TIDL_CreateParams *cp);
-        void Cleanup();
-
-        Device::Ptr          device_m; // vector of devices?
-        Configuration        configuration_m;
-        up_malloc_ddr<char>  shared_networkparam_heap_m;
-        DeviceIds            device_ids_m;
-        DeviceType           core_type_m;
-        int                  layers_group_id_m;
-};
-
-} // namespace tinn
+}} // namespace tidl::util

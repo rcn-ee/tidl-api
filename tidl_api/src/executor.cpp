@@ -6,7 +6,7 @@
 #include "trace.h"
 
 
-using namespace tinn;
+using namespace tidl;
 
 using std::unique_ptr;
 
@@ -192,13 +192,13 @@ void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
 {
     CP->currCoreId           = layers_group_id_m;
     CP->currLayersGroupId    = layers_group_id_m;
-    CP->l1MemSize            = tinn::internal::DMEM0_SIZE;
-    CP->l2MemSize            = tinn::internal::DMEM1_SIZE;
-    CP->l3MemSize            = tinn::internal::OCMC_SIZE;
+    CP->l1MemSize            = tidl::internal::DMEM0_SIZE;
+    CP->l2MemSize            = tidl::internal::DMEM1_SIZE;
+    CP->l3MemSize            = tidl::internal::OCMC_SIZE;
 
-    CP->quantHistoryParam1   = tinn::internal::QUANT_HISTORY_PARAM1;
-    CP->quantHistoryParam2   = tinn::internal::QUANT_HISTORY_PARAM2;
-    CP->quantMargin          = tinn::internal::QUANT_MARGIN;
+    CP->quantHistoryParam1   = tidl::internal::QUANT_HISTORY_PARAM1;
+    CP->quantHistoryParam2   = tidl::internal::QUANT_HISTORY_PARAM2;
+    CP->quantMargin          = tidl::internal::QUANT_MARGIN;
     CP->optimiseExtMem       = TIDL_optimiseExtMemL1;
 }
 

@@ -16,7 +16,7 @@ Determine if there are any TIDL capable devices on the AM57x SoC:
 
 Step 2
 ======
-Create a Configuration object by reading it from a file or by initializing it directly. The example below parses a configuration file and initializes the Configuration object. See ``tidl/testvecs/config/infer`` for examples of configuration files.
+Create a Configuration object by reading it from a file or by initializing it directly. The example below parses a configuration file and initializes the Configuration object. See ``examples/test/testvecs/config/infer`` for examples of configuration files.
 
 .. code::
 
@@ -86,7 +86,7 @@ The code snippet :ref:`tidl_main` illustrates using the API to offload a network
 .. literalinclude:: ../../examples/test/main.cpp
     :name: tidl_main
     :caption: examples/test/main.cpp
-    :lines: 161-195,213-218,220-225
+    :lines: 155-189,208-213,215-220
     :linenos:
 
-For a complete example of using the API, refer ``tinn/examples/opencl/tidl/main.cpp`` on the EVM filesystem.
+For a complete example of using the API, refer ``examples/test/main.cpp`` on the EVM filesystem.

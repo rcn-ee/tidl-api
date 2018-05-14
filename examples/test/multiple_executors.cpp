@@ -45,7 +45,7 @@
 #include "execution_object.h"
 #include "configuration.h"
 
-using namespace tinn;
+using namespace tidl;
 
 extern bool ReadFrame(ExecutionObject&     eo,
                int                  frame_idx,
@@ -199,7 +199,7 @@ void* run_network(void *data)
         for (auto b : buffers)
             __free_ddr(b);
     }
-    catch (tinn::Exception &e)
+    catch (tidl::Exception &e)
     {
         std::cerr << e.what() << std::endl;
         status = false;

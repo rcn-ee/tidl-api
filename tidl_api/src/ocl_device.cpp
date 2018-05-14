@@ -38,7 +38,7 @@ using std::size_t;
 #include "trace.h"
 #include "../dsp/ocl_wrapper.dsp_h"
 
-using namespace tinn;
+using namespace tidl;
 
 static const char* error2string(cl_int err);
 static void        errorCheck(cl_int ret, int line);

@@ -37,7 +37,7 @@
 #include "common_defines.h"
 #include <string.h>
 
-using namespace tinn;
+using namespace tidl;
 
 class ExecutionObject::Impl
 {
@@ -130,8 +130,8 @@ ExecutionObject::Impl::Impl(Device* d,
            sizeof(OCL_TIDL_InitializeParams));
 
     shared_initialize_params_m->tidlHeapSize = extmem_heap_size;
-    shared_initialize_params_m->l2HeapSize   = tinn::internal::DMEM1_SIZE;
-    shared_initialize_params_m->l1HeapSize   = tinn::internal::DMEM0_SIZE;
+    shared_initialize_params_m->l2HeapSize   = tidl::internal::DMEM1_SIZE;
+    shared_initialize_params_m->l1HeapSize   = tidl::internal::DMEM0_SIZE;
     shared_initialize_params_m->enableTrace  = OCL_TIDL_TRACE_OFF;
     shared_initialize_params_m->enableInternalInput = internal_input ? 1 : 0;
 
@@ -143,7 +143,7 @@ ExecutionObject::Impl::Impl(Device* d,
                         ArgInfo(shared_initialize_params_m.get(),
                                 sizeof(OCL_TIDL_InitializeParams)),
                         device_m->type() == CL_DEVICE_TYPE_ACCELERATOR ?
-                            ArgInfo(nullptr, tinn::internal::DMEM1_SIZE):
+                            ArgInfo(nullptr, tidl::internal::DMEM1_SIZE):
                             ArgInfo(nullptr, 4)                       };
 
     k_initialize_m.reset(new Kernel(device_m,
@@ -240,7 +240,7 @@ ExecutionObject::Impl::SetupProcessKernel(const ArgInfo& in, const ArgInfo& out)
 
     shared_process_params_m.reset(malloc_ddr<OCL_TIDL_ProcessParams>());
     shared_process_params_m->enableTrace = OCL_TIDL_TRACE_OFF;
-    shared_process_params_m->enableInternalInput = 
+    shared_process_params_m->enableInternalInput =
                                shared_initialize_params_m->enableInternalInput;
     shared_process_params_m->cycles = 0;
 

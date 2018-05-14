@@ -2,7 +2,7 @@
 TIDL API Reference
 ******************
 
-.. doxygennamespace:: tinn
+.. doxygennamespace:: tidl
     :project: TIDL
     :members:
 

@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2018 Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (c) 2017 Texas Instruments Incorporated - http://www.ti.com/
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -26,31 +26,56 @@
  *  THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
-//! @file imgutil.h
-
 #pragma once
-#include "opencv2/core.hpp"
-#include "opencv2/imgproc.hpp"
-using namespace cv;
 
-namespace tinn {
-namespace imgutil {
+#include <assert.h>
+#include <type_traits>
+#include <cstddef>
+#include <vector>
+#include <memory>
+#include <fstream>
 
-//! PreProcImage - preprocess image data into the value ranges that
-//! the DL network expects
-//! @param image        Input image data (OpenCV data structure)
-//! @param ptr          Output buffer that TI DL takes as input
-//! @param roi          Number of Region-Of-Interests
-//! @param n            Number of channels
-//! @param width        Input image width
-//! @param height       Input image height
-//! @param pitch        Output buffer (ptr) pitch for each line
-//! @param chOffset     Output buffer (ptr) offset for each channel
-//! @param frameCount   Number of frames in input image data
-//! @param preProcType  Preprocessing type, specified in network config
-bool PreProcImage(Mat& image, char *ptr, int16_t roi, int16_t n,
-                  int16_t width, int16_t height, int16_t pitch,
-                  int32_t chOffset, int32_t frameCount, int32_t preProcType);
+#include "configuration.h"
+#include "ocl_device.h"
 
-} // namesapce tinn::imgutil
-} // namespace tinn
+#include "common_defines.h"
+#include "tidl_create_params.h" // for TIDL types
+#include "execution_object.h"
+
+namespace tidl {
+
+
+// One instance across all devices available in the context
+// Also need this to work in host emulation mode
+class ExecutorImpl
+{
+    public:
+        ExecutorImpl(DeviceType core_type, const DeviceIds& ids,
+                     int layersGroupId);
+        ~ExecutorImpl() { Cleanup(); }
+
+        bool Initialize(const Configuration& configuration);
+
+        ExecutionObjects& GetExecutionObjects()
+        { return execution_objects_m; }
+
+        ExecutorImpl(const ExecutorImpl&)            = delete;
+        ExecutorImpl& operator=(const ExecutorImpl&) = delete;
+
+        ExecutionObjects execution_objects_m;
+
+    private:
+        void InitializeNetworkCreateParam(TIDL_CreateParams *cp,
+                                          const Configuration& configuration);
+        bool InitializeNetworkParams(TIDL_CreateParams *cp);
+        void Cleanup();
+
+        Device::Ptr          device_m; // vector of devices?
+        Configuration        configuration_m;
+        up_malloc_ddr<char>  shared_networkparam_heap_m;
+        DeviceIds            device_ids_m;
+        DeviceType           core_type_m;
+        int                  layers_group_id_m;
+};
+
+} // namespace tidl

@@ -63,7 +63,7 @@ int  orig_width;
 int  orig_height;
 object_class_table_t *object_class_table;
 
-using namespace tinn;
+using namespace tidl;
 using namespace cv;
 
 
@@ -247,7 +247,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
             free(b);
 
     }
-    catch (tinn::Exception &e)
+    catch (tidl::Exception &e)
     {
         std::cerr << e.what() << std::endl;
         status = false;

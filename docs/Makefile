@@ -198,4 +198,4 @@ artifacts:
 	$(MAKE) -c artifacts
 
 api-xml:
-	(cd ../tinn_api/doxygen; doxygen)
+	(cd ../tidl_api/doxygen; doxygen)
