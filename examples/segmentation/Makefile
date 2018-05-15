@@ -3,7 +3,7 @@ EXE = segmentation
 include ../make.common
 
 CXXFLAGS += $(shell pkg-config --cflags opencv)
-LIBS     += $(shell pkg-config --libs --static opencv)
+LIBS     += $(shell pkg-config --libs opencv)
 
 SOURCES = main.cpp object_classes.cpp
 
