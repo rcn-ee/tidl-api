@@ -102,17 +102,19 @@ void DotGraph::AddVertices()
 
         auto V = add_vertex(i, *sub);
 
-        AddVertexProperties(V, sub, layer);
+        AddVertexProperties(V, sub, layer, i);
     }
 
 }
 
 void DotGraph::AddVertexProperties(Vertex& V, Graph* g,
-                                   const sTIDL_Layer_t& layer)
+                                   const sTIDL_Layer_t& layer,
+                                   int index)
 {
     VertexPropertyMap<Graph> vpm = boost::get(vertex_attribute, *g);
     vpm[V][COLOR] = GetVertexColor(layer.layerType);
     vpm[V][STYLE] = BOLD;
+    vpm[V]["xlabel"] = std::to_string(index);
     vpm[V][LABEL] = "{";
 
     switch (layer.layerType)
@@ -121,7 +123,7 @@ void DotGraph::AddVertexProperties(Vertex& V, Graph* g,
         {
             vpm[V][LABEL] += TIDL_LayerString[layer.layerType];
             const sTIDL_ConvParams_t& p = layer.layerParams.convParams;
-            vpm[V][LABEL] += "\\n" + std::to_string(p.kernelW) + "x" +
+            vpm[V][LABEL] += " " + std::to_string(p.kernelW) + "x" +
                              std::to_string(p.kernelH);
 
             if (p.enablePooling)

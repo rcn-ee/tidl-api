@@ -92,7 +92,8 @@ class DotGraph
     void AddVertices();
     void AddEdges();
     void AddMetaData();
-    void AddVertexProperties(Vertex& V, Graph* g, const sTIDL_Layer_t& layer);
+    void AddVertexProperties(Vertex& V, Graph* g, const sTIDL_Layer_t& layer,
+                             int index);
 
     Graph graph_m;
     const sTIDL_Network_t& net_m;
