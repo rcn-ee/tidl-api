@@ -40,7 +40,7 @@ bool tidl::imgutil::PreProcImage(
   Mat spl[3];
   int32_t enableMeanSub = 0;
   Mat tempImage;
-  int32_t meanVlaues[3];
+  int32_t meanVlaues[n];
 
   if(preProcType == 0) // Caffe-Jacinto Models
   {

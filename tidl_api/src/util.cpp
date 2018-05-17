@@ -107,8 +107,8 @@ bool tidl::CompareFiles(const std::string &F1, const std::string &F2)
                 break;
         }
 
-    delete b1;
-    delete b2;
+    delete[] b1;
+    delete[] b2;
 
     if (errors == 0) return true;
 
@@ -155,8 +155,8 @@ bool tidl::CompareFrames(const std::string &F1, const std::string &F2,
         }
     }
 
-    delete b1;
-    delete b2;
+    delete[] b1;
+    delete[] b2;
 
     return status;
 }

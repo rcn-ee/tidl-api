@@ -357,8 +357,8 @@ cl_mem Device::CreateBuffer(const ArgInfo &Arg)
     // Conservative till we have sufficient information.
     cl_mem_flags flag = CL_MEM_READ_WRITE;
 
-    if (hostPtrInCMEM) flag |= CL_MEM_USE_HOST_PTR;
-    else               flag |= CL_MEM_COPY_HOST_PTR;
+    if (hostPtrInCMEM) flag |= (cl_mem_flags)CL_MEM_USE_HOST_PTR;
+    else               flag |= (cl_mem_flags)CL_MEM_COPY_HOST_PTR;
 
     cl_int       errcode;
     cl_mem buffer = clCreateBuffer(context_m,
