@@ -2,8 +2,8 @@ EXE = segmentation
 
 include ../make.common
 
-CXXFLAGS += $(shell pkg-config --cflags opencv)
-LIBS     += $(shell pkg-config --libs opencv)
+LIBS     += -lopencv_highgui -lopencv_imgcodecs -lopencv_videoio\
+			-lopencv_imgproc -lopencv_core
 
 SOURCES = main.cpp object_classes.cpp
 

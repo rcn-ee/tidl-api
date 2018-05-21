@@ -148,10 +148,17 @@ void ProcessArgs(int argc, char *argv[], std::string& network_file,
     }
 }
 
+#define STRING(S)  XSTRING(S)
+#define XSTRING(S) #S
 void DisplayHelp()
 {
+    std::string version = STRING(_BUILD_VER);
+    version += ".";
+    version += STRING(_BUILD_SHA);
+
     std::cout << "Usage: tidl_viewer -d <dot file name> <network binary file>\n"
-                 "Options:  \n"
+              << "Version: " << version << std::endl
+              << "Options:  \n"
                  " -p              Print network layer info\n"
                  " -h              Display this help message\n";
 }

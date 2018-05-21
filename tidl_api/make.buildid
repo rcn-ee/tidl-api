@@ -24,33 +24,16 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-TARGET ?= arm
+MAJOR_VER=1
+MINOR_VER=0
+PATCH_VER=0
 
-EXE = $(TARGET)/tidl_viewer
-
-TIDL_API_DIR=../tidl_api
-
-# -m32 required on x86 to ensure consistent layout of struct sTIDL_Network_t
-ifeq ($(TARGET),x86)
-	CXX = g++
-	CXXFLAGS += -m32 -static
-else
-include $(TIDL_API_DIR)/make.inc
+ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
+BUILD_SHA?=$(shell git rev-parse --short HEAD)
 endif
 
-include $(TIDL_API_DIR)/make.buildid
-
-CXXFLAGS += -o3
-#CXXFLAGS += -g -ggdb
-CXXFLAGS += --std=c++11 -Wall -Werror
-CXXFLAGS += -Iinc -I$(TIDL_API_DIR)/inc -I$(TIDL_API_DIR)/src
-CXXFLAGS += $(BUILD_ID)
-
-SOURCES = main.cpp tidl_viewer.cpp dot_graph.cpp $(TIDL_API_DIR)/src/util.cpp
-
-$(EXE): $(HEADERS) $(SOURCES)
-	mkdir -p $(TARGET)
-	$(CXX) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) -o $@
-
-clean::
-	$(RM) $(EXE) *.dot *.svg
+.PHONY: $(BUILD_ID)
+BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
+                awk '{ printf ("%02d.%02d.%02d", $(MAJOR_VER), \
+                $(MINOR_VER), $(PATCH_VER)); }') \
+			-D_BUILD_SHA=$(BUILD_SHA)
