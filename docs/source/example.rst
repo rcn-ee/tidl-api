@@ -2,7 +2,7 @@
 Examples
 ********
 
-We ship three end-to-end examples within the tidl-api packge
+We ship three end-to-end examples within the tidl-api package
 to demonstrate three categories of deep learning networks.  The first
 two examples can run on AM57x SoCs with either DLA or DSP.  The last
 example requires AM57x SoCs with both DLA and DSP.  The performance
@@ -82,6 +82,8 @@ runs significantly faster on DLA than on DSP.
    DSP: 812.0 ms          818.4 ms             0.79 %
    ====================== ==================== ============
 
+.. _ssd-example:
+
 SSD
 ---
 
@@ -120,7 +122,7 @@ Running Examples
 ----------------
 
 The examples are located in ``/usr/share/ti/tidl-api/examples`` on
-the EVM filesystem.  Each example needs to be run its own directory.
+the EVM file system.  Each example needs to be run its own directory.
 Running an example with ``-h`` will show help message with option set.
 The following code section shows how to run the examples, and
 the test program that tests all supported TIDL network configs.
@@ -233,59 +235,3 @@ the test program that tests all supported TIDL network configs.
    frame[0]: Time on device:    960ms, host:  961.1ms API overhead:  0.116 %
    squeeze1_1 : PASSED
    tidl PASSED
-
-Possible runtime errors: out of memory
-""""""""""""""""""""""""""""""""""""""
-
-.. code:: shell
-
-   tidl: device_alloc.h:31: T* tidl::malloc_ddr(size_t) [with T = char; size_t = unsigned int]: Assertion `val != nullptr' failed
-
-One possible reason is that previous aborted runs didn't properly release
-allocation.  Use ti-mct-heap-check with "-c" option to clean up.
-
-.. code:: shell
-
-   root@am57xx-evm:~# ti-mct-heap-check -c
-   -- ddr_heap1 ------------------------------
-      Addr : 0xa2000000
-      Size : 0xa000000
-      Avail: 0xa000000
-      Align: 0x80
-   -----------------------------------------
-
-Another possible reason is that total memory requirement exceeds default
-memory allocated for OpenCL.  See below how to patch device tree to
-increase OpenCL memory.
-
-.. code:: shell
-
-   $ sudo apt-get install device-tree-compiler # In case dtc is not already installed
-   $ scp root@am57:/boot/am57xx-evm-reva3.dtb .
-   $ dtc -I dtb -O dts am57xx-evm-reva3.dtb -o am57xx-evm-reva3.dts
-   $ cp am57xx-evm-reva3.dts am57xx-evm-reva3.dts.orig
-   $ # increase cmem block size
-   $ diff -u am57xx-evm-reva3.dts.orig am57xx-evm-reva3.dts
-   --- am57xx-evm-reva3.dts.orig    2018-01-11 14:47:51.491572739 -0600
-   +++ am57xx-evm-reva3.dts    2018-01-16 15:43:33.981431971 -0600
-   @@ -5657,7 +5657,7 @@
-            };
-
-            cmem_block_mem@a0000000 {
-   -            reg = <0x0 0xa0000000 0x0 0xc000000>;
-   +            reg = <0x0 0xa0000000 0x0 0x18000000>;
-                no-map;
-                status = "okay";
-                linux,phandle = <0x13c>;
-   @@ -5823,7 +5823,7 @@
-            cmem_block@0 {
-                reg = <0x0>;
-                memory-region = <0x13c>;
-   -            cmem-buf-pools = <0x1 0x0 0xc000000>;
-   +            cmem-buf-pools = <0x1 0x0 0x18000000>;
-            };
-
-            cmem_block@1 {
-   $ dtc -I dts -O dtb am57xx-evm-reva3.dts -o am57xx-evm-reva3.dtb
-   $ scp am57xx-evm-reva3.dtb root@am57:/boot/
-   # reboot to make memory changes effective (run "cat /proc/iomem" to check)

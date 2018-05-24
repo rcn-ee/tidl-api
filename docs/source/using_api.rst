@@ -1,8 +1,10 @@
+.. _using-tidl-api:
+
 ******************
 Using the TIDL API
 ******************
 
-This example illustrates using the TIDL API to offload deep learning network processing from a Linux application to the C66x DSPs or DLAs on AM57x devices.
+This example illustrates using the TIDL API to offload deep learning network processing from a Linux application to the C66x DSPs or DLAs on AM57x devices. The API consists of three classes: ``Configuration``, ``Executor`` and ``ExecutionObject``.
 
 Step 1
 ======
@@ -24,11 +26,11 @@ Create a Configuration object by reading it from a file or by initializing it di
     bool status = configuration.ReadFromFile(config_file);
 
 .. note::
-    Refer TIDL Translation Tool documentation for creating TIDL network and parameter binary files from TensorFlow and Caffe.
+    Refer `Processor SDK Linux Software Developer's Guide`_ for creating TIDL network and parameter binary files from TensorFlow and Caffe.
 
 Step 3
 ======
-Create an Executor with the approriate device type, set of devices and a configuration. In the snippet below, an Executor is created on 2 DLAs.
+Create an Executor with the appropriate device type, set of devices and a configuration. In the snippet below, an Executor is created on 2 DLAs.
 
 .. code-block:: c++
 
@@ -56,8 +58,6 @@ Get the set of available ExecutionObjects and allocate input and output buffers 
             buffers.push_back(out.ptr());
         }
 
-
-
 Step 5
 ======
 Run the network on each input frame.  The frames are processed with available execution objects in a pipelined manner with additional num_eos iterations to flush the pipeline (epilogue).
@@ -77,16 +77,6 @@ Run the network on each input frame.  The frames are processed with available ex
                 eo->ProcessFrameStartAsync();
         }
 
+For a complete example of using the API, refer any of the examples available at ``/usr/share/ti/tidl-api/examples`` on the EVM file system.
 
-
-Putting it together
-===================
-The code snippet :ref:`tidl_main` illustrates using the API to offload a network.
-
-.. literalinclude:: ../../examples/test/main.cpp
-    :name: tidl_main
-    :caption: examples/test/main.cpp
-    :lines: 155-189,208-213,215-220
-    :linenos:
-
-For a complete example of using the API, refer ``examples/test/main.cpp`` on the EVM filesystem.
+.. _Processor SDK Linux Software Developer's Guide: http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/index.html
