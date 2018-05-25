@@ -100,9 +100,10 @@ int main(int argc, char *argv[])
     // If there are no devices capable of offloading TIDL on the SoC, exit
     uint32_t num_dla = Executor::GetNumDevices(DeviceType::DLA);
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
-    if (num_dla == 0 && num_dsp == 0)
+    if (num_dla == 0 || num_dsp == 0)
     {
-        std::cout << "TI DL not supported on this SoC." << std::endl;
+        std::cout << "ssd_multibox requires both DLA and DSP for execution."
+                  << std::endl;
         return EXIT_SUCCESS;
     }
 

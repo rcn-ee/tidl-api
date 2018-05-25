@@ -12,6 +12,7 @@ TI Deep Learning API User's Guide
    viewer
    example
    api
+   faq/index
    notice
    disclaimer
 

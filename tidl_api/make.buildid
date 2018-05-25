@@ -24,12 +24,16 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-EXE = test_tidl
+MAJOR_VER=1
+MINOR_VER=0
+PATCH_VER=0
 
-include ../make.common
+ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
+BUILD_SHA?=$(shell git rev-parse --short HEAD)
+endif
 
-$(EXE): SOURCES = main.cpp multiple_executors.cpp
-
-$(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
-	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(LDFLAGS) $(LIBS) -o $@
-
+.PHONY: $(BUILD_ID)
+BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
+                awk '{ printf ("%02d.%02d.%02d", $(MAJOR_VER), \
+                $(MINOR_VER), $(PATCH_VER)); }') \
+			-D_BUILD_SHA=$(BUILD_SHA)

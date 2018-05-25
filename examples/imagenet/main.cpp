@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     std::string config      = "j11_v2";
     std::string input_file  = "../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg";
     int         num_devices = 1;
-    DeviceType  device_type = DeviceType::DLA;
+    DeviceType  device_type = (num_dla > 0 ? DeviceType::DLA:DeviceType::DSP);
     ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
 
     std::cout << "Input: " << input_file << std::endl;

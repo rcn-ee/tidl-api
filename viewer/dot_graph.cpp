@@ -1,5 +1,5 @@
 /******************************************************************************
- * Copyright (c) 2017-18, Texas Instruments Incorporated - http://www.ti.com/
+ * Copyright (c) 2017-2018, Texas Instruments Incorporated - http://www.ti.com/
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
@@ -247,7 +247,8 @@ std::string PoolingProperties(const sTIDL_PoolingParams_t& p)
     else if (p.poolingType == TIDL_AveragePooling)
         s += " Average";
 
-    s+= "\\n" + std::to_string(p.kernelW) + "x" + std::to_string(p.kernelH);
+    if (p.kernelW != 0 && p.kernelH != 0)
+        s+= "\\n" + std::to_string(p.kernelW) + "x" + std::to_string(p.kernelH);
 
     return s;
 }

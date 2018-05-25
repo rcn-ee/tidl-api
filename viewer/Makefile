@@ -33,21 +33,24 @@ TIDL_API_DIR=../tidl_api
 # -m32 required on x86 to ensure consistent layout of struct sTIDL_Network_t
 ifeq ($(TARGET),x86)
 	CXX = g++
-	CXXFLAGS = -m32 -static
-	LDFLAGS =
+	CXXFLAGS += -m32 -static
 else
 include $(TIDL_API_DIR)/make.inc
 endif
+
+include $(TIDL_API_DIR)/make.buildid
 
 CXXFLAGS += -o3
 #CXXFLAGS += -g -ggdb
 CXXFLAGS += --std=c++11 -Wall -Werror
 CXXFLAGS += -Iinc -I$(TIDL_API_DIR)/inc -I$(TIDL_API_DIR)/src
+CXXFLAGS += $(BUILD_ID)
+
 SOURCES = main.cpp tidl_viewer.cpp dot_graph.cpp $(TIDL_API_DIR)/src/util.cpp
 
-$(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
+$(EXE): $(HEADERS) $(SOURCES)
 	mkdir -p $(TARGET)
-	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(LDFLAGS) -o $@
+	$(CXX) $(CXXFLAGS) $(SOURCES) $(LDFLAGS) -o $@
 
 clean::
 	$(RM) $(EXE) *.dot *.svg

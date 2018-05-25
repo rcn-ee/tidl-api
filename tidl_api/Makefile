@@ -24,14 +24,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-MAJOR_VER=1
-MINOR_VER=0
-PATCH_VER=0
-
-ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
-BUILD_SHA?=$(shell git rev-parse --short HEAD)
-endif
-
 LIB_NAME = tidl_api.a
 DSP_SRCFILE = dsp/ocl_wrapper.cl
 DSP_OUTFILE = dsp/ocl_wrapper.dsp_h
@@ -40,6 +32,8 @@ LIB_IMGUTIL_NAME = tidl_imgutil.a
 all: $(LIB_NAME) $(LIB_IMGUTIL_NAME)
 
 include make.inc
+include make.buildid
+
 RM = rm
 AR = ar
 
@@ -60,12 +54,6 @@ HEADERS  = src/common_defines.h src/executor_impl.h src/ocl_device.h
 HEADERS += src/parameters.h src/tidl_create_params.h src/trace.h src/util.h
 HEADERS += inc/configuration.h inc/execution_object.h inc/executor.h
 HEADERS += inc/imgutil.h
-
-.PHONY: $(BUILD_ID)
-BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
-                awk '{ printf ("%02d.%02d.%02d", $(MAJOR_VER), \
-                $(MINOR_VER), $(PATCH_VER)); }') \
-			-D_BUILD_SHA=$(BUILD_SHA)
 
 
 ifeq ($(BUILD), debug)
@@ -94,8 +82,6 @@ obj/%.o: src/%.cpp $(HEADERS)
 $(LIB_NAME): $(HOST_OBJ_FILES)
 	$(AR) cr $@ $(HOST_OBJ_FILES)
 
-
-$(LIB_IMGUTIL_NAME): CXXFLAGS += $(shell pkg-config --cflags opencv)
 
 $(LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
 	$(AR) cr $@ $(HOST_OBJ_IMGUTIL_FILES)
