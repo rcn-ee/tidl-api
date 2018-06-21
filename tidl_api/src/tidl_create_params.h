@@ -321,7 +321,15 @@ typedef enum
 */
 typedef struct
 {
+  // The tidl-viewer binary is built for 64b x86/Linux. On such systems,
+  // void* is 64b and this breaks structure size/layout required by TIDL.
+  // Cannot use -m32 with yocto builds. Workaround is to use int32_t for ptr.
+  // ptr is not used by the tidl-viewer.
+  #if defined(__x86_64__)
+  int32_t ptr;
+  #else
   void* ptr;
+  #endif
   int32_t bufSize;
   int32_t reserved[2];
 }sBuffer_t;
