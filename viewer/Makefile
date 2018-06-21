@@ -30,10 +30,9 @@ EXE = $(TARGET)/tidl_viewer
 
 TIDL_API_DIR=../tidl_api
 
-# -m32 required on x86 to ensure consistent layout of struct sTIDL_Network_t
 ifeq ($(TARGET),x86)
-	CXX = g++
-	CXXFLAGS += -m32 -static
+	CXX      ?= g++
+	CXXFLAGS += -static
 else
 include $(TIDL_API_DIR)/make.inc
 endif
