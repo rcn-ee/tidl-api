@@ -42,6 +42,3 @@ all:
 .PHONY: clean
 clean:
 	$(call make_in_dirs, $(DIRS), clean)
-
-realclean: clean
-	make -C ../tidl_api clean

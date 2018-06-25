@@ -28,7 +28,7 @@ RM = rm
 AR = ar
 CP = cp
 
-TIDL_API_DIR = ../../tidl_api
+TIDL_API_DIR ?= ${TARGET_ROOTDIR}/usr/share/ti/tidl/tidl_api
 TIDL_API_LIB_NAME = tidl_api.a
 TIDL_API_LIB = $(TIDL_API_DIR)/$(TIDL_API_LIB_NAME)
 TIDL_API_LIB_IMGUTIL_NAME = tidl_imgutil.a
@@ -50,18 +50,6 @@ HEADERS =
 LIBS    = -lOpenCL -locl_util -lpthread
 
 all: $(EXE)
-
-.PHONY: $(TIDL_API_LIB)
-$(TIDL_API_LIB):
-	$(MAKE) -C $(TIDL_API_DIR) $(TIDL_API_LIB_NAME)
-
-.PHONY: $(TIDL_API_LIB_IMGUTIL)
-$(TIDL_API_LIB_IMGUTIL):
-	$(MAKE) -C $(TIDL_API_DIR) $(TIDL_API_LIB_IMGUTIL_NAME)
-
-realclean: clean
-	$(MAKE) -C $(TIDL_API_DIR) clean
-	$(MAKE) -C $(TIDL_API_DIR)/dsp clean
 
 clean::
 	$(RM) -f $(EXE) stats_tool_out.* *.out

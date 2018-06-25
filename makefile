@@ -1,6 +1,7 @@
+
 # Copyright (c) 2018 Texas Instruments Incorporated - http://www.ti.com/
 # All rights reserved.
-#
+# 
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 # * Redistributions of source code must retain the above copyright
@@ -11,7 +12,7 @@
 # * Neither the name of Texas Instruments Incorporated nor the
 # names of its contributors may be used to endorse or promote products
 # derived from this software without specific prior written permission.
-#
+# 
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -24,17 +25,31 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-MAJOR_VER=1
-MINOR_VER=0
-PATCH_VER=0
-BUILD_VER=2
 
-ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
-BUILD_SHA?=$(shell git rev-parse --short HEAD)
+# makefile for TI internal use
+
+ifneq (,$(findstring 86, $(shell uname -m)))
+DEST_DIR ?= $(CURDIR)/install/am57
 endif
 
-.PHONY: $(BUILD_ID)
-BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
-                awk '{ printf ("%02d.%02d.%02d.%02d", $(MAJOR_VER), \
-                $(MINOR_VER), $(PATCH_VER), $(BUILD_VER)); }') \
-			-D_BUILD_SHA=$(BUILD_SHA)
+INSTALL_DIR_API = $(DEST_DIR)/usr/share/ti/tidl
+INSTALL_DIR_EXAMPLES = $(DEST_DIR)/usr/share/ti/examples/tidl
+
+CP_ARGS=-Prf --preserve=mode,timestamps --no-preserve=ownership
+
+build-api:
+	$(MAKE) -C tidl_api
+
+build-examples: install-api
+	$(MAKE) -C examples
+
+install-api: build-api
+	mkdir -p $(INSTALL_DIR_API)
+	cp $(CP_ARGS) tidl_api $(INSTALL_DIR_API)/
+
+install-examples: build-examples
+	mkdir -p $(INSTALL_DIR_EXAMPLES)
+	cp $(CP_ARGS) examples/* $(INSTALL_DIR_EXAMPLES)/
+
+clean:
+	$(MAKE) -C tidl_api	clean
