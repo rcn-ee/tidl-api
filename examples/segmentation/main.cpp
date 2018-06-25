@@ -97,9 +97,9 @@ int main(int argc, char *argv[])
     signal(SIGTERM, exit);
 
     // If there are no devices capable of offloading TIDL on the SoC, exit
-    uint32_t num_dla = Executor::GetNumDevices(DeviceType::DLA);
+    uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
-    if (num_dla == 0 && num_dsp == 0)
+    if (num_eve == 0 && num_dsp == 0)
     {
         std::cout << "TI DL not supported on this SoC." << std::endl;
         return EXIT_SUCCESS;
@@ -109,7 +109,7 @@ int main(int argc, char *argv[])
     std::string config      = DEFAULT_CONFIG;
     std::string input_file  = DEFAULT_INPUT;
     int         num_devices = 1;
-    DeviceType  device_type = (num_dla > 0 ? DeviceType::DLA:DeviceType::DSP);
+    DeviceType  device_type = (num_eve > 0 ? DeviceType::EVE:DeviceType::DSP);
     ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
 
     if ((object_class_table = GetObjectClassTable(config)) == nullptr)
@@ -422,7 +422,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
                       break;
 
             case 't': if (*optarg == 'e')
-                          device_type = DeviceType::DLA;
+                          device_type = DeviceType::EVE;
                       else if (*optarg == 'd')
                           device_type = DeviceType::DSP;
                       else
@@ -463,7 +463,7 @@ void DisplayHelp()
                  "Optional arguments:\n"
                  " -c <config>          Valid configs: jseg21_tiscapes, jseg21\n"
                  " -n <number of cores> Number of cores to use (1 - 4)\n"
-                 " -t <d|e>             Type of core. d -> DSP, e -> DLA\n"
+                 " -t <d|e>             Type of core. d -> DSP, e -> EVE\n"
                  " -i <image>           Path to the image file\n"
                  "                      Default are 3 frames in testvecs\n"
                  " -i camera            Use camera as input\n"

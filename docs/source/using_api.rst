@@ -4,7 +4,7 @@
 Using the TIDL API
 ******************
 
-This example illustrates using the TIDL API to offload deep learning network processing from a Linux application to the C66x DSPs or DLAs on AM57x devices. The API consists of three classes: ``Configuration``, ``Executor`` and ``ExecutionObject``.
+This example illustrates using the TIDL API to offload deep learning network processing from a Linux application to the C66x DSPs or EVEs on AM57x devices. The API consists of three classes: ``Configuration``, ``Executor`` and ``ExecutionObject``.
 
 Step 1
 ======
@@ -13,7 +13,7 @@ Determine if there are any TIDL capable devices on the AM57x SoC:
 
 .. code-block:: c++
 
-    uint32_t num_dla = Executor::GetNumDevices(DeviceType::DLA);
+    uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
 
 Step 2
@@ -30,12 +30,12 @@ Create a Configuration object by reading it from a file or by initializing it di
 
 Step 3
 ======
-Create an Executor with the appropriate device type, set of devices and a configuration. In the snippet below, an Executor is created on 2 DLAs.
+Create an Executor with the appropriate device type, set of devices and a configuration. In the snippet below, an Executor is created on 2 EVEs.
 
 .. code-block:: c++
 
         DeviceIds ids = {DeviceId::ID0, DeviceId::ID1};
-        Executor executor(DeviceType::DLA, ids, configuration);
+        Executor executor(DeviceType::EVE, ids, configuration);
 
 Step 4
 ======

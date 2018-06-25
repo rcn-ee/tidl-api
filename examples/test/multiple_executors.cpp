@@ -161,7 +161,7 @@ void* run_network(void *data)
     {
         // Create a executor with the approriate core type, number of cores
         // and configuration specified
-        Executor executor(DeviceType::DLA, ids, configuration);
+        Executor executor(DeviceType::EVE, ids, configuration);
 
         const ExecutionObjects& execution_objects =
                                                 executor.GetExecutionObjects();

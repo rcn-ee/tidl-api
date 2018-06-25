@@ -48,7 +48,7 @@ Device::Device(cl_device_type t, const DeviceIds& ids):
 {
     TRACE::print("\tOCL Device: %s created\n",
               device_type_m == CL_DEVICE_TYPE_ACCELERATOR ? "DSP" :
-              device_type_m == CL_DEVICE_TYPE_CUSTOM ? "DLA" : "Unknown");
+              device_type_m == CL_DEVICE_TYPE_CUSTOM ? "EVE" : "Unknown");
 
     for (int i = 0; i < MAX_DEVICES; i++)
         queue_m[i] = nullptr;
@@ -465,7 +465,7 @@ Device::Ptr Device::Create(DeviceType core_type, const DeviceIds& ids,
     Device::Ptr p(nullptr);
     if (core_type == DeviceType::DSP)
         p.reset(new DspDevice(ids, name));
-    else if (core_type == DeviceType::DLA)
+    else if (core_type == DeviceType::EVE)
         p.reset(new EveDevice(ids, name));
 
     return p;
@@ -503,7 +503,7 @@ uint32_t Device::GetNumDevices(DeviceType device_type)
     if (!PlatformIsAM57()) return 0;
 
     // Convert DeviceType to OpenCL device type
-    cl_device_type t = (device_type == DeviceType::DLA) ?
+    cl_device_type t = (device_type == DeviceType::EVE) ?
                                     CL_DEVICE_TYPE_CUSTOM :
                                     CL_DEVICE_TYPE_ACCELERATOR;
 

@@ -98,11 +98,11 @@ int main(int argc, char *argv[])
     signal(SIGTERM, exit);
 
     // If there are no devices capable of offloading TIDL on the SoC, exit
-    uint32_t num_dla = Executor::GetNumDevices(DeviceType::DLA);
+    uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
-    if (num_dla == 0 || num_dsp == 0)
+    if (num_eve == 0 || num_dsp == 0)
     {
-        std::cout << "ssd_multibox requires both DLA and DSP for execution."
+        std::cout << "ssd_multibox requires both EVE and DSP for execution."
                   << std::endl;
         return EXIT_SUCCESS;
     }
@@ -111,14 +111,14 @@ int main(int argc, char *argv[])
     std::string config      = DEFAULT_CONFIG;
     std::string input_file  = DEFAULT_INPUT;
     uint32_t num_devices    = 1;
-    DeviceType  device_type = DeviceType::DLA;
+    DeviceType  device_type = DeviceType::EVE;
     ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
 
-    // Use same number of DLAs and DSPs
-    num_devices = std::min(num_devices, std::min(num_dla, num_dsp));
+    // Use same number of EVEs and DSPs
+    num_devices = std::min(num_devices, std::min(num_eve, num_dsp));
     if (num_devices == 0)
     {
-        std::cout << "Partitioned execution requires at least 1 DLA and 1 DSP."
+        std::cout << "Partitioned execution requires at least 1 EVE and 1 DSP."
                   << std::endl;
         return EXIT_FAILURE;
     }
@@ -190,30 +190,30 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
     {
         // Create a executor with the approriate core type, number of cores
         // and configuration specified
-        // DLA will run layersGroupId 1 in the network, while
+        // EVE will run layersGroupId 1 in the network, while
         // DSP will run layersGroupId 2 in the network
-        Executor executor_dla(DeviceType::DLA, ids, configuration, 1);
+        Executor executor_eve(DeviceType::EVE, ids, configuration, 1);
         Executor executor_dsp(DeviceType::DSP, ids, configuration, 2);
 
         // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects_dla =
-                                            executor_dla.GetExecutionObjects();
+        const ExecutionObjects& execution_objects_eve =
+                                            executor_eve.GetExecutionObjects();
         const ExecutionObjects& execution_objects_dsp =
                                             executor_dsp.GetExecutionObjects();
-        int num_eos = execution_objects_dla.size();
+        int num_eos = execution_objects_eve.size();
 
         // Allocate input and output buffers for each execution object
-        // Note that "out" is both the output of eo_dla and the input of eo_dsp
+        // Note that "out" is both the output of eo_eve and the input of eo_dsp
         // This is how two layersGroupIds, 1 and 2, are tied together
         std::vector<void *> buffers;
         for (int i = 0; i < num_eos; i++)
         {
-            ExecutionObject *eo_dla = execution_objects_dla[i].get();
-            size_t in_size  = eo_dla->GetInputBufferSizeInBytes();
-            size_t out_size = eo_dla->GetOutputBufferSizeInBytes();
+            ExecutionObject *eo_eve = execution_objects_eve[i].get();
+            size_t in_size  = eo_eve->GetInputBufferSizeInBytes();
+            size_t out_size = eo_eve->GetOutputBufferSizeInBytes();
             ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)  };
             ArgInfo out = { ArgInfo(malloc(out_size), out_size) };
-            eo_dla->SetInputOutputBuffer(in, out);
+            eo_eve->SetInputOutputBuffer(in, out);
 
             ExecutionObject *eo_dsp = execution_objects_dsp[i].get();
             size_t out2_size = eo_dsp->GetOutputBufferSizeInBytes();
@@ -231,11 +231,11 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
 
         // Process frames with available execution objects in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
-        ExecutionObject *eo_dla, *eo_dsp, *eo_input;
+        ExecutionObject *eo_eve, *eo_dsp, *eo_input;
         for (int frame_idx = 0;
              frame_idx < num_frames + num_eos; frame_idx++)
         {
-            eo_dla = execution_objects_dla[frame_idx % num_eos].get();
+            eo_eve = execution_objects_eve[frame_idx % num_eos].get();
             eo_dsp = execution_objects_dsp[frame_idx % num_eos].get();
 
             // Wait for previous frame on the same eo to finish processing
@@ -247,23 +247,23 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
                            ms_diff(t0[finished_idx % num_eos], t1),
                            eo_dsp->GetProcessTimeInMilliSeconds());
 
-                eo_input = execution_objects_dla[finished_idx % num_eos].get();
+                eo_input = execution_objects_eve[finished_idx % num_eos].get();
                 WriteFrameOutput(*eo_input, *eo_dsp, configuration);
             }
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo_dla, frame_idx, configuration, num_frames,
+            if (ReadFrame(*eo_eve, frame_idx, configuration, num_frames,
                           image_file, cap))
             {
                 clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
-                eo_dla->ProcessFrameStartAsync();
+                eo_eve->ProcessFrameStartAsync();
 
-                if (eo_dla->ProcessFrameWait())
+                if (eo_eve->ProcessFrameWait())
                 {
                     clock_gettime(CLOCK_MONOTONIC, &t1);
-                    ReportTime(frame_idx, "DLA",
+                    ReportTime(frame_idx, "EVE",
                                ms_diff(t0[frame_idx % num_eos], t1),
-                               eo_dla->GetProcessTimeInMilliSeconds());
+                               eo_eve->GetProcessTimeInMilliSeconds());
 
                     clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
                     eo_dsp->ProcessFrameStartAsync();
@@ -501,7 +501,7 @@ void DisplayHelp()
                  "  Will run partitioned ssd_multibox network to perform "
                  "multi-objects detection\n"
                  "  and classification.  First part of network "
-                 "(layersGroupId 1) runs on DLA,\n"
+                 "(layersGroupId 1) runs on EVE,\n"
                  "  second part (layersGroupId 2) runs on DSP.\n"
                  "  Use -c to run a different segmentation network. "
                  "Default is jdetnet.\n"

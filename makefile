@@ -26,7 +26,8 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 
-# makefile for TI internal use
+# makefile for building from the tidl-api git repi
+# Required TARGET_ROOTDIR to be set.
 
 ifneq (,$(findstring 86, $(shell uname -m)))
 DEST_DIR ?= $(CURDIR)/install/am57
@@ -42,6 +43,10 @@ build-api:
 
 build-examples: install-api
 	$(MAKE) -C examples
+
+# Build HTML from Sphinx RST, requires Sphinx to be installed
+build-docs:
+	$(MAKE) -C docs
 
 install-api: build-api
 	mkdir -p $(INSTALL_DIR_API)
