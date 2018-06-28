@@ -77,6 +77,6 @@ Run the network on each input frame.  The frames are processed with available ex
                 eo->ProcessFrameStartAsync();
         }
 
-For a complete example of using the API, refer any of the examples available at ``/usr/share/ti/tidl-api/examples`` on the EVM file system.
+For a complete example of using the API, refer any of the examples available at ``/usr/share/ti/tidl/examples`` on the EVM file system.
 
 .. _Processor SDK Linux Software Developer's Guide: http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/index.html

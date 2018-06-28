@@ -4,16 +4,16 @@ Examples
 
 We ship three end-to-end examples within the tidl-api package
 to demonstrate three categories of deep learning networks.  The first
-two examples can run on AM57x SoCs with either EVE or DSP.  The last
+two examples can run on AM57x SoCs with either EVE or DSP devices.  The last
 example requires AM57x SoCs with both EVE and DSP.  The performance
 numbers that we present here were obtained on an AM5729 EVM, which
 includes 2 ARM A15 cores running at 1.5GHz, 4 EVE cores at 535MHz, and
 2 DSP cores at 750MHz.
 
 For each example, we report device processing time, host processing time,
-and TIDL API overhead.  Device processing time is measured on the device,
-from the moment processing starts till the moment processing finishes.
-Host processing time is measured on the host, from the moment
+and TIDL API overhead.  **Device processing time** is measured on the device,
+from the moment processing starts for a frame till processing finishes.
+**Host processing time** is measured on the host, from the moment
 ``ProcessFrameStartAsync()`` is called till ``ProcessFrameWait()`` returns
 in user application.  It includes the TIDL API overhead, the OpenCL runtime
 overhead, and the time to copy user input data into padded TIDL internal
@@ -132,7 +132,7 @@ to an *Executor* and how easy it is to connect the output from one
 Running Examples
 ----------------
 
-The examples are located in ``/usr/share/ti/tidl-api/examples`` on
+The examples are located in ``/usr/share/ti/tidl/examples`` on
 the EVM file system.  Each example needs to be run its own directory.
 Running an example with ``-h`` will show help message with option set.
 The following code section shows how to run the examples, and

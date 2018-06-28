@@ -26,17 +26,26 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 
-# makefile for building from the tidl-api git repi
-# Required TARGET_ROOTDIR to be set.
+# makefile for building from the tidl-api git repo
+# Cross-compilation requires TARGET_ROOTDIR to be set.
+# E.g.
+# PSDK_LINUX=<path to Processor Linux SDK install>
+# TARGET_ROOTDIR=$PSDK_LINUX/linux-devkit/sysroots/armv7ahf-neon-linux-gnueabi
 
 ifneq (,$(findstring 86, $(shell uname -m)))
 DEST_DIR ?= $(CURDIR)/install/am57
+VIEWER_TARGET=x86
+else
+VIEWER_TARGET=arm
 endif
 
 INSTALL_DIR_API = $(DEST_DIR)/usr/share/ti/tidl
 INSTALL_DIR_EXAMPLES = $(DEST_DIR)/usr/share/ti/examples/tidl
 
-CP_ARGS=-Prf --preserve=mode,timestamps --no-preserve=ownership
+CP_ARGS = -Prf
+ifneq (,$(findstring 86, $(shell uname -m)))
+CP_ARGS += --preserve=mode,timestamps --no-preserve=ownership
+endif
 
 build-api:
 	$(MAKE) -C tidl_api
@@ -56,5 +65,9 @@ install-examples: build-examples
 	mkdir -p $(INSTALL_DIR_EXAMPLES)
 	cp $(CP_ARGS) examples/* $(INSTALL_DIR_EXAMPLES)/
 
+build-viewer:
+	$(MAKE) TARGET=$(VIEWER_TARGET) -C viewer
+
 clean:
 	$(MAKE) -C tidl_api	clean
+	$(MAKE) -C examples	clean
