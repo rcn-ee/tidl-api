@@ -10,6 +10,15 @@ numbers that we present here were obtained on an AM5729 EVM, which
 includes 2 ARM A15 cores running at 1.5GHz, 4 EVE cores at 535MHz, and
 2 DSP cores at 750MHz.
 
+For each example, we report device processing time, host processing time,
+and TIDL API overhead.  Device processing time is measured on the device,
+from the moment processing starts till the moment processing finishes.
+Host processing time is measured on the host, from the moment
+``ProcessFrameStartAsync()`` is called till ``ProcessFrameWait()`` returns
+in user application.  It includes the TIDL API overhead, the OpenCL runtime
+overhead, and the time to copy user input data into padded TIDL internal
+buffers.
+
 Imagenet
 --------
 
@@ -26,15 +35,15 @@ objects as output, and the processing time on either EVE or DSP.
 
 .. table::
 
-    ==== ============== ============
-    Rank Object Classes Probability
-    ==== ============== ============
+    ==== ============== =====================
+    Rank Object Classes Probability (softmax)
+    ==== ============== =====================
     1    tabby          0.996
     2    Egyptian_cat   0.977
     3    tiger_cat      0.973
     4    lynx           0.941
     5    Persian_cat    0.922
-    ==== ============== ============
+    ==== ============== =====================
 
 .. table::
 
@@ -49,9 +58,11 @@ objects as output, and the processing time on either EVE or DSP.
 The particular network that we ran in this category, jacintonet11v2,
 has 14 layers.  User can specify whether to run the network on EVE or DSP
 for acceleration.  We can see that EVE time is slightly higher than DSP time.
-Host time includes the OpenCL runtime overhead and the time to copy user
-input data into padded TIDL buffers.  We can see that the overall overhead
-is less than 1.5%.
+We can also see that the overall overhead is less than 1.5%.
+
+.. note::
+    The probabilities reported here are the output of the softmax layer
+    in the network, and are not normalized to the real probabilities.
 
 Segmentation
 ------------
