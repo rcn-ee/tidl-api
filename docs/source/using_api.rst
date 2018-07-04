@@ -16,6 +16,13 @@ Determine if there are any TIDL capable devices on the AM57x SoC:
     uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
 
+.. note::
+    By default, the OpenCL runtime is configured with sufficient global memory 
+    (via CMEM) to offload TIDL networks to 2 OpenCL devices. On devices where
+    ``Executor::GetNumDevices`` returns 4 (E.g. AM5729 with 4 EVE OpenCL
+    devices) the amount of memory available to the runtime must be increased. 
+    Refer :ref:`opencl-global-memory` for details
+
 Step 2
 ======
 Create a Configuration object by reading it from a file or by initializing it directly. The example below parses a configuration file and initializes the Configuration object. See ``examples/test/testvecs/config/infer`` for examples of configuration files.

@@ -129,6 +129,10 @@ to an *Executor* and how easy it is to connect the output from one
    DSP:  21.1 ms           22.3 ms             5.62 %
    ====================== ==================== ============
 
+Test
+----
+This example is used to test pre-converted networks included in the TIDL API package (``test/testvecs/config/tidl_models``). When run without any arguments, the program ``test_tidl`` will run all available networks on the C66x DSPs and EVEs available on the SoC. Use the ``-c`` option to specify a single network. Run ``test_tidl -h``  for details.
+
 Running Examples
 ----------------
 

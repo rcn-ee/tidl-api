@@ -100,10 +100,19 @@ int main(int argc, char *argv[])
     {
         if (num_eve > 0)
         {
-            //TODO: Use memory availability to determine # devices
             // Run on 2 devices because there is not enough CMEM available by
             // default
-            if (num_eve = 4) num_eve = 2;
+            if (num_eve = 4)
+            {
+                std::cout
+                 << "Running on 2 EVE devices instead of the available 4 "
+                 << "due to insufficient OpenCL global memory. Refer the "
+                 << "TIDL API User's Guide, Frequently Asked Questions, "
+                 << "Section \"Insufficient OpenCL global memory\" for details "
+                 << "on increasing the amount of CMEM available for OpenCL."
+                 << std::endl;
+                num_eve = 2;
+            }
             status = RunAllConfigurations(num_eve, DeviceType::EVE);
             status &= RunMultipleExecutors(
                      "testvecs/config/infer/tidl_config_j11_v2.txt",

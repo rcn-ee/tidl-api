@@ -35,6 +35,9 @@
 ifneq (,$(findstring 86, $(shell uname -m)))
 DEST_DIR ?= $(CURDIR)/install/am57
 VIEWER_TARGET=x86
+ifeq ($(TARGET_ROOTDIR),)
+$(error Set TARGET_ROOTDIR to the ARM Linux devkit/filesystem)
+endif
 else
 VIEWER_TARGET=arm
 endif
