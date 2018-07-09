@@ -24,7 +24,7 @@ Imagenet
 
 The imagenet example takes an image as input and outputs 1000 probabilities.
 Each probability corresponds to one object in the 1000 objects that the
-network is pre-trained with.  Our example outputs top 5 probabilities
+network is pre-trained with.  Our example outputs top 5 predictions
 as the most likely objects that the input image can be.
 
 The following figure and tables shows an input image, top 5 predicted
@@ -35,15 +35,15 @@ objects as output, and the processing time on either EVE or DSP.
 
 .. table::
 
-    ==== ============== =====================
-    Rank Object Classes Probability (softmax)
-    ==== ============== =====================
-    1    tabby          0.996
-    2    Egyptian_cat   0.977
-    3    tiger_cat      0.973
-    4    lynx           0.941
-    5    Persian_cat    0.922
-    ==== ============== =====================
+    ==== ==============
+    Rank Object Classes
+    ==== ==============
+    1    tabby
+    2    Egyptian_cat
+    3    tiger_cat
+    4    lynx
+    5    Persian_cat
+    ==== ==============
 
 .. table::
 
@@ -61,8 +61,8 @@ for acceleration.  We can see that EVE time is slightly higher than DSP time.
 We can also see that the overall overhead is less than 1.5%.
 
 .. note::
-    The probabilities reported here are the output of the softmax layer
-    in the network, and are not normalized to the real probabilities.
+    The predicitions reported here are based on the output of the softmax
+    layer in the network, which are not normalized to the real probabilities.
 
 Segmentation
 ------------

@@ -316,7 +316,7 @@ bool WriteFrameOutput(const ExecutionObject &eo)
     for (int i = k - 1; i >= 0; i--)
     {
         std::cout << k-i << ": " << imagenet_classes[sorted[i].second]
-                  << ", prob = " << (float) sorted[i].first / 256 << std::endl;
+                  << std::endl;
     }
 
     return true;
