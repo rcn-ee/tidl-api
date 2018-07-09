@@ -1,0 +1,8 @@
+numFrames   = 9000
+inData   = /usr/share/ti/tidl/examples/test/testvecs/input/shar_pei.raw
+outData   = "/usr/share/ti/tidl/examples/classification/stats_tool_out.bin"
+netBinFile      = "/usr/share/ti/tidl/examples/test/testvecs/config/tidl_models/dogs_net_j11v2.bin"
+paramsBinFile   = "/usr/share/ti/tidl/examples//test/testvecs/config/tidl_models/dogs_param_j11v2.bin"
+inWidth = 224
+inHeight = 224
+inNumChannels = 3
