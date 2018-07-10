@@ -44,14 +44,14 @@ namespace tidl {
 
 //! Enumerates types of devices available to offload the network.
 enum class DeviceType { DSP, /**< Offload to C66x DSP */
-                        DLA  /**< Offload to TI DLA */
+                        EVE  /**< Offload to TI EVE */
                       };
 
 //! Enumerates IDs for devices of a given type.
-enum class DeviceId : int { ID0=0, /**< DSP1 or DLA1 */
-                            ID1,   /**< DSP2 or DLA2 */
-                            ID2,   /**< DLA3 */
-                            ID3    /**< DLA4 */
+enum class DeviceId : int { ID0=0, /**< DSP1 or EVE1 */
+                            ID1,   /**< DSP2 or EVE2 */
+                            ID2,   /**< EVE3 */
+                            ID3    /**< EVE4 */
                           };
 
 //! Used to specify the set of devices available to an Executor
@@ -79,10 +79,10 @@ class Executor
         //!   Configuration configuration;
         //!   configuration.ReadFromFile("path to configuration file");
         //!   DeviceIds ids1 = {DeviceId::ID2, DeviceId::ID3};
-        //!   Executor executor(DeviceType::DLA, ids, configuration);
+        //!   Executor executor(DeviceType::EVE, ids, configuration);
         //! @endcode
         //!
-        //! @param device_type DSP or EVE/DLA device
+        //! @param device_type DSP or EVE device
         //! @param ids Set of devices uses by this instance of the Executor
         //! @param configuration Configuration used to initialize the Executor
         //! @param layers_group_id Layers group that this Executor should run
@@ -100,7 +100,7 @@ class Executor
 
         //! @brief Returns the number of devices of the specified type
         //! available for TI DL.
-        //! @param  device_type DSP or EVE/DLA device
+        //! @param  device_type DSP or EVE/EVE device
         //! @return number of devices available
         static uint32_t GetNumDevices(DeviceType device_type);
 

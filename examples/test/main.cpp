@@ -78,9 +78,9 @@ int main(int argc, char *argv[])
     signal(SIGTERM, exit);
 
     // If there are no devices capable of offloading TIDL on the SoC, exit
-    uint32_t num_dla = Executor::GetNumDevices(DeviceType::DLA);
+    uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
-    if (num_dla == 0 && num_dsp == 0)
+    if (num_eve == 0 && num_dsp == 0)
     {
         std::cout << "TI DL not supported on this SoC." << std::endl;
         return EXIT_SUCCESS;
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
     // Process arguments
     std::string config_file;
     int         num_devices = 1;
-    DeviceType  device_type = DeviceType::DLA;
+    DeviceType  device_type = DeviceType::EVE;
     ProcessArgs(argc, argv, config_file, num_devices, device_type);
 
     bool status = true;
@@ -98,17 +98,26 @@ int main(int argc, char *argv[])
         status = RunConfiguration(config_file, num_devices, device_type);
     else
     {
-        if (num_dla > 0)
+        if (num_eve > 0)
         {
-            //TODO: Use memory availability to determine # devices
             // Run on 2 devices because there is not enough CMEM available by
             // default
-            if (num_dla = 4) num_dla = 2;
-            status = RunAllConfigurations(num_dla, DeviceType::DLA);
+            if (num_eve = 4)
+            {
+                std::cout
+                 << "Running on 2 EVE devices instead of the available 4 "
+                 << "due to insufficient OpenCL global memory. Refer the "
+                 << "TIDL API User's Guide, Frequently Asked Questions, "
+                 << "Section \"Insufficient OpenCL global memory\" for details "
+                 << "on increasing the amount of CMEM available for OpenCL."
+                 << std::endl;
+                num_eve = 2;
+            }
+            status = RunAllConfigurations(num_eve, DeviceType::EVE);
             status &= RunMultipleExecutors(
                      "testvecs/config/infer/tidl_config_j11_v2.txt",
                      "testvecs/config/infer/tidl_config_j11_cifar.txt",
-                     num_dla);
+                     num_eve);
         }
 
         if (num_dsp > 0)
@@ -243,7 +252,7 @@ bool RunAllConfigurations(int32_t num_devices, DeviceType device_type)
 {
     std::vector<std::string> configurations;
 
-    if (device_type == DeviceType::DLA)
+    if (device_type == DeviceType::EVE)
         configurations = {"dense_1x1",  "j11_bn", "j11_cifar",
                           "j11_controlLayers", "j11_prelu", "j11_v2",
                           "jseg21", "jseg21_tiscapes", "smallRoi", "squeeze1_1"};
@@ -259,7 +268,7 @@ bool RunAllConfigurations(int32_t num_devices, DeviceType device_type)
                                   + config + ".txt";
         std::cout << "Running " << config << " on " << num_devices
                   << " devices, type "
-                  << ((device_type == DeviceType::DLA) ? "EVE" : "DSP")
+                  << ((device_type == DeviceType::EVE) ? "EVE" : "DSP")
                   << std::endl;
 
         Configuration configuration;
@@ -367,7 +376,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
                       break;
 
             case 't': if (*optarg == 'e')
-                          device_type = DeviceType::DLA;
+                          device_type = DeviceType::EVE;
                       else if (*optarg == 'd')
                           device_type = DeviceType::DSP;
                       else
@@ -404,7 +413,7 @@ void DisplayHelp()
                  "Optional arguments:\n"
                  " -c                   Path to the configuration file\n"
                  " -n <number of cores> Number of cores to use (1 - 4)\n"
-                 " -t <d|e>             Type of core. d -> DSP, e -> DLA\n"
+                 " -t <d|e>             Type of core. d -> DSP, e -> EVE\n"
                  " -v                   Verbose output during execution\n"
                  " -h                   Help\n";
 }

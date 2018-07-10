@@ -84,7 +84,7 @@ ExecutorImpl::ExecutorImpl(DeviceType core_type, const DeviceIds& ids,
     std::string name;
     if (core_type_m == DeviceType::DSP)
         name  = "";
-    else if (core_type_m == DeviceType::DLA)
+    else if (core_type_m == DeviceType::EVE)
         name = STRING(SETUP_KERNEL) ";" STRING(INIT_KERNEL) ";" STRING(PROCESS_KERNEL) ";" STRING(CLEANUP_KERNEL);
 
     device_m = Device::Create(core_type_m, ids, name);

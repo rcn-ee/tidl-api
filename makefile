@@ -1,6 +1,7 @@
+
 # Copyright (c) 2018 Texas Instruments Incorporated - http://www.ti.com/
 # All rights reserved.
-#
+# 
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
 # * Redistributions of source code must retain the above copyright
@@ -11,7 +12,7 @@
 # * Neither the name of Texas Instruments Incorporated nor the
 # names of its contributors may be used to endorse or promote products
 # derived from this software without specific prior written permission.
-#
+# 
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -24,17 +25,52 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-MAJOR_VER=1
-MINOR_VER=1
-PATCH_VER=0
-BUILD_VER=2
 
-ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
-BUILD_SHA?=$(shell git rev-parse --short HEAD)
+# makefile for building from the tidl-api git repo
+# Cross-compilation requires TARGET_ROOTDIR to be set.
+# E.g.
+# PSDK_LINUX=<path to Processor Linux SDK install>
+# TARGET_ROOTDIR=$PSDK_LINUX/linux-devkit/sysroots/armv7ahf-neon-linux-gnueabi
+
+ifneq (,$(findstring 86, $(shell uname -m)))
+DEST_DIR ?= $(CURDIR)/install/am57
+VIEWER_TARGET=x86
+ifeq ($(TARGET_ROOTDIR),)
+$(error Set TARGET_ROOTDIR to the ARM Linux devkit/filesystem)
+endif
+else
+VIEWER_TARGET=arm
 endif
 
-.PHONY: $(BUILD_ID)
-BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
-                awk '{ printf ("%02d.%02d.%02d.%02d", $(MAJOR_VER), \
-                $(MINOR_VER), $(PATCH_VER), $(BUILD_VER)); }') \
-			-D_BUILD_SHA=$(BUILD_SHA)
+INSTALL_DIR_API = $(DEST_DIR)/usr/share/ti/tidl
+INSTALL_DIR_EXAMPLES = $(DEST_DIR)/usr/share/ti/examples/tidl
+
+CP_ARGS = -Prf
+ifneq (,$(findstring 86, $(shell uname -m)))
+CP_ARGS += --preserve=mode,timestamps --no-preserve=ownership
+endif
+
+build-api:
+	$(MAKE) -C tidl_api
+
+build-examples: install-api
+	$(MAKE) -C examples
+
+# Build HTML from Sphinx RST, requires Sphinx to be installed
+build-docs:
+	$(MAKE) -C docs
+
+install-api: build-api
+	mkdir -p $(INSTALL_DIR_API)
+	cp $(CP_ARGS) tidl_api $(INSTALL_DIR_API)/
+
+install-examples: build-examples
+	mkdir -p $(INSTALL_DIR_EXAMPLES)
+	cp $(CP_ARGS) examples/* $(INSTALL_DIR_EXAMPLES)/
+
+build-viewer:
+	$(MAKE) TARGET=$(VIEWER_TARGET) -C viewer
+
+clean:
+	$(MAKE) -C tidl_api	clean
+	$(MAKE) -C examples	clean

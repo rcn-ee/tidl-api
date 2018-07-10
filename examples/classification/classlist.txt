@@ -1,0 +1,13 @@
+coffee_mug
+coffeepot
+tennis_ball
+baseball
+sunglass
+sunglasses
+water_bottle
+pill_bottle
+beer_glass
+fountain_pen
+laptop
+envelope
+notebook

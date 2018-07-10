@@ -24,17 +24,18 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-MAJOR_VER=1
-MINOR_VER=1
-PATCH_VER=0
-BUILD_VER=2
+EXE = tidl_classification
 
-ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
-BUILD_SHA?=$(shell git rev-parse --short HEAD)
-endif
+include ../make.common
 
-.PHONY: $(BUILD_ID)
-BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
-                awk '{ printf ("%02d.%02d.%02d.%02d", $(MAJOR_VER), \
-                $(MINOR_VER), $(PATCH_VER), $(BUILD_VER)); }') \
-			-D_BUILD_SHA=$(BUILD_SHA)
+LIBS     += -lopencv_highgui -lopencv_imgcodecs -lopencv_videoio\
+			-lopencv_imgproc -lopencv_core
+
+SOURCES = main.cpp multiple_executors.cpp findclasses.cpp
+
+$(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
+	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(LDFLAGS) $(LIBS) -o $@
+
+clean::
+	$(RM) -f $(EXE)
+
