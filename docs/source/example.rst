@@ -4,54 +4,65 @@ Examples
 
 We ship three end-to-end examples within the tidl-api package
 to demonstrate three categories of deep learning networks.  The first
-two examples can run on AM57x SoCs with either DLA or DSP.  The last
-example requires AM57x SoCs with both DLA and DSP.  The performance
+two examples can run on AM57x SoCs with either EVE or DSP devices.  The last
+example requires AM57x SoCs with both EVE and DSP.  The performance
 numbers that we present here were obtained on an AM5729 EVM, which
-includes 2 ARM A15 cores running at 1.5GHz, 4 DLA cores at 535MHz, and
+includes 2 ARM A15 cores running at 1.5GHz, 4 EVE cores at 535MHz, and
 2 DSP cores at 750MHz.
+
+For each example, we report device processing time, host processing time,
+and TIDL API overhead.  **Device processing time** is measured on the device,
+from the moment processing starts for a frame till processing finishes.
+**Host processing time** is measured on the host, from the moment
+``ProcessFrameStartAsync()`` is called till ``ProcessFrameWait()`` returns
+in user application.  It includes the TIDL API overhead, the OpenCL runtime
+overhead, and the time to copy user input data into padded TIDL internal
+buffers.
 
 Imagenet
 --------
 
 The imagenet example takes an image as input and outputs 1000 probabilities.
 Each probability corresponds to one object in the 1000 objects that the
-network is pre-trained with.  Our example outputs top 5 probabilities
+network is pre-trained with.  Our example outputs top 5 predictions
 as the most likely objects that the input image can be.
 
 The following figure and tables shows an input image, top 5 predicted
-objects as output, and the processing time on either DLA or DSP.
+objects as output, and the processing time on either EVE or DSP.
 
 .. image:: ../../examples/test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg
    :width: 600
 
 .. table::
 
-    ==== ============== ============
-    Rank Object Classes Probability
-    ==== ============== ============
-    1    tabby          0.996
-    2    Egyptian_cat   0.977
-    3    tiger_cat      0.973
-    4    lynx           0.941
-    5    Persian_cat    0.922
-    ==== ============== ============
+    ==== ==============
+    Rank Object Classes
+    ==== ==============
+    1    tabby
+    2    Egyptian_cat
+    3    tiger_cat
+    4    lynx
+    5    Persian_cat
+    ==== ==============
 
 .. table::
 
    ====================== ==================== ============
    Device Processing Time Host Processing Time API Overhead
    ====================== ==================== ============
-   DLA: 123.1 ms          124.7 ms             1.34 %
+   EVE: 123.1 ms          124.7 ms             1.34 %
    **OR**
    DSP: 117.9 ms          119.3 ms             1.14 %
    ====================== ==================== ============
 
 The particular network that we ran in this category, jacintonet11v2,
-has 14 layers.  User can specify whether to run the network on DLA or DSP
-for acceleration.  We can see that DLA time is slightly higher than DSP time.
-Host time includes the OpenCL runtime overhead and the time to copy user
-input data into padded TIDL buffers.  We can see that the overall overhead
-is less than 1.5%.
+has 14 layers.  User can specify whether to run the network on EVE or DSP
+for acceleration.  We can see that EVE time is slightly higher than DSP time.
+We can also see that the overall overhead is less than 1.5%.
+
+.. note::
+    The predicitions reported here are based on the output of the softmax
+    layer in the network, which are not normalized to the real probabilities.
 
 Segmentation
 ------------
@@ -70,14 +81,14 @@ in blue and background in gray.
 
 The network we ran in this category is jsegnet21v2, which has 26 layers.
 From the reported time in the following table, we can see that this network
-runs significantly faster on DLA than on DSP.
+runs significantly faster on EVE than on DSP.
 
 .. table::
 
    ====================== ==================== ============
    Device Processing Time Host Processing Time API Overhead
    ====================== ==================== ============
-   DLA: 296.5 ms          303.3 ms             2.26 %
+   EVE: 296.5 ms          303.3 ms             2.26 %
    **OR**
    DSP: 812.0 ms          818.4 ms             0.79 %
    ====================== ==================== ============
@@ -100,8 +111,8 @@ vehicles in blue and road signs in yellow.
 .. image:: images/pexels-photo-378570-ssd.jpg
    :width: 600
 
-The network can be run entirely on either DLA or DSP.  But the best
-performance comes with running the first 30 layers on DLA and the
+The network can be run entirely on either EVE or DSP.  But the best
+performance comes with running the first 30 layers on EVE and the
 next 13 layers on DSP, for this particular jdetnet_ssd network.
 Note the **AND** in the following table for the reported time.
 Our end-to-end example shows how easy it is to assign a layers group id
@@ -113,15 +124,19 @@ to an *Executor* and how easy it is to connect the output from one
    ====================== ==================== ============
    Device Processing Time Host Processing Time API Overhead
    ====================== ==================== ============
-   DLA: 175.2 ms          179.1 ms             2.14 %
+   EVE: 175.2 ms          179.1 ms             2.14 %
    **AND**
    DSP:  21.1 ms           22.3 ms             5.62 %
    ====================== ==================== ============
 
+Test
+----
+This example is used to test pre-converted networks included in the TIDL API package (``test/testvecs/config/tidl_models``). When run without any arguments, the program ``test_tidl`` will run all available networks on the C66x DSPs and EVEs available on the SoC. Use the ``-c`` option to specify a single network. Run ``test_tidl -h``  for details.
+
 Running Examples
 ----------------
 
-The examples are located in ``/usr/share/ti/tidl-api/examples`` on
+The examples are located in ``/usr/share/ti/tidl/examples`` on
 the EVM file system.  Each example needs to be run its own directory.
 Running an example with ``-h`` will show help message with option set.
 The following code section shows how to run the examples, and
@@ -151,7 +166,7 @@ the test program that tests all supported TIDL network configs.
    root@am57xx-evm:/usr/share/ti/tidl-api/examples/segmentation# cd ../ssd_multibox/; make -j4
    root@am57xx-evm:/usr/share/ti/tidl-api/examples/ssd_multibox# ./ssd_multibox -i ../test/testvecs/input/roads/pexels-photo-378570.jpeg
    Input: ../test/testvecs/input/roads/pexels-photo-378570.jpeg
-   frame[0]: Time on DLA:  175.2ms, host:    179ms API overhead:    2.1 %
+   frame[0]: Time on EVE:  175.2ms, host:    179ms API overhead:    2.1 %
    frame[0]: Time on DSP:  21.06ms, host:  22.43ms API overhead:   6.08 %
    Saving frame 0 with SSD multiboxes to: multibox_0.png
    Loop total time (including read/write/print/etc):  423.8ms
