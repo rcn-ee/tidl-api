@@ -9,5 +9,4 @@ pill_bottle
 beer_glass
 fountain_pen
 laptop
-envelope
 notebook

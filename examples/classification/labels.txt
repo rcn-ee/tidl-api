@@ -1,9 +1,0 @@
-shar_pei
-golden_retriever
-afghan_hound
-dachshund
-german_shepherd
-labrador_retriever
-pomeranian
-rottweiler
-background
