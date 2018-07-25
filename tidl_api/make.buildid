@@ -27,7 +27,7 @@
 MAJOR_VER=1
 MINOR_VER=0
 PATCH_VER=0
-BUILD_VER=2
+BUILD_VER=3
 
 ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
 BUILD_SHA?=$(shell git rev-parse --short HEAD)
