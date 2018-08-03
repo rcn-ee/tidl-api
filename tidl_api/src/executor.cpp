@@ -104,7 +104,7 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
     up_malloc_ddr<TIDL_CreateParams> shared_createparam(
                                             malloc_ddr<TIDL_CreateParams>(),
                                             &__free_ddr);
-    InitializeNetworkCreateParam(shared_createparam.get(), configuration);
+    InitializeNetworkCreateParam(shared_createparam.get());
 
     // Read network from file into network struct in TIDL_CreateParams
     sTIDL_Network_t *net = &(shared_createparam.get())->net;
@@ -113,9 +113,6 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
                              reinterpret_cast<char *>(net),
                              sizeof(sTIDL_Network_t));
     assert(status != false);
-
-    //TODO: Why is this set here?
-    net->interElementSize = 4;
 
     // Force to run full network if runFullNet is set
     if (configuration.runFullNet)
@@ -142,6 +139,10 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
                                   configuration_m.EXTMEM_HEAP_SIZE,
                                   configuration_m.enableInternalInput)} );
     }
+
+    if (configuration_m.enableOutputTrace)
+        for (auto &eo : execution_objects_m)
+            eo->EnableOutputBufferTrace();
 
     for (auto &eo : execution_objects_m)
         eo->RunAsync(ExecutionObject::CallType::INIT);
@@ -215,8 +216,7 @@ void ExecutorImpl::Cleanup()
 }
 
 
-void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
-                                          const Configuration& configuration)
+void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP)
 {
     CP->currCoreId           = layers_group_id_m;
     CP->currLayersGroupId    = layers_group_id_m;
@@ -227,7 +227,14 @@ void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
     CP->quantHistoryParam1   = tidl::internal::QUANT_HISTORY_PARAM1;
     CP->quantHistoryParam2   = tidl::internal::QUANT_HISTORY_PARAM2;
     CP->quantMargin          = tidl::internal::QUANT_MARGIN;
-    CP->optimiseExtMem       = TIDL_optimiseExtMemL1;
+
+    // If trace is enabled, setup the device TIDL library to allocate separate
+    // output buffers for each layer. This makes it possible for the host
+    // to access the output of each layer after a frame is processed.
+    if (configuration_m.enableOutputTrace)
+        CP->optimiseExtMem       = TIDL_optimiseExtMemL0;
+    else
+        CP->optimiseExtMem       = TIDL_optimiseExtMemL1;
 }
 
 Exception::Exception(const std::string& error, const std::string& file,

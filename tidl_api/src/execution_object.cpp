@@ -36,6 +36,9 @@
 #include "configuration.h"
 #include "common_defines.h"
 #include <string.h>
+#include "tidl_create_params.h"
+#include <fstream>
+#include <climits>
 
 using namespace tidl;
 
@@ -76,6 +79,16 @@ class ExecutionObject::Impl
 
         // Frame being processed by the EO
         int                             current_frame_idx_m;
+
+        // Trace related
+        uint32_t                          num_network_layers_m;
+        up_malloc_ddr<OCL_TIDL_BufParams> trace_buf_params_m;
+        size_t                            trace_buf_params_sz_m;
+        void WriteLayerOutputsToFile (const std::string& filename_prefix) const;
+
+        const LayerOutput* GetOutputFromLayer (uint32_t layer_index,
+                                               uint32_t output_index) const;
+        const LayerOutputs* GetOutputsFromAllLayers() const;
 };
 
 
@@ -113,7 +126,10 @@ ExecutionObject::Impl::Impl(Device* d,
     in_m(nullptr, 0),
     out_m(nullptr, 0),
     device_index_m(device_index),
-    current_frame_idx_m(0)
+    current_frame_idx_m(0),
+    num_network_layers_m(0),
+    trace_buf_params_m(nullptr, &__free_ddr),
+    trace_buf_params_sz_m(0)
 {
     // Allocate a heap for TI DL to use on the device
     tidl_extmem_heap_m.reset(malloc_ddr<char>(extmem_heap_size));
@@ -148,6 +164,11 @@ ExecutionObject::Impl::Impl(Device* d,
 
     k_initialize_m.reset(new Kernel(device_m,
                                     STRING(INIT_KERNEL), args, device_index_m));
+
+    // Save number of layers in the network
+    const TIDL_CreateParams* cp =
+                static_cast<const TIDL_CreateParams *>(create_arg.ptr());
+    num_network_layers_m = cp->net.numLayers;
 }
 
 // Pointer to implementation idiom: https://herbsutter.com/gotw/_100/:
@@ -229,6 +250,48 @@ float ExecutionObject::GetProcessTimeInMilliSeconds() const
     return ((float)GetProcessCycles())/frequency * 1000;
 }
 
+const LayerOutput* ExecutionObject::GetOutputFromLayer(
+                         uint32_t layer_index, uint32_t output_index) const
+{
+    return pimpl_m->GetOutputFromLayer(layer_index, output_index);
+}
+
+const LayerOutputs* ExecutionObject::GetOutputsFromAllLayers() const
+{
+    return pimpl_m->GetOutputsFromAllLayers();
+}
+
+//
+// Allocate an OpenCL buffer for TIDL layer output buffer metadata.
+// The device will populate metadata for every buffer that is used as an
+// output buffer by a layer.
+//
+void ExecutionObject::EnableOutputBufferTrace()
+{
+    pimpl_m->trace_buf_params_sz_m = (sizeof(OCL_TIDL_BufParams)*
+                                       pimpl_m->num_network_layers_m*
+                                       TIDL_NUM_OUT_BUFS);
+
+    pimpl_m->trace_buf_params_m.reset(malloc_ddr<OCL_TIDL_BufParams>
+                                      (pimpl_m->trace_buf_params_sz_m));
+
+    // Device will update bufferId if there is valid data for the entry
+    OCL_TIDL_BufParams* bufferParams = pimpl_m->trace_buf_params_m.get();
+    for (uint32_t i = 0; i < pimpl_m->num_network_layers_m; i++)
+        for (int j = 0; j < TIDL_NUM_OUT_BUFS; j++)
+        {
+            OCL_TIDL_BufParams *bufP =
+                                &bufferParams[i*TIDL_NUM_OUT_BUFS+j];
+            bufP->bufferId = UINT_MAX;
+        }
+}
+
+void
+ExecutionObject::WriteLayerOutputsToFile(const std::string& filename_prefix) const
+{
+    pimpl_m->WriteLayerOutputsToFile(filename_prefix);
+}
+
 //
 // Create a kernel to call the "process" function
 //
@@ -252,7 +315,10 @@ ExecutionObject::Impl::SetupProcessKernel(const ArgInfo& in, const ArgInfo& out)
                         in,
                         out,
                         ArgInfo(tidl_extmem_heap_m.get(),
-                                shared_initialize_params_m->tidlHeapSize)
+                                shared_initialize_params_m->tidlHeapSize),
+                        ArgInfo(trace_buf_params_m.get(),
+                                trace_buf_params_sz_m)
+
                       };
 
     k_process_m.reset(new Kernel(device_m,
@@ -292,10 +358,13 @@ static size_t writeDataS8(char *writePtr, const char *ptr, int n, int width,
     return width*height*n;
 }
 
+//
+// Copy from host buffer to TIDL device buffer
+//
 void ExecutionObject::Impl::HostWriteNetInput()
 {
-    char* readPtr  = (char *) in_m.ptr();
-    PipeInfo *pipe = in_m.GetPipe();
+    const char*     readPtr  = (const char *) in_m.ptr();
+    const PipeInfo* pipe     = in_m.GetPipe();
 
     for (unsigned int i = 0; i < shared_initialize_params_m->numInBufs; i++)
     {
@@ -325,10 +394,13 @@ void ExecutionObject::Impl::HostWriteNetInput()
     }
 }
 
+//
+// Copy from TIDL device buffer into host buffer
+//
 void ExecutionObject::Impl::HostReadNetOutput()
 {
     char* writePtr = (char *) out_m.ptr();
-    PipeInfo *pipe = out_m.GetPipe();
+    PipeInfo* pipe = out_m.GetPipe();
 
     for (unsigned int i = 0; i < shared_initialize_params_m->numOutBufs; i++)
     {
@@ -455,4 +527,128 @@ bool ExecutionObject::Impl::Wait(CallType ct)
     }
 
     return false;
+}
+
+//
+// Write the trace data to output files
+//
+void
+ExecutionObject::Impl::WriteLayerOutputsToFile(const std::string& filename_prefix) const
+{
+    if (trace_buf_params_sz_m == 0)
+        return;
+
+    OCL_TIDL_BufParams* bufferParams = trace_buf_params_m.get();
+
+    for (uint32_t i = 0; i < num_network_layers_m; i++)
+        for (int j = 0; j < TIDL_NUM_OUT_BUFS; j++)
+        {
+            OCL_TIDL_BufParams* buf = &bufferParams[i*TIDL_NUM_OUT_BUFS+j];
+
+            if (buf->bufferId == UINT_MAX)
+                continue;
+
+            size_t buffer_size = buf->numChannels * buf->ROIHeight *
+                                 buf->ROIWidth;
+
+            char *tmp = new char[buffer_size];
+
+            if (tmp == nullptr)
+                throw Exception("Out of memory, new failed",
+                        __FILE__, __FUNCTION__, __LINE__);
+
+            writeDataS8(
+                tmp,
+                (char *) tidl_extmem_heap_m.get() + buf->bufPlaneBufOffset
+                + buf->bufPlaneWidth * OCL_TIDL_MAX_PAD_SIZE
+                + OCL_TIDL_MAX_PAD_SIZE,
+                buf->numChannels,
+                buf->ROIWidth,
+                buf->ROIHeight,
+                buf->bufPlaneWidth,
+                ((buf->bufPlaneWidth * buf->bufPlaneHeight)/
+                 buf->numChannels));
+
+            std::string filename(filename_prefix);
+            filename += std::to_string(buf->bufferId) + "_";
+            filename += std::to_string(buf->ROIWidth) + "x";
+            filename += std::to_string(buf->ROIHeight) + ".bin";
+
+            std::ofstream ofs;
+            ofs.open(filename, std::ofstream::out);
+            ofs.write(tmp, buffer_size);
+            ofs.close();
+
+            delete[] tmp;
+        }
+}
+
+
+const LayerOutput* ExecutionObject::Impl::GetOutputFromLayer(
+                            uint32_t layer_index, uint32_t output_index) const
+{
+    if (trace_buf_params_sz_m == 0)
+        return nullptr;
+
+    if (layer_index > num_network_layers_m || output_index > TIDL_NUM_OUT_BUFS)
+        return nullptr;
+
+    OCL_TIDL_BufParams* bufferParams = trace_buf_params_m.get();
+    OCL_TIDL_BufParams* buf = &bufferParams[layer_index*TIDL_NUM_OUT_BUFS+
+                                            output_index];
+
+    if (buf->bufferId == UINT_MAX)
+        return nullptr;
+
+    size_t buffer_size = buf->numChannels * buf->ROIHeight *
+                         buf->ROIWidth;
+
+    char *data = new char[buffer_size];
+
+    if (data == nullptr)
+        throw Exception("Out of memory, new failed",
+                __FILE__, __FUNCTION__, __LINE__);
+
+    writeDataS8(data,
+                (char *) tidl_extmem_heap_m.get() + buf->bufPlaneBufOffset
+                + buf->bufPlaneWidth * OCL_TIDL_MAX_PAD_SIZE
+                + OCL_TIDL_MAX_PAD_SIZE,
+                buf->numChannels,
+                buf->ROIWidth,
+                buf->ROIHeight,
+                buf->bufPlaneWidth,
+                ((buf->bufPlaneWidth * buf->bufPlaneHeight)/
+                 buf->numChannels));
+
+    return new LayerOutput(layer_index, output_index, buf->bufferId,
+                           buf->numROIs, buf->numChannels, buf->ROIHeight,
+                           buf->ROIWidth, data);
+}
+
+const LayerOutputs* ExecutionObject::Impl::GetOutputsFromAllLayers() const
+{
+    LayerOutputs* result = new LayerOutputs;
+
+    for (uint32_t i=0; i < num_network_layers_m; i++)
+        for (int j=0; j < TIDL_NUM_OUT_BUFS; j++)
+        {
+            const LayerOutput* lo = GetOutputFromLayer(i, j);
+            if (lo)
+                result->push_back(std::unique_ptr<const LayerOutput>{ lo });
+        }
+
+    return result;
+}
+
+LayerOutput::LayerOutput(int layer_index, int output_index, int buffer_id,
+                         int num_roi, int num_channels, size_t height,
+                         size_t width, const char* data):
+                        layer_index_m(layer_index), buffer_id_m(buffer_id),
+                        num_roi_m(num_roi), num_channels_m(num_channels),
+                        height_m(height), width_m(width), data_m(data)
+{ }
+
+LayerOutput::~LayerOutput()
+{
+    delete[] data_m;
 }

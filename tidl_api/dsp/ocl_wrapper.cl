@@ -55,9 +55,11 @@ void ocl_tidl_initialize(global unsigned char*            createParams,
 kernel void ocl_tidl_process(global OCL_TIDL_ProcessParams* processParams,
                              global unsigned char*          inputFrame,
                              global unsigned char*          outputData,
-                             global unsigned char*          externalMemory)
+                             global unsigned char*          externalMemory,
+                             global unsigned char*          traceBufferParams)
 {
-    ocl_dsp_tidl_process(processParams, inputFrame, outputData);
+    ocl_dsp_tidl_process(processParams, inputFrame, outputData,
+                         traceBufferParams);
 }
 
 

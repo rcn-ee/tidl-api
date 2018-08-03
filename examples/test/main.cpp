@@ -215,6 +215,8 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
                           << overhead << " %" << std::endl;
 
                 WriteFrame(*eo, output_data_file);
+                if (configuration.enableOutputTrace)
+                    eo->WriteLayerOutputsToFile();
             }
 
             // Read a frame and start processing it with current eo

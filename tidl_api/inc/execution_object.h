@@ -36,6 +36,9 @@ namespace tidl {
 
 class Kernel;
 class Device;
+class LayerOutput;
+
+typedef std::vector<std::unique_ptr<const LayerOutput>> LayerOutputs;
 
 /*! @class ExecutionObject
     @brief Runs the TIDL network on an OpenCL device
@@ -100,6 +103,23 @@ class ExecutionObject
         //! @return Number of milliseconds to process a frame on the device.
         float    GetProcessTimeInMilliSeconds() const;
 
+        //! Write the output buffer for each layer to a file
+        //! <filename_prefix>_<ID>_HxW.bin
+        void WriteLayerOutputsToFile(const std::string& filename_prefix=
+                                     "trace_dump_") const;
+
+        //! Returns a LayerOutput object corresponding to a layer.
+        //! Caller is responsible for deleting the LayerOutput object.
+        //! @see LayerOutput
+        //! @param layer_index The layer index of the layer
+        //! @param output_index The output index of the buffer for a given
+        //!                     layer. Defaults to 0.
+        const LayerOutput* GetOutputFromLayer(uint32_t layer_index,
+                                              uint32_t output_index=0) const;
+
+        //! Get output buffers from all layers
+        const LayerOutputs* GetOutputsFromAllLayers() const;
+
         //! @private
         // Used by the Executor
         enum class CallType { INIT, PROCESS, CLEANUP };
@@ -110,9 +130,44 @@ class ExecutionObject
         ExecutionObject(const ExecutionObject&)            = delete;
         ExecutionObject& operator=(const ExecutionObject&) = delete;
 
+        void EnableOutputBufferTrace();
+
     private:
         class Impl;
         std::unique_ptr<Impl> pimpl_m;
 };
+
+
+/*! @class LayerOutput
+    @brief Describes the output of a layer in terms of its shape. Also
+    includes a pointer to the data.
+*/
+class LayerOutput
+{
+    public:
+        LayerOutput(int layer_index, int output_index, int buffer_id,
+                    int num_roi_m, int num_channels, size_t height,
+                    size_t width, const char* data);
+        ~LayerOutput();
+
+        int    LayerIndex()       const { return layer_index_m; }
+        int    NumberOfChannels() const { return num_channels_m; }
+        size_t Height()           const { return height_m; }
+        size_t Width()            const { return width_m; }
+        size_t Size()             const { return height_m * width_m *
+                                                 num_channels_m; }
+        const char* Data()        const { return data_m; }
+
+    private:
+        int layer_index_m;
+        int output_index_m;
+        int buffer_id_m;
+        int num_roi_m;
+        int num_channels_m;
+        size_t height_m;
+        size_t width_m;
+        const char* data_m;
+};
+
 
 } // namespace tidl

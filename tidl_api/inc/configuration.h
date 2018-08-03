@@ -60,11 +60,11 @@ class Configuration
     int     preProcType;
 
     //! Force to run all layers, regardless of layersGroupId partitioning
-    int     runFullNet;
+    bool    runFullNet;
 
     //! When set, inputs are taken from TIDL internal buffers that contain
     //! outputs of previous layersGroupId, instead of from user application
-    int     enableInternalInput;
+    bool     enableInternalInput;
 
     //! Size of the TI DL per Execution Object heap
     size_t EXTMEM_HEAP_SIZE;
@@ -85,6 +85,9 @@ class Configuration
 
     //! Path to the TIDL parameter binary file
     std::string paramsBinFile;
+
+    //! Enable tracing of output buffers associated with each layer
+    bool enableOutputTrace;
 
     //! Default constructor.
     Configuration();

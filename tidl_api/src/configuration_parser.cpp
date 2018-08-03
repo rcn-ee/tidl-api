@@ -32,6 +32,8 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
+#include <cctype>
 
 #include "configuration.h"
 
@@ -47,30 +49,30 @@ struct ConfigParser : qi::grammar<Iterator, ascii::space_type>
     ConfigParser(Configuration &x) : ConfigParser::base_type(entry)
     {
         using qi::int_;
+        using qi::bool_;
         using qi::lit;
         using qi::lexeme;
         using ascii::char_;
         using qi::_1;
 
-        //TODO: Ignore blank lines and comments
         path %= lexeme[+(char_ - '"')];
 
         // Discard '"'
         q_path = qi::omit[*char_('"')] >> path >> qi::omit[*char_('"')];
 
         entry %=
-          lit("numFrames")   >> '=' >> int_[ph::ref(x.numFrames) = _1]    |
-          lit("preProcType") >> '=' >> int_[ph::ref(x.preProcType) = _1]    |
-          lit("inWidth")     >> '=' >> int_[ph::ref(x.inWidth) = _1]   |
-          lit("inHeight")    >> '=' >> int_[ph::ref(x.inHeight) = _1]  |
-          lit("inNumChannels") >> '=' >> int_[ph::ref(x.inNumChannels) = _1]  |
-
-          lit("inData")     >> "=" >>  q_path[ph::ref(x.inData) = _1]     |
-          lit("outData")    >> "=" >> q_path[ph::ref(x.outData) = _1]     |
-          lit("netBinFile") >> "=" >> q_path[ph::ref(x.netBinFile) = _1]  |
-
-          lit("paramsBinFile") >> "=" >> q_path[ph::ref(x.paramsBinFile) = _1]
-          ;
+         lit("#") >> *(char_) /* discard comments */                         |
+         lit("numFrames")   >> '=' >> int_[ph::ref(x.numFrames) = _1]        |
+         lit("preProcType") >> '=' >> int_[ph::ref(x.preProcType) = _1]      |
+         lit("inWidth")     >> '=' >> int_[ph::ref(x.inWidth) = _1]          |
+         lit("inHeight")    >> '=' >> int_[ph::ref(x.inHeight) = _1]         |
+         lit("inNumChannels") >> '=' >> int_[ph::ref(x.inNumChannels) = _1]  |
+         lit("inData")     >> "=" >>  q_path[ph::ref(x.inData) = _1]         |
+         lit("outData")    >> "=" >> q_path[ph::ref(x.outData) = _1]         |
+         lit("netBinFile") >> "=" >> q_path[ph::ref(x.netBinFile) = _1]      |
+         lit("paramsBinFile") >> "=" >> q_path[ph::ref(x.paramsBinFile) = _1] |
+         lit("enableTrace") >> "=" >> bool_[ph::ref(x.enableOutputTrace) = _1]
+         ;
     }
 
     qi::rule<Iterator, std::string(), ascii::space_type> path;
@@ -92,13 +94,22 @@ bool Configuration::ReadFromFile(const std::string &file_name)
 
     bool result = true;
 
+    int line_num = 0;
     while (getline(IFS, str))
     {
+        line_num++;
+
+        // Skip lines with whitespace
+        auto f = [](unsigned char const c) { return std::isspace(c); };
+        if (std::all_of(str.begin(),str.end(), f))
+            continue;
+
         result = phrase_parse(str.cbegin(), str.cend(), G, ascii::space);
 
         if (!result)
         {
-            std::cout << "Parsing failed at: " << str << std::endl;
+            std::cout << "Parsing failed on line " << line_num
+                      << ": " << str << std::endl;
             break;
         }
     }
