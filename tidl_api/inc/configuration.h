@@ -31,6 +31,7 @@
 //! @file configuration.h
 
 #include <string>
+#include <map>
 #include <iostream>
 
 namespace tidl {
@@ -53,6 +54,8 @@ class Configuration
 
     //! Number of channels in the input frame (e.g. 3 for BGR)
     int     inNumChannels;
+
+    //! @private
     int     noZeroCoeffsPercentage;
 
     //! Pre-processing type applied to the input frame
@@ -89,6 +92,11 @@ class Configuration
     //! Enable tracing of output buffers associated with each layer
     bool enableOutputTrace;
 
+    //! Map of layer index to layer group id. Used to override layer group
+    //! assigment for layers. Any layer not specified in this map will
+    //! retain its existing mapping.
+    std::map<int, int> layerIndex2LayerGroupId;
+
     //! Default constructor.
     Configuration();
 
@@ -100,6 +108,7 @@ class Configuration
 
     //! Read a configuration from the specified file and validate
     bool ReadFromFile(const std::string& file_name);
+
 };
 
 }

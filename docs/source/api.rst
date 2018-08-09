@@ -44,6 +44,10 @@ Network
 
     Path to the TIDL parameter file. Used by the API, must be specified.
 
+.. data:: std::map<int, int> layerIndex2LayerGroupId
+
+    Map of layer index to layer group id. Used to override layer group assigment for layers. Any layer not specified in this map will retain its existing mapping.
+
 Memory Management
 +++++++++++++++++
 The ``Configuration`` object specifies the sizes of 2 heaps. These heaps are allocated from OpenCL global memory that is shared across the host and device. Refer section :ref:`opencl-global-memory` for steps to increase the size of the OpenCL global memory heap.
@@ -55,6 +59,14 @@ The ``Configuration`` object specifies the sizes of 2 heaps. These heaps are all
 .. data:: std::size_t Configuration.EXTMEM_HEAP_SIZE
 
     This field is used to specify the size of the device heap used for all allocations other than network parameters. The constructor for ``Configuration`` sets EXTMEM_HEAP_SIZE to 64MB.  There is one external memory heap for each instance of ``ExecutionObject``
+
+Debug
++++++
+.. data:: bool enableOutputTrace;
+
+    Enable tracing of output buffers associated with each layer.
+
+
 
 API Reference
 -------------

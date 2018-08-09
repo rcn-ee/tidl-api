@@ -4,7 +4,7 @@ Introduction
 
 TI Deep Learning (TIDL) API brings deep learning to the edge by enabling applications to leverage TI's proprietary, highly optimized CNN/DNN implementation on the EVE and C66x DSP compute engines. TIDL will initially target Vision/2D use cases on AM57x SoCs.
 
-This User's Guide covers the TIDL API. For information on TIDL such as the overall development flow, techniques to optimize performance of CNN/DNN on TI's SoCs,performance/benchmarking data and list of supported layers, see the TIDL section in the `Processor SDK Linux Software Developer's Guide`_.
+This User's Guide covers the TIDL API. For information on TIDL such as the overall development flow, techniques to optimize performance of CNN/DNN on TI's SoCs,performance/benchmarking data and list of supported layers, see the TIDL section in the `Processor SDK Linux Software Developer's Guide (TIDL chapter)`_.
 
 .. note::
     TIDL API is available only on AM57x SoCs. It requires OpenCL version 1.1.15.1 or higher.
@@ -32,7 +32,7 @@ The TIDL API leverages TI's `OpenCL`_ product to offload deep learning applicati
 
     Development flow with TIDL APIs
 
-:numref:`TIDL Development flow` shows the overall development process. Deep learning consists to two stages: training at development stage and inference at deployment stage.  Training involves designing neural network model, running training data through the network to tune the model parameters.  Inference takes the pre-trained model including parameters, applies to new input and produces output.  Training is computationally intensive and is done using frameworks such as Caffe/TensorFlow. Once the network is trained, the TIDL converter tool can be used to translate the network and parameters to TIDL. The `Processor SDK Linux Software Developer's Guide`_ provides details on the development flow and and the converter tool. The converter tool generates a TIDL network binary file and model or parameter file. The network file specifies the network graph. The parameter file specifies the weights.
+:numref:`TIDL Development flow` shows the overall development process. Deep learning consists to two stages: training at development stage and inference at deployment stage.  Training involves designing neural network model, running training data through the network to tune the model parameters.  Inference takes the pre-trained model including parameters, applies to new input and produces output.  Training is computationally intensive and is done using frameworks such as Caffe/TensorFlow. Once the network is trained, the TIDL converter tool can be used to translate the network and parameters to TIDL. The `Processor SDK Linux Software Developer's Guide (TIDL chapter)`_ provides details on the development flow and and the converter tool. The converter tool generates a TIDL network binary file and model or parameter file. The network file specifies the network graph. The parameter file specifies the weights.
 
 :numref:`TIDL API Software Architecture` shows the TIDL API software architecture.
 
@@ -93,5 +93,6 @@ Section :ref:`using-tidl-api` contains details on using the APIs. The APIs thems
 Sometimes it is beneficial to partition a network and run different parts on different cores because some types of layers could run faster on EVEs while other types could run faster on DSPs.  TIDL APIs provide the flexibility to run partitioned network across EVEs and DSPs. Refer the :ref:`ssd-example` example for details.
 
 .. _Processor SDK Linux Software Developer's Guide: http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/index.html
+.. _Processor SDK Linux Software Developer's Guide (TIDL chapter): http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/Foundational_Components_TIDL.html
 .. _OpenCV: http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/Foundational_Components.html#opencv
 .. _OpenCL: http://software-dl.ti.com/mctools/esd/docs/opencl/index.html

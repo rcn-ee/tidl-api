@@ -122,6 +122,14 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
                 net->TIDLLayers[i].layersGroupId = layers_group_id_m;
     }
 
+    // If the user has specified an override mapping, apply it
+    else if (!configuration.layerIndex2LayerGroupId.empty())
+    {
+        for (const auto &item : configuration.layerIndex2LayerGroupId)
+            if (item.first < net->numLayers)
+                net->TIDLLayers[item.first].layersGroupId = item.second;
+    }
+
     // Call a setup kernel to allocate and fill network parameters
     InitializeNetworkParams(shared_createparam.get());
 
