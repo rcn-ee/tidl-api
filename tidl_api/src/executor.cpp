@@ -96,6 +96,12 @@ const ExecutionObjects& Executor::GetExecutionObjects() const
     return pimpl_m->execution_objects_m;
 }
 
+ExecutionObject* Executor::operator[](uint32_t index) const
+{
+    assert(index < pimpl_m->execution_objects_m.size());
+    return pimpl_m->execution_objects_m[index].get();
+}
+
 bool ExecutorImpl::Initialize(const Configuration& configuration)
 {
     configuration_m = configuration;
@@ -145,12 +151,10 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
              {new ExecutionObject(device_m.get(), index,
                                   create_arg, param_heap_arg,
                                   configuration_m.EXTMEM_HEAP_SIZE,
+                                  layers_group_id_m,
+                                  configuration_m.enableOutputTrace,
                                   configuration_m.enableInternalInput)} );
     }
-
-    if (configuration_m.enableOutputTrace)
-        for (auto &eo : execution_objects_m)
-            eo->EnableOutputBufferTrace();
 
     for (auto &eo : execution_objects_m)
         eo->RunAsync(ExecutionObject::CallType::INIT);
@@ -294,4 +298,3 @@ const char* Exception::what() const noexcept
 {
     return message_m.c_str();
 }
-

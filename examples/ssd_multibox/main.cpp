@@ -43,6 +43,7 @@
 
 #include "executor.h"
 #include "execution_object.h"
+#include "execution_object_pipeline.h"
 #include "configuration.h"
 #include "../segmentation/object_classes.h"
 
@@ -67,13 +68,13 @@ using namespace tidl;
 using namespace cv;
 
 
-bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
+bool RunConfiguration(const std::string& config_file,
+                      uint32_t num_dsps, uint32_t num_eves,
                       DeviceType device_type, std::string& input_file);
-bool ReadFrame(ExecutionObject& eo, int frame_idx,
+bool ReadFrame(ExecutionObjectPipeline& eop, int frame_idx,
                const Configuration& configuration, int num_frames,
                std::string& image_file, VideoCapture &cap);
-bool WriteFrameOutput(const ExecutionObject &eo_in,
-                      const ExecutionObject &eo_out,
+bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
                       const Configuration& configuration);
 
 void ReportTime(int frame_index, std::string device_name, double elapsed_host,
@@ -81,7 +82,8 @@ void ReportTime(int frame_index, std::string device_name, double elapsed_host,
 
 static void ProcessArgs(int argc, char *argv[],
                         std::string& config,
-                        uint32_t& num_devices,
+                        uint32_t& num_dsps,
+                        uint32_t& num_eves,
                         DeviceType& device_type,
                         std::string& input_file);
 
@@ -110,18 +112,12 @@ int main(int argc, char *argv[])
     // Process arguments
     std::string config      = DEFAULT_CONFIG;
     std::string input_file  = DEFAULT_INPUT;
-    uint32_t num_devices    = 1;
+    uint32_t num_dsps    = 1;
+    uint32_t num_eves    = 1;
     DeviceType  device_type = DeviceType::EVE;
-    ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
+    ProcessArgs(argc, argv, config, num_dsps, num_eves,
+                device_type, input_file);
 
-    // Use same number of EVEs and DSPs
-    num_devices = std::min(num_devices, std::min(num_eve, num_dsp));
-    if (num_devices == 0)
-    {
-        std::cout << "Partitioned execution requires at least 1 EVE and 1 DSP."
-                  << std::endl;
-        return EXIT_FAILURE;
-    }
     if ((object_class_table = GetObjectClassTable(config)) == nullptr)
     {
         std::cout << "No object classes defined for this config." << std::endl;
@@ -136,8 +132,8 @@ int main(int argc, char *argv[])
     std::cout << "Input: " << input_file << std::endl;
     std::string config_file = "../test/testvecs/config/infer/tidl_config_"
                               + config + ".txt";
-    bool status = RunConfiguration(config_file, num_devices, device_type,
-                                   input_file);
+    bool status = RunConfiguration(config_file, num_dsps, num_eves,
+                                   device_type, input_file);
 
     if (!status)
     {
@@ -149,12 +145,15 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
+bool RunConfiguration(const std::string& config_file,
+                      uint32_t num_dsps, uint32_t num_eves,
                       DeviceType device_type, std::string& input_file)
 {
-    DeviceIds ids;
-    for (int i = 0; i < num_devices; i++)
-        ids.insert(static_cast<DeviceId>(i));
+    DeviceIds ids_eve, ids_dsp;
+    for (int i = 0; i < num_eves; i++)
+        ids_eve.insert(static_cast<DeviceId>(i));
+    for (int i = 0; i < num_dsps; i++)
+        ids_dsp.insert(static_cast<DeviceId>(i));
 
     // Read the TI DL configuration file
     Configuration configuration;
@@ -167,7 +166,7 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
     }
 
     // setup input
-    int num_frames = is_default_input ? 3 : 1;
+    int num_frames = is_default_input ? 9 : 9;
     VideoCapture cap;
     std::string image_file;
     if (is_camera_input)
@@ -192,82 +191,58 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
         // and configuration specified
         // EVE will run layersGroupId 1 in the network, while
         // DSP will run layersGroupId 2 in the network
-        Executor executor_eve(DeviceType::EVE, ids, configuration, 1);
-        Executor executor_dsp(DeviceType::DSP, ids, configuration, 2);
+        Executor exe_eve(DeviceType::EVE, ids_eve, configuration, 1);
+        Executor exe_dsp(DeviceType::DSP, ids_dsp, configuration, 2);
 
-        // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects_eve =
-                                            executor_eve.GetExecutionObjects();
-        const ExecutionObjects& execution_objects_dsp =
-                                            executor_dsp.GetExecutionObjects();
-        int num_eos = execution_objects_eve.size();
+        // Construct ExecutionObjectPipeline that utilizes multiple
+        // ExecutionObjects to process a single frame, each ExecutionObject
+        // processes one layerGroup of the network
+        int num_eops = std::max(num_eves, num_dsps);
+        std::vector<ExecutionObjectPipeline *> eops;
+        for (int i = 0; i < num_eops; i++)
+            eops.push_back(new ExecutionObjectPipeline({exe_eve[i%num_eves],
+                                                        exe_dsp[i%num_dsps]}));
 
-        // Allocate input and output buffers for each execution object
-        // Note that "out" is both the output of eo_eve and the input of eo_dsp
-        // This is how two layersGroupIds, 1 and 2, are tied together
+        // Allocate input/output memory for each EOP
         std::vector<void *> buffers;
-        for (int i = 0; i < num_eos; i++)
+        for (auto eop : eops)
         {
-            ExecutionObject *eo_eve = execution_objects_eve[i].get();
-            size_t in_size  = eo_eve->GetInputBufferSizeInBytes();
-            size_t out_size = eo_eve->GetOutputBufferSizeInBytes();
-            ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)  };
-            ArgInfo out = { ArgInfo(malloc(out_size), out_size) };
-            eo_eve->SetInputOutputBuffer(in, out);
+            size_t in_size  = eop->GetInputBufferSizeInBytes();
+            size_t out_size = eop->GetOutputBufferSizeInBytes();
+            void*  in_ptr   = malloc(in_size);
+            void*  out_ptr  = malloc(out_size);
+            assert(in_ptr != nullptr && out_ptr != nullptr);
+            buffers.push_back(in_ptr);
+            buffers.push_back(out_ptr);
 
-            ExecutionObject *eo_dsp = execution_objects_dsp[i].get();
-            size_t out2_size = eo_dsp->GetOutputBufferSizeInBytes();
-            ArgInfo out2 = { ArgInfo(malloc(out2_size), out2_size) };
-            eo_dsp->SetInputOutputBuffer(out, out2);
-
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
-            buffers.push_back(out2.ptr());
+            ArgInfo in(in_ptr,   in_size);
+            ArgInfo out(out_ptr, out_size);
+            eop->SetInputOutputBuffer(in, out);
         }
 
-        #define MAX_NUM_EOS  4
-        struct timespec t0[MAX_NUM_EOS], t1, tloop0, tloop1;
+        struct timespec tloop0, tloop1;
         clock_gettime(CLOCK_MONOTONIC, &tloop0);
 
-        // Process frames with available execution objects in a pipelined manner
-        // additional num_eos iterations to flush the pipeline (epilogue)
-        ExecutionObject *eo_eve, *eo_dsp, *eo_input;
-        for (int frame_idx = 0;
-             frame_idx < num_frames + num_eos; frame_idx++)
+        // Process frames with ExecutionObjectPipelines in a pipelined manner
+        // additional num_eops iterations to flush pipeline (epilogue)
+        for (int frame_idx = 0; frame_idx < num_frames + num_eops; frame_idx++)
         {
-            eo_eve = execution_objects_eve[frame_idx % num_eos].get();
-            eo_dsp = execution_objects_dsp[frame_idx % num_eos].get();
+            ExecutionObjectPipeline* eop = eops[frame_idx % num_eops];
 
-            // Wait for previous frame on the same eo to finish processing
-            if (eo_dsp->ProcessFrameWait())
+            // Wait for previous frame on the same eop to finish processing
+            if (eop->ProcessFrameWait())
             {
-                int finished_idx = eo_dsp->GetFrameIndex();
-                clock_gettime(CLOCK_MONOTONIC, &t1);
-                ReportTime(finished_idx, "DSP",
-                           ms_diff(t0[finished_idx % num_eos], t1),
-                           eo_dsp->GetProcessTimeInMilliSeconds());
-
-                eo_input = execution_objects_eve[finished_idx % num_eos].get();
-                WriteFrameOutput(*eo_input, *eo_dsp, configuration);
+                ReportTime(eop->GetFrameIndex(), eop->GetDeviceName(),
+                           eop->GetHostProcessTimeInMilliSeconds(),
+                           eop->GetProcessTimeInMilliSeconds());
+                WriteFrameOutput(*eop, configuration);
             }
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo_eve, frame_idx, configuration, num_frames,
+            if (ReadFrame(*eop, frame_idx, configuration, num_frames,
                           image_file, cap))
             {
-                clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
-                eo_eve->ProcessFrameStartAsync();
-
-                if (eo_eve->ProcessFrameWait())
-                {
-                    clock_gettime(CLOCK_MONOTONIC, &t1);
-                    ReportTime(frame_idx, "EVE",
-                               ms_diff(t0[frame_idx % num_eos], t1),
-                               eo_eve->GetProcessTimeInMilliSeconds());
-
-                    clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
-                    eo_dsp->ProcessFrameStartAsync();
-                }
+                eop->ProcessFrameStartAsync();
             }
         }
 
@@ -276,6 +251,8 @@ bool RunConfiguration(const std::string& config_file, uint32_t num_devices,
                   << std::setw(6) << std::setprecision(4)
                   << ms_diff(tloop0, tloop1) << "ms" << std::endl;
 
+        for (auto eop : eops)
+            delete eop;
         for (auto b : buffers)
             free(b);
     }
@@ -305,15 +282,15 @@ void ReportTime(int frame_index, std::string device_name, double elapsed_host,
 }
 
 
-bool ReadFrame(ExecutionObject &eo, int frame_idx,
+bool ReadFrame(ExecutionObjectPipeline& eop, int frame_idx,
                const Configuration& configuration, int num_frames,
                std::string& image_file, VideoCapture &cap)
 {
     if (frame_idx >= num_frames)
         return false;
-    eo.SetFrameIndex(frame_idx);
+    eop.SetFrameIndex(frame_idx);
 
-    char*  frame_buffer = eo.GetInputBufferPtr();
+    char*  frame_buffer = eop.GetInputBufferPtr();
     assert (frame_buffer != nullptr);
     int channel_size = configuration.inWidth * configuration.inHeight;
 
@@ -323,7 +300,7 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
         if (is_preprocessed_input)
         {
             std::ifstream ifs(image_file, std::ios::binary);
-            ifs.seekg(frame_idx * channel_size * 3);
+            //ifs.seekg(frame_idx * channel_size * 3);
             ifs.read(frame_buffer, channel_size * 3);
             bool ifs_status = ifs.good();
             ifs.close();
@@ -368,8 +345,7 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
 }
 
 // Create frame with boxes drawn around classified objects
-bool WriteFrameOutput(const ExecutionObject &eo_in,
-                      const ExecutionObject &eo_out,
+bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
                       const Configuration& configuration)
 {
     // Asseembly original frame
@@ -378,13 +354,13 @@ bool WriteFrameOutput(const ExecutionObject &eo_in,
     int channel_size = width * height;
     Mat frame, r_frame, bgr[3];
 
-    unsigned char *in = (unsigned char *) eo_in.GetInputBufferPtr();
+    unsigned char *in = (unsigned char *) eop.GetInputBufferPtr();
     bgr[0] = Mat(height, width, CV_8UC(1), in);
     bgr[1] = Mat(height, width, CV_8UC(1), in + channel_size);
     bgr[2] = Mat(height, width, CV_8UC(1), in + channel_size*2);
     cv::merge(bgr, 3, frame);
 
-    int frame_index = eo_in.GetFrameIndex();
+    int frame_index = eop.GetFrameIndex();
     char outfile_name[64];
     if (! is_camera_input && is_preprocessed_input)
     {
@@ -394,8 +370,8 @@ bool WriteFrameOutput(const ExecutionObject &eo_in,
     }
 
     // Draw boxes around classified objects
-    float *out = (float *) eo_out.GetOutputBufferPtr();
-    int num_floats = eo_out.GetOutputBufferSizeInBytes() / sizeof(float);
+    float *out = (float *) eop.GetOutputBufferPtr();
+    int num_floats = eop.GetOutputBufferSizeInBytes() / sizeof(float);
     for (int i = 0; i < num_floats / 7; i++)
     {
         int index = (int)    out[i * 7 + 0];
@@ -443,13 +419,14 @@ bool WriteFrameOutput(const ExecutionObject &eo_in,
 
 
 void ProcessArgs(int argc, char *argv[], std::string& config,
-                 uint32_t& num_devices, DeviceType& device_type,
-                 std::string& input_file)
+                 uint32_t& num_dsps, uint32_t& num_eves,
+                 DeviceType& device_type, std::string& input_file)
 {
     const struct option long_options[] =
     {
         {"config",      required_argument, 0, 'c'},
-        {"num_devices", required_argument, 0, 'n'},
+        {"num_dsps",    required_argument, 0, 'd'},
+        {"num_eves",    required_argument, 0, 'e'},
         {"image_file",  required_argument, 0, 'i'},
         {"help",        no_argument,       0, 'h'},
         {"verbose",     no_argument,       0, 'v'},
@@ -460,7 +437,8 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
 
     while (true)
     {
-        int c = getopt_long(argc, argv, "c:n:i:hv", long_options, &option_index);
+        int c = getopt_long(argc, argv, "c:d:e:i:hv", long_options,
+                            &option_index);
 
         if (c == -1)
             break;
@@ -470,8 +448,14 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
             case 'c': config = optarg;
                       break;
 
-            case 'n': num_devices = atoi(optarg);
-                      assert (num_devices > 0 && num_devices <= 4);
+            case 'd': num_dsps = atoi(optarg);
+                      assert (num_dsps > 0 && num_dsps <= 
+                                     Executor::GetNumDevices(DeviceType::DSP));
+                      break;
+
+            case 'e': num_eves = atoi(optarg);
+                      assert (num_eves > 0 && num_eves <=
+                                     Executor::GetNumDevices(DeviceType::EVE));
                       break;
 
             case 'i': input_file = optarg;
@@ -507,7 +491,8 @@ void DisplayHelp()
                  "Default is jdetnet.\n"
                  "Optional arguments:\n"
                  " -c <config>          Valid configs: jdetnet \n"
-                 " -n <number of cores> Number of cores to use (1 - 4)\n"
+                 " -d <number>          Number of dsp cores to use\n"
+                 " -e <number>          Number of eve cores to use\n"
                  " -i <image>           Path to the image file\n"
                  "                      Default is 1 frame in testvecs\n"
                  " -i camera            Use camera as input\n"

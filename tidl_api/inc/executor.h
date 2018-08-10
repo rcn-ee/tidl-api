@@ -64,7 +64,7 @@ class ExecutionObject;
 typedef std::vector<std::unique_ptr<ExecutionObject>> ExecutionObjects;
 
 /*! @class Executor
-    @brief Manages the overall execution of a network using the
+    @brief Manages the overall execution of a layersGroup in a network using the
     specified configuration and the set of devices available to the
     executor.
 */
@@ -78,7 +78,7 @@ class Executor
         //! @code
         //!   Configuration configuration;
         //!   configuration.ReadFromFile("path to configuration file");
-        //!   DeviceIds ids1 = {DeviceId::ID2, DeviceId::ID3};
+        //!   DeviceIds ids = {DeviceId::ID2, DeviceId::ID3};
         //!   Executor executor(DeviceType::EVE, ids, configuration);
         //! @endcode
         //!
@@ -98,6 +98,9 @@ class Executor
         //! available on this instance of the Executor
         const ExecutionObjects& GetExecutionObjects() const;
 
+        //! Returns a single execution object at index
+        ExecutionObject* operator[](uint32_t index) const;
+
         //! @brief Returns the number of devices of the specified type
         //! available for TI DL.
         //! @param  device_type DSP or EVE/EVE device
@@ -106,7 +109,7 @@ class Executor
 
         //! @brief Returns a string corresponding to the API version
         //!
-        //! @return <major_ver>.<minor_ver>.<patch_ver>.<git_sha>
+        //! @return \<major_ver>.\<minor_ver>.\<patch_ver>.\<git_sha>
         static std::string GetAPIVersion();
 
         Executor(const Executor&) = delete;

@@ -74,6 +74,8 @@ class Device
 
         static uint32_t GetNumDevices(DeviceType device_type);
 
+        virtual std::string GetDeviceName() = 0;
+
     protected:
 
         static const int MAX_DEVICES = 4;
@@ -101,6 +103,8 @@ class DspDevice: public Device
         DspDevice(const DspDevice&)            = delete;
         DspDevice& operator=(const DspDevice&) = delete;
 
+        virtual std::string GetDeviceName() { return "DSP"; }
+
     protected:
         bool BuildProgramFromBinary(const std::string &binary_filename,
                                     cl_device_id device_ids[],
@@ -116,6 +120,8 @@ class EveDevice : public Device
         EveDevice()                            = delete;
         EveDevice(const EveDevice&)            = delete;
         EveDevice& operator=(const EveDevice&) = delete;
+
+        virtual std::string GetDeviceName() { return "EVE"; }
 
     protected:
         bool BuildProgramFromBinary(const std::string &kernel_names,
@@ -137,7 +143,8 @@ class Kernel
         ~Kernel();
 
         Kernel& RunAsync();
-        bool Wait();
+        bool Wait(float *host_elapsed_ms = nullptr);
+        bool AddCallback(void *user_data);
 
     private:
         cl_kernel           kernel_m;

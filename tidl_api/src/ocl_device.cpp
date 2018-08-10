@@ -91,7 +91,7 @@ DspDevice::DspDevice(const DeviceIds& ids, const std::string &binary_filename):
         // Queue 0 on device 0
         queue_m[0] = clCreateCommandQueue(context_m,
                                           device_ids[0],
-                                          0,
+                                          CL_QUEUE_PROFILING_ENABLE,
                                           &errcode);
         errorCheck(errcode, __LINE__);
         BuildProgramFromBinary(binary_filename, device_ids, 1);
@@ -139,7 +139,7 @@ DspDevice::DspDevice(const DeviceIds& ids, const std::string &binary_filename):
             int index = static_cast<int>(id);
             queue_m[index] = clCreateCommandQueue(context_m,
                                           sub_devices[index],
-                                          0,
+                                          CL_QUEUE_PROFILING_ENABLE,
                                           &errcode);
             errorCheck(errcode, __LINE__);
         }
@@ -187,7 +187,7 @@ EveDevice::EveDevice(const DeviceIds& ids, const std::string &kernel_names):
         int index = static_cast<int>(id);
         queue_m[index] = clCreateCommandQueue(context_m,
                                       all_device_ids[index],
-                                      0,
+                                      CL_QUEUE_PROFILING_ENABLE,
                                       &errcode);
         errorCheck(errcode, __LINE__);
     }
@@ -317,7 +317,7 @@ Kernel& Kernel::RunAsync()
 }
 
 
-bool Kernel::Wait()
+bool Kernel::Wait(float *host_elapsed_ms)
 {
     // Wait called without a corresponding RunAsync
     if (!is_running_m)
@@ -326,12 +326,39 @@ bool Kernel::Wait()
     TRACE::print("\tKernel: waiting...\n");
     cl_int ret = clWaitForEvents(1, &event_m);
     errorCheck(ret, __LINE__);
+
+    if (host_elapsed_ms != nullptr)
+    {
+        cl_ulong t_que, t_end;
+        clGetEventProfilingInfo(event_m, CL_PROFILING_COMMAND_QUEUED,
+                                sizeof(cl_ulong), &t_que, nullptr);
+        clGetEventProfilingInfo(event_m, CL_PROFILING_COMMAND_END,
+                                sizeof(cl_ulong), &t_end, nullptr);
+        *host_elapsed_ms = (t_end - t_que) / 1.0e6;  // nano to milli seconds
+    }
+
     ret = clReleaseEvent(event_m);
     errorCheck(ret, __LINE__);
     TRACE::print("\tKernel: finished execution\n");
 
     is_running_m = false;
     return true;
+}
+
+extern void CallbackWrapper(void *user_data) __attribute__((weak));
+
+static
+void EventCallback(cl_event event, cl_int exec_status, void *user_data)
+{
+    if (exec_status != CL_SUCCESS || user_data == nullptr)  return;
+    if (CallbackWrapper)  CallbackWrapper(user_data);
+}
+
+bool Kernel::AddCallback(void *user_data)
+{
+    if (! is_running_m)  return false;
+    return clSetEventCallback(event_m, CL_COMPLETE, EventCallback, user_data)
+           == CL_SUCCESS;
 }
 
 Kernel::~Kernel()
