@@ -55,15 +55,7 @@ class ExecutionObject::Impl
         bool RunAsync(CallType ct);
         bool Wait    (CallType ct);
 
-        bool SetupProcessKernel(const ArgInfo& in, const ArgInfo& out);
-        void HostWriteNetInput();
-        void HostReadNetOutput();
-        void ComputeInputOutputSizes();
-
         Device*                         device_m;
-        std::unique_ptr<Kernel>         k_initialize_m;
-        std::unique_ptr<Kernel>         k_process_m;
-        std::unique_ptr<Kernel>         k_cleanup_m;
 
         up_malloc_ddr<char>             tidl_extmem_heap_m;
         up_malloc_ddr<OCL_TIDL_InitializeParams> shared_initialize_params_m;
@@ -74,21 +66,39 @@ class ExecutionObject::Impl
         ArgInfo                         in_m;
         ArgInfo                         out_m;
 
-        // Index of the OpenCL device/queue used by this EO
-        uint8_t                         device_index_m;
-
         // Frame being processed by the EO
         int                             current_frame_idx_m;
 
         // Trace related
-        uint32_t                          num_network_layers_m;
-        up_malloc_ddr<OCL_TIDL_BufParams> trace_buf_params_m;
-        size_t                            trace_buf_params_sz_m;
         void WriteLayerOutputsToFile (const std::string& filename_prefix) const;
 
         const LayerOutput* GetOutputFromLayer (uint32_t layer_index,
                                                uint32_t output_index) const;
         const LayerOutputs* GetOutputsFromAllLayers() const;
+
+        uint32_t                          num_network_layers_m;
+        up_malloc_ddr<OCL_TIDL_BufParams> trace_buf_params_m;
+        size_t                            trace_buf_params_sz_m;
+
+    private:
+        void SetupInitializeKernel(const ArgInfo& create_arg,
+                                   const ArgInfo& param_heap_arg,
+                                   size_t extmem_heap_size,
+                                   bool   internal_input);
+        void SetupProcessKernel();
+
+        void HostWriteNetInput();
+        void HostReadNetOutput();
+        void ComputeInputOutputSizes();
+
+        // Index of the OpenCL device/queue used by this EO
+        uint8_t                         device_index_m;
+
+        std::unique_ptr<Kernel>         k_initialize_m;
+        std::unique_ptr<Kernel>         k_process_m;
+        std::unique_ptr<Kernel>         k_cleanup_m;
+
+
 };
 
 
@@ -115,9 +125,6 @@ ExecutionObject::Impl::Impl(Device* d,
                                  size_t extmem_heap_size,
                                  bool   internal_input):
     device_m(d),
-    k_initialize_m(nullptr),
-    k_process_m(nullptr),
-    k_cleanup_m(nullptr),
     tidl_extmem_heap_m (nullptr, &__free_ddr),
     shared_initialize_params_m(nullptr, &__free_ddr),
     shared_process_params_m(nullptr, &__free_ddr),
@@ -125,45 +132,19 @@ ExecutionObject::Impl::Impl(Device* d,
     out_size_m(0),
     in_m(nullptr, 0),
     out_m(nullptr, 0),
-    device_index_m(device_index),
     current_frame_idx_m(0),
     num_network_layers_m(0),
     trace_buf_params_m(nullptr, &__free_ddr),
-    trace_buf_params_sz_m(0)
+    trace_buf_params_sz_m(0),
+    device_index_m(device_index),
+    k_initialize_m(nullptr),
+    k_process_m(nullptr),
+    k_cleanup_m(nullptr)
 {
-    // Allocate a heap for TI DL to use on the device
-    tidl_extmem_heap_m.reset(malloc_ddr<char>(extmem_heap_size));
+    SetupInitializeKernel(create_arg, param_heap_arg, extmem_heap_size,
+                          internal_input);
 
-    // Create a kernel for cleanup
-    KernelArgs cleanup_args;
-    k_cleanup_m.reset(new Kernel(device_m,
-                                 STRING(CLEANUP_KERNEL),
-                                 cleanup_args, device_index_m));
-
-    // Set up parameter struct for the initialize kernel
-    shared_initialize_params_m.reset(malloc_ddr<OCL_TIDL_InitializeParams>());
-    memset(shared_initialize_params_m.get(), 0,
-           sizeof(OCL_TIDL_InitializeParams));
-
-    shared_initialize_params_m->tidlHeapSize = extmem_heap_size;
-    shared_initialize_params_m->l2HeapSize   = tidl::internal::DMEM1_SIZE;
-    shared_initialize_params_m->l1HeapSize   = tidl::internal::DMEM0_SIZE;
-    shared_initialize_params_m->enableTrace  = OCL_TIDL_TRACE_OFF;
-    shared_initialize_params_m->enableInternalInput = internal_input ? 1 : 0;
-
-    // Setup kernel arguments for initialize
-    KernelArgs args = { create_arg,
-                        param_heap_arg,
-                        ArgInfo(tidl_extmem_heap_m.get(),
-                                extmem_heap_size),
-                        ArgInfo(shared_initialize_params_m.get(),
-                                sizeof(OCL_TIDL_InitializeParams)),
-                        device_m->type() == CL_DEVICE_TYPE_ACCELERATOR ?
-                            ArgInfo(nullptr, tidl::internal::DMEM1_SIZE):
-                            ArgInfo(nullptr, 4)                       };
-
-    k_initialize_m.reset(new Kernel(device_m,
-                                    STRING(INIT_KERNEL), args, device_index_m));
+    SetupProcessKernel();
 
     // Save number of layers in the network
     const TIDL_CreateParams* cp =
@@ -210,7 +191,11 @@ int ExecutionObject::GetFrameIndex() const
 
 void ExecutionObject::SetInputOutputBuffer(const ArgInfo& in, const ArgInfo& out)
 {
-    pimpl_m->SetupProcessKernel(in, out);
+    assert(in.ptr() != nullptr && in.size() > 0);
+    assert(out.ptr() != nullptr && out.size() > 0);
+
+    pimpl_m->in_m  = in;
+    pimpl_m->out_m = out;
 }
 
 bool ExecutionObject::ProcessFrameStartAsync()
@@ -292,28 +277,66 @@ ExecutionObject::WriteLayerOutputsToFile(const std::string& filename_prefix) con
     pimpl_m->WriteLayerOutputsToFile(filename_prefix);
 }
 
+
+//
+// Create a kernel to call the "initialize" function
+//
+void
+ExecutionObject::Impl::SetupInitializeKernel(const ArgInfo& create_arg,
+                                             const ArgInfo& param_heap_arg,
+                                             size_t extmem_heap_size,
+                                             bool   internal_input)
+{
+    // Allocate a heap for TI DL to use on the device
+    tidl_extmem_heap_m.reset(malloc_ddr<char>(extmem_heap_size));
+
+    // Create a kernel for cleanup
+    KernelArgs cleanup_args;
+    k_cleanup_m.reset(new Kernel(device_m,
+                                 STRING(CLEANUP_KERNEL),
+                                 cleanup_args, device_index_m));
+
+    // Set up parameter struct for the initialize kernel
+    shared_initialize_params_m.reset(malloc_ddr<OCL_TIDL_InitializeParams>());
+    memset(shared_initialize_params_m.get(), 0,
+           sizeof(OCL_TIDL_InitializeParams));
+
+    shared_initialize_params_m->tidlHeapSize = extmem_heap_size;
+    shared_initialize_params_m->l2HeapSize   = tidl::internal::DMEM1_SIZE;
+    shared_initialize_params_m->l1HeapSize   = tidl::internal::DMEM0_SIZE;
+    shared_initialize_params_m->enableTrace  = OCL_TIDL_TRACE_OFF;
+    shared_initialize_params_m->enableInternalInput = internal_input ? 1 : 0;
+
+    // Setup kernel arguments for initialize
+    KernelArgs args = { create_arg,
+                        param_heap_arg,
+                        ArgInfo(tidl_extmem_heap_m.get(),
+                                extmem_heap_size),
+                        ArgInfo(shared_initialize_params_m.get(),
+                                sizeof(OCL_TIDL_InitializeParams)),
+                        device_m->type() == CL_DEVICE_TYPE_ACCELERATOR ?
+                            ArgInfo(nullptr, tidl::internal::DMEM1_SIZE):
+                            ArgInfo(nullptr, 4)                       };
+
+    k_initialize_m.reset(new Kernel(device_m,
+                                    STRING(INIT_KERNEL), args,
+                                    device_index_m));
+}
+
 //
 // Create a kernel to call the "process" function
 //
-bool
-ExecutionObject::Impl::SetupProcessKernel(const ArgInfo& in, const ArgInfo& out)
+void
+ExecutionObject::Impl::SetupProcessKernel()
 {
-    in_m = in;
-    out_m = out;
-
     shared_process_params_m.reset(malloc_ddr<OCL_TIDL_ProcessParams>());
     shared_process_params_m->enableTrace = OCL_TIDL_TRACE_OFF;
     shared_process_params_m->enableInternalInput =
                                shared_initialize_params_m->enableInternalInput;
     shared_process_params_m->cycles = 0;
 
-    if (shared_process_params_m->enableInternalInput == 0)
-        assert(in.ptr() != nullptr && in.size() > 0);
-
     KernelArgs args = { ArgInfo(shared_process_params_m.get(),
                                 sizeof(OCL_TIDL_ProcessParams)),
-                        in,
-                        out,
                         ArgInfo(tidl_extmem_heap_m.get(),
                                 shared_initialize_params_m->tidlHeapSize),
                         ArgInfo(trace_buf_params_m.get(),
@@ -322,9 +345,8 @@ ExecutionObject::Impl::SetupProcessKernel(const ArgInfo& in, const ArgInfo& out)
                       };
 
     k_process_m.reset(new Kernel(device_m,
-                                 STRING(PROCESS_KERNEL), args, device_index_m));
-
-    return true;
+                                 STRING(PROCESS_KERNEL), args,
+                                 device_index_m));
 }
 
 

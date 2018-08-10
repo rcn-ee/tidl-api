@@ -40,7 +40,7 @@ void ocl_tidl_setup(global unsigned char*        createParams,
 kernel 
 void ocl_tidl_initialize(global unsigned char*            createParams,
                          global unsigned char*            netParamsBuffer,
-                        global unsigned char*            externalMemoryHeapBase,
+                         global unsigned char*            externalMemoryHeapBase,
                          global OCL_TIDL_InitializeParams* initializeParams,
                          local  unsigned char*            l2HeapBase)
 {
@@ -52,13 +52,12 @@ void ocl_tidl_initialize(global unsigned char*            createParams,
                             l2HeapBase);
 }
 
-kernel void ocl_tidl_process(global OCL_TIDL_ProcessParams* processParams,
-                             global unsigned char*          inputFrame,
-                             global unsigned char*          outputData,
-                             global unsigned char*          externalMemory,
-                             global unsigned char*          traceBufferParams)
+kernel
+void ocl_tidl_process(global OCL_TIDL_ProcessParams* processParams,
+                      global unsigned char*          externalMemoryHeapBase,
+                      global unsigned char*          traceBufferParams)
 {
-    ocl_dsp_tidl_process(processParams, inputFrame, outputData,
+    ocl_dsp_tidl_process(processParams, externalMemoryHeapBase,
                          traceBufferParams);
 }
 

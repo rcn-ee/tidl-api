@@ -278,15 +278,15 @@ Kernel::Kernel(Device* device, const std::string& name,
             {
                 cl_mem buffer = device_m->CreateBuffer(arg);
 
-                clSetKernelArg(kernel_m, arg_index++, sizeof(cl_mem), &buffer);
-                TRACE::print("  Arg[%d]: %p\n", arg_index-1, buffer);
+                clSetKernelArg(kernel_m, arg_index, sizeof(cl_mem), &buffer);
+                TRACE::print("  Arg[%d]: %p\n", arg_index, buffer);
 
-                if (buffer != nullptr)  buffers_m.push_back(buffer);
+                buffers_m.push_back(buffer);
             }
             else if (arg.kind() == ArgInfo::Kind::SCALAR)
             {
-                clSetKernelArg(kernel_m, arg_index++, arg.size(), arg.ptr());
-                TRACE::print("  Arg[%d]: %p\n", arg_index-1, arg.ptr());
+                clSetKernelArg(kernel_m, arg_index, arg.size(), arg.ptr());
+                TRACE::print("  Arg[%d]: %p\n", arg_index, arg.ptr());
             }
             else
             {
@@ -295,9 +295,10 @@ Kernel::Kernel(Device* device, const std::string& name,
         }
         else
         {
-            clSetKernelArg(kernel_m, arg_index++, arg.size(), NULL);
-            TRACE::print("  Arg[%d]: local, %d\n", arg_index-1, arg.size());
+            clSetKernelArg(kernel_m, arg_index, arg.size(), NULL);
+            TRACE::print("  Arg[%d]: local, %d\n", arg_index, arg.size());
         }
+        arg_index++;
 
     }
 }
