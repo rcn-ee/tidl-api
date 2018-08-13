@@ -28,6 +28,9 @@
 
 /*! \file execution_object.cpp */
 
+#include <string.h>
+#include <fstream>
+#include <climits>
 #include "executor.h"
 #include "execution_object.h"
 #include "trace.h"
@@ -35,40 +38,10 @@
 #include "parameters.h"
 #include "configuration.h"
 #include "common_defines.h"
-#include <string.h>
 #include "tidl_create_params.h"
-#include <fstream>
-#include <climits>
+#include "device_arginfo.h"
 
 using namespace tidl;
-
-/*! @class PipeInfo
- *  @brief Describe input and output required by piping output and input
- *         between Execution Objects
- */
-class PipeInfo
-{
-    public:
-        uint32_t dataQ_m[OCL_TIDL_MAX_IN_BUFS];
-        uint32_t bufAddr_m[OCL_TIDL_MAX_IN_BUFS];
-};
-
-
-class IODeviceArgInfo
-{
-    public:
-        IODeviceArgInfo(const ArgInfo& arg):
-                        arg_m(arg, DeviceArgInfo::Kind::BUFFER) {} explicit
-
-        IODeviceArgInfo(): arg_m(nullptr, 0, DeviceArgInfo::Kind::BUFFER) {}
-
-        PipeInfo&            GetPipe()      { return pipe_m; }
-        const DeviceArgInfo& GetArg() const { return arg_m; }
-
-    private:
-        DeviceArgInfo arg_m;
-        PipeInfo      pipe_m;
-};
 
 class ExecutionObject::Impl
 {
@@ -231,6 +204,13 @@ void ExecutionObject::SetInputOutputBuffer(const ArgInfo& in, const ArgInfo& out
 
     pimpl_m->in_m  = IODeviceArgInfo(in);
     pimpl_m->out_m = IODeviceArgInfo(out);
+}
+
+void ExecutionObject::SetInputOutputBuffer(const IODeviceArgInfo* in,
+                                           const IODeviceArgInfo* out)
+{
+    pimpl_m->in_m  = *in;
+    pimpl_m->out_m = *out;
 }
 
 bool ExecutionObject::ProcessFrameStartAsync()

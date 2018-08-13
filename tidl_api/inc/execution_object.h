@@ -37,6 +37,7 @@ namespace tidl {
 class Kernel;
 class Device;
 class LayerOutput;
+class IODeviceArgInfo;
 
 typedef std::vector<std::unique_ptr<const LayerOutput>> LayerOutputs;
 
@@ -131,6 +132,10 @@ class ExecutionObject
         ExecutionObject& operator=(const ExecutionObject&) = delete;
 
         void EnableOutputBufferTrace();
+
+        //! @private
+        void SetInputOutputBuffer(const IODeviceArgInfo* in,
+                                  const IODeviceArgInfo* out);
 
     private:
         class Impl;

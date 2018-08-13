@@ -31,6 +31,7 @@
 #pragma once
 
 #include "executor.h"
+#include <memory>
 
 namespace tidl
 {
@@ -59,5 +60,50 @@ class DeviceArgInfo: public ArgInfo
     private:
         Kind         kind_m;
 };
+
+/*! @class PipeInfo
+ *  @brief Describe input and output required by piping output and input
+ *         between Execution Objects
+ */
+class PipeInfo
+{
+    public:
+        uint32_t dataQ_m[OCL_TIDL_MAX_IN_BUFS];
+        uint32_t bufAddr_m[OCL_TIDL_MAX_IN_BUFS];
+};
+
+/*! @class IODeviceArgInfo
+ *  @brief Describe input and output buffers by an Execution Object (EO)
+ *         Also used to chain execution objects - the output buffer of a
+ *         producer EO is the same as the input buffer of a consumer EO.
+ *         The PipeInfo must be shared across the producer and consumer EO,
+ *         hence the shared pointer.
+ */
+class IODeviceArgInfo
+{
+    public:
+        explicit IODeviceArgInfo(const ArgInfo& arg):
+                        arg_m(arg, DeviceArgInfo::Kind::BUFFER)
+        {
+            pipe_m = std::make_shared<PipeInfo>();
+        }
+
+        IODeviceArgInfo(): arg_m(nullptr, 0, DeviceArgInfo::Kind::BUFFER)
+        {
+            pipe_m = nullptr;
+        }
+
+        PipeInfo&            GetPipe()      { return *pipe_m; }
+        const DeviceArgInfo& GetArg() const { return arg_m; }
+
+        //IODeviceArgInfo(const IODeviceArgInfo&)            = delete;
+        //IODeviceArgInfo& operator=(const IODeviceArgInfo&) = delete;
+
+    private:
+        DeviceArgInfo             arg_m;
+        std::shared_ptr<PipeInfo> pipe_m;
+};
+
+
 
 } //namespace
