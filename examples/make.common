@@ -54,3 +54,5 @@ all: $(EXE)
 clean::
 	$(RM) -f $(EXE) stats_tool_out.* *.out
 
+run:
+	./$(EXE)

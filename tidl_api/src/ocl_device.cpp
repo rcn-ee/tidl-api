@@ -270,11 +270,11 @@ Kernel::Kernel(Device* device, const std::string& name,
     errorCheck(err, __LINE__);
 
     int arg_index = 0;
-    for (auto arg : args)
+    for (const auto& arg : args)
     {
         if (!arg.isLocal())
         {
-            if (arg.kind() == ArgInfo::Kind::BUFFER)
+            if (arg.kind() == DeviceArgInfo::Kind::BUFFER)
             {
                 cl_mem buffer = device_m->CreateBuffer(arg);
 
@@ -283,14 +283,14 @@ Kernel::Kernel(Device* device, const std::string& name,
 
                 buffers_m.push_back(buffer);
             }
-            else if (arg.kind() == ArgInfo::Kind::SCALAR)
+            else if (arg.kind() == DeviceArgInfo::Kind::SCALAR)
             {
                 clSetKernelArg(kernel_m, arg_index, arg.size(), arg.ptr());
                 TRACE::print("  Arg[%d]: %p\n", arg_index, arg.ptr());
             }
             else
             {
-                assert ("ArgInfo kind not supported");
+                assert ("DeviceArgInfo kind not supported");
             }
         }
         else
@@ -342,7 +342,7 @@ Kernel::~Kernel()
     clReleaseKernel(kernel_m);
 }
 
-cl_mem Device::CreateBuffer(const ArgInfo &Arg)
+cl_mem Device::CreateBuffer(const DeviceArgInfo &Arg)
 {
     size_t  size     = Arg.size();
     void   *host_ptr = Arg.ptr();

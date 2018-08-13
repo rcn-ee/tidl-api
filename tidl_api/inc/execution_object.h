@@ -145,18 +145,38 @@ class ExecutionObject
 class LayerOutput
 {
     public:
+        //! @private
+        //! Constructor called within API, not by the user
         LayerOutput(int layer_index, int output_index, int buffer_id,
                     int num_roi_m, int num_channels, size_t height,
                     size_t width, const char* data);
+
+        //! Must be called to delete the data pointer.
         ~LayerOutput();
 
+        //! @return The index of a layer
         int    LayerIndex()       const { return layer_index_m; }
+
+        //! @return The number of channels associated with an output
         int    NumberOfChannels() const { return num_channels_m; }
+
+        //! @return The height of the output. Can be 1 for 1D outputs
         size_t Height()           const { return height_m; }
+
+        //! @return The width of the output
         size_t Width()            const { return width_m; }
+
+        //! @return Size of the output in bytes
         size_t Size()             const { return height_m * width_m *
                                                  num_channels_m; }
+        //! @return Pointer to output. Must call destructor to free the
+        //! memory used to hold the output.
         const char* Data()        const { return data_m; }
+
+        //! @private Disable copy construction and assignment since
+        //! class holds a pointer to allocated data
+        LayerOutput(const LayerOutput&)             = delete;
+        LayerOutput& operator= (const LayerOutput&) = delete;
 
     private:
         int layer_index_m;

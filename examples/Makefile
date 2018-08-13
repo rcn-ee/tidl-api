@@ -39,6 +39,10 @@ endef
 all:
 	$(call make_in_dirs, $(DIRS), )
 
+.PHONY: run
+run:
+	$(call make_in_dirs, $(DIRS), run)
+
 .PHONY: clean
 clean:
 	$(call make_in_dirs, $(DIRS), clean)

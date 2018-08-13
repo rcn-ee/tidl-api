@@ -192,12 +192,16 @@ bool ExecutorImpl::InitializeNetworkParams(TIDL_CreateParams *cp)
     // kernel to allocate and initialize network parameters for the layers
     shared_networkparam_heap_m.reset(malloc_ddr<char>(setupParams->networkParamHeapSize));
 
-    KernelArgs args = { ArgInfo(cp, sizeof(TIDL_CreateParams)),
-                        ArgInfo(networkparam.get(), networkparam_size),
-                        ArgInfo(shared_networkparam_heap_m.get(),
-                                setupParams->networkParamHeapSize),
-                        ArgInfo(setupParams.get(),
-                                sizeof(OCL_TIDL_SetupParams)) };
+    KernelArgs args = { DeviceArgInfo(cp, sizeof(TIDL_CreateParams),
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(networkparam.get(), networkparam_size,
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(shared_networkparam_heap_m.get(),
+                                      setupParams->networkParamHeapSize,
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(setupParams.get(),
+                                      sizeof(OCL_TIDL_SetupParams),
+                                      DeviceArgInfo::Kind::BUFFER) };
 
     // Execute kernel on first available device in the Executor
     uint8_t id = static_cast<uint8_t>(*(device_ids_m.cbegin()));

@@ -38,11 +38,12 @@
 #include <vector>
 #include <memory>
 #include "executor.h"
+#include "device_arginfo.h"
 
 namespace tidl
 {
 
-typedef std::vector<ArgInfo> KernelArgs;
+typedef std::vector<DeviceArgInfo> KernelArgs;
 
 class Kernel;
 
@@ -76,7 +77,7 @@ class Device
     protected:
 
         static const int MAX_DEVICES = 4;
-        cl_mem CreateBuffer(const ArgInfo &Arg);
+        cl_mem CreateBuffer(const DeviceArgInfo &Arg);
         void   ReleaseBuffer(cl_mem M);
 
 
