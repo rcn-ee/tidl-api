@@ -69,10 +69,11 @@ class Configuration
     //! outputs of previous layersGroupId, instead of from user application
     bool     enableInternalInput;
 
-    //! Size of the TI DL per Execution Object heap
-    size_t EXTMEM_HEAP_SIZE;
+    //! Size of the device side heap, used for allocating memory required to
+    //! run the network on the device. One per Execution Object.
+    size_t NETWORK_HEAP_SIZE;
 
-    //! Size of the heap used for paramter data
+    //! Size of the heap used for parameter data. One per Executor.
     size_t PARAM_HEAP_SIZE;
 
     //! @brief Location of the input file
@@ -91,6 +92,14 @@ class Configuration
 
     //! Enable tracing of output buffers associated with each layer
     bool enableOutputTrace;
+
+    //! Debug - Generates a trace of host and device function calls
+    bool enableApiTrace;
+
+    //! Debug - Shows total size of PARAM and NETWORK heaps. Also shows bytes
+    //! available after all allocations. Can be used to adjust the heap
+    //! size
+    bool showHeapStats;
 
     //! Map of layer index to layer group id. Used to override layer group
     //! assigment for layers. Any layer not specified in this map will

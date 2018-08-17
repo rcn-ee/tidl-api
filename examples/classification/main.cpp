@@ -60,22 +60,22 @@ int live_input = 1;
 char video_clip[320];
 
 #ifdef TWO_ROIs
-#define RES_X 400                                                              
-#define RES_Y 300                                                            
-#define NUM_ROI_X 2                                                     
-#define NUM_ROI_Y 1                                                      
-#define X_OFFSET 0                                                           
-#define X_STEP   176                                                        
-#define Y_OFFSET 52                                                         
+#define RES_X 400
+#define RES_Y 300
+#define NUM_ROI_X 2
+#define NUM_ROI_Y 1
+#define X_OFFSET 0
+#define X_STEP   176
+#define Y_OFFSET 52
 #define Y_STEP   224
 #else
 #define RES_X 244
-#define RES_Y 244                                                            
-#define NUM_ROI_X 1                                                     
-#define NUM_ROI_Y 1                                                      
-#define X_OFFSET 10                                                         
-#define X_STEP   224                                                     
-#define Y_OFFSET 10                                                    
+#define RES_Y 244
+#define NUM_ROI_X 1
+#define NUM_ROI_Y 1
+#define X_OFFSET 10
+#define X_STEP   224
+#define Y_OFFSET 10
 #define Y_STEP   224
 #endif
 
@@ -235,7 +235,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
         }
 
 #ifdef LIVE_DISPLAY
-    if(NUM_ROI > 1) 
+    if(NUM_ROI > 1)
     {
       for(int i = 0; i < NUM_ROI; i ++) {
         char tmp_string[80];
@@ -350,7 +350,6 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
                 double elapsed_host =
                                 ms_diff(t0[eo->GetFrameIndex() % num_eos], t1);
                 double elapsed_device = eo->GetProcessTimeInMilliSeconds();
-                double overhead = 100 - (elapsed_device/elapsed_host*100);
 #ifdef PERF_VERBOSE
                 std::cout << "frame[" << eo->GetFrameIndex() << "]: "
                           << "Time on device: "
@@ -381,7 +380,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
                           << elapsed_host << "ms ";
              }
 
-             for (int r = 0; r < NUM_ROI; r ++) 
+             for (int r = 0; r < NUM_ROI; r ++)
              {
 	        int rpt_id =  ShowRegion(selclass_history[r]);
                 if(rpt_id >= 0)
@@ -470,10 +469,10 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
           if(live_input == -1) {
             //Rewind!
             cap.release();
-            cap.open(std::string(video_clip)); 
+            cap.open(std::string(video_clip));
           }
         }
- 
+
         }
 
         for (auto b : buffers)
@@ -676,8 +675,6 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
   for (int i = k-1; i >= 0; i--)
   {
       int id = sorted[i].second;
-      char res2show[320];
-      bool found = false;
 
       if (tf_expected_id(id))
       {
@@ -685,7 +682,6 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
                   << k-i << ", prob=" << (float) sorted[i].first / 255 << ", "
                   << labels_classes[sorted[i].second] << " accum_in=" << accum_in << std::endl;
         rpt_id = id;
-        found  = true;
       }
   }
   return rpt_id;
@@ -701,9 +697,9 @@ void tf_preprocess(uchar *out, uchar *in, int size)
 
 int ShowRegion(int roi_history[])
 {
-  if((roi_history[0] >= 0) && (roi_history[0] == roi_history[1])) return roi_history[0];    
-  if((roi_history[0] >= 0) && (roi_history[0] == roi_history[2])) return roi_history[0];    
-  if((roi_history[1] >= 0) && (roi_history[1] == roi_history[2])) return roi_history[1];    
+  if((roi_history[0] >= 0) && (roi_history[0] == roi_history[1])) return roi_history[0];
+  if((roi_history[0] >= 0) && (roi_history[0] == roi_history[2])) return roi_history[0];
+  if((roi_history[1] >= 0) && (roi_history[1] == roi_history[2])) return roi_history[1];
   return -1;
 }
 

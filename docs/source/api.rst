@@ -56,9 +56,9 @@ The ``Configuration`` object specifies the sizes of 2 heaps. These heaps are all
 
     This field is used to specify the size of the device heap used for network parameters. The size depends on the size of the parameter binary file. For example, ``jsegnet21v2``'s parameter file, ``tidl_param_jsegnet21v2.bin`` is 2.6MB. Due to alignment reasons, the parameter heap must be 10% larger than the binary file size - in this case, 2.9MB. The constructor for ``Configuration`` sets PARAM_HEAP_SIZE to 9MB. There is one parameter heap for each instance of ``Executor`` .
 
-.. data:: std::size_t Configuration.EXTMEM_HEAP_SIZE
+.. data:: std::size_t Configuration.NETWORK_HEAP_SIZE
 
-    This field is used to specify the size of the device heap used for all allocations other than network parameters. The constructor for ``Configuration`` sets EXTMEM_HEAP_SIZE to 64MB.  There is one external memory heap for each instance of ``ExecutionObject``
+    This field is used to specify the size of the device heap used for all allocations other than network parameters. The constructor for ``Configuration`` sets NETWORK_HEAP_SIZE to 64MB.  There is one external memory heap for each instance of ``ExecutionObject``
 
 Debug
 +++++

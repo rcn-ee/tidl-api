@@ -41,9 +41,15 @@ using std::unique_ptr;
 Executor::Executor(DeviceType core_type, const DeviceIds& ids,
                    const Configuration& configuration, int layers_group_id)
 {
+    TRACE::enabled = configuration.enableApiTrace;
+
+    TRACE::print("-> Executor::Executor()\n");
+
     pimpl_m = unique_ptr<ExecutorImpl>
               { new ExecutorImpl(core_type, ids, layers_group_id) };
     pimpl_m->Initialize(configuration);
+
+    TRACE::print("<- Executor::Executor()\n");
 }
 
 
@@ -150,10 +156,8 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
              unique_ptr<ExecutionObject>
              {new ExecutionObject(device_m.get(), index,
                                   create_arg, param_heap_arg,
-                                  configuration_m.EXTMEM_HEAP_SIZE,
-                                  layers_group_id_m,
-                                  configuration_m.enableOutputTrace,
-                                  configuration_m.enableInternalInput)} );
+                                  configuration_m,
+                                  layers_group_id_m)} );
     }
 
     for (auto &eo : execution_objects_m)
@@ -186,7 +190,9 @@ bool ExecutorImpl::InitializeNetworkParams(TIDL_CreateParams *cp)
                                             malloc_ddr<OCL_TIDL_SetupParams>(),
                                             &__free_ddr);
 
-    setupParams->enableTrace = OCL_TIDL_TRACE_OFF;
+    // Set up execution trace specified in the configuration
+    EnableExecutionTrace(configuration_m, &setupParams->enableTrace);
+
     setupParams->networkParamHeapSize = configuration_m.PARAM_HEAP_SIZE;
     setupParams->noZeroCoeffsPercentage = configuration_m.noZeroCoeffsPercentage;
     setupParams->sizeofTIDL_CreateParams = sizeof(TIDL_CreateParams);
@@ -267,6 +273,7 @@ Exception::Exception(const std::string& error, const std::string& file,
     message_m += error;
 }
 
+// Refer ti-opencl/builtins/include/custom.h for error codes
 Exception::Exception(int32_t errorCode, const std::string& file,
                      const std::string& func, uint32_t line_no)
 {
@@ -278,20 +285,28 @@ Exception::Exception(int32_t errorCode, const std::string& file,
     message_m += std::to_string(line_no);
     message_m += "]: ";
 
-    if (errorCode == OCL_TIDL_ERROR)
+    switch (errorCode)
+    {
+        case OCL_TIDL_ERROR:
         message_m += "";
-    else if (errorCode == OCL_TIDL_ALLOC_FAIL)
-        message_m += "Allocation failed on device";
-    else if (errorCode == OCL_TIDL_MEMREC_ALLOC_FAIL)
-        message_m += "Memrec allocation failed on device";
-    else if (errorCode == OCL_TIDL_PROCESS_FAIL)
+            break;
+        case OCL_TIDL_ALLOC_FAIL:
+        case OCL_TIDL_MEMREC_ALLOC_FAIL:
+            message_m += "Memory allocation failed on device";
+            break;
+        case OCL_TIDL_PROCESS_FAIL:
         message_m += "Process call failed on device";
-    else if (errorCode == OCL_TIDL_CREATE_PARAMS_MISMATCH)
-        message_m += "TIDL_CreateParams definition inconsistent across host"
-                     "and device.";
-    else
+            break;
+        case OCL_TIDL_CREATE_PARAMS_MISMATCH:
+            message_m += "TIDL API headers inconsistent with OpenCL";
+            break;
+        case OCL_TIDL_INIT_FAIL:
+            message_m += "Initialization failed on device";
+            break;
+        default:
         message_m += std::to_string(errorCode);
-
+            break;
+    }
 }
 
 const char* Exception::what() const noexcept

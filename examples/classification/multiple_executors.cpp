@@ -59,11 +59,11 @@ void* run_network(void *data);
 
 struct ThreadArg
 {
-    std::string config_file;
-    DeviceIds ids;
     ThreadArg(const DeviceIds& ids, const std::string& s):
         ids(ids), config_file(s) {}
 
+    DeviceIds ids;
+    std::string config_file;
 };
 
 bool thread_status[2];

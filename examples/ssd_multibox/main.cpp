@@ -150,9 +150,9 @@ bool RunConfiguration(const std::string& config_file,
                       DeviceType device_type, std::string& input_file)
 {
     DeviceIds ids_eve, ids_dsp;
-    for (int i = 0; i < num_eves; i++)
+    for (unsigned int i = 0; i < num_eves; i++)
         ids_eve.insert(static_cast<DeviceId>(i));
-    for (int i = 0; i < num_dsps; i++)
+    for (unsigned int i = 0; i < num_dsps; i++)
         ids_dsp.insert(static_cast<DeviceId>(i));
 
     // Read the TI DL configuration file
@@ -378,7 +378,6 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
         if (index < 0)  break;
 
         int   label = (int)  out[i * 7 + 1];
-        float score =        out[i * 7 + 2];
         int   xmin  = (int) (out[i * 7 + 3] * width);
         int   ymin  = (int) (out[i * 7 + 4] * height);
         int   xmax  = (int) (out[i * 7 + 5] * width);
@@ -449,7 +448,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
                       break;
 
             case 'd': num_dsps = atoi(optarg);
-                      assert (num_dsps > 0 && num_dsps <= 
+                      assert (num_dsps > 0 && num_dsps <=
                                      Executor::GetNumDevices(DeviceType::DSP));
                       break;
 

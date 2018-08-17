@@ -31,6 +31,7 @@
 #pragma once
 
 #include <memory>
+#include "configuration.h"
 #include "execution_object_internal.h"
 
 namespace tidl {
@@ -54,10 +55,8 @@ class ExecutionObject : public ExecutionObjectInternalInterface
         ExecutionObject(Device* d, uint8_t device_index,
                         const  ArgInfo& create_arg,
                         const  ArgInfo& param_heap_arg,
-                        size_t extmem_heap_size,
-                        int    layersGroupId,
-                        bool   output_trace,
-                        bool   internal_input);
+                        const  Configuration& configuration,
+                        int    layersGroupId);
         //! @private
         ~ExecutionObject();
 

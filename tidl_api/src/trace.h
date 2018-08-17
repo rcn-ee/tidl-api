@@ -25,14 +25,11 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
  * THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
-
-
 #pragma once
-
-#define OA_ENABLE_TRACE (1)
 
 #include <cstdio>
 #include <cstdarg>
+#include "configuration.h"
 
 namespace tidl {
 
@@ -41,10 +38,11 @@ class TRACE
 {
     public:
         static void print(const char *fmt, ...);
+        static bool enabled;
 };
 
-#if !defined(OA_ENABLE_TRACE)
-inline void TRACE::print(const char * __attribute__ ((unused)) fmt, ...) {}
-#endif
+void EnableExecutionTrace(const Configuration& config,
+                          uint32_t* enableDeviceTrace);
+
 }
 

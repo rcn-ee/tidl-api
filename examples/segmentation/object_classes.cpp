@@ -62,7 +62,7 @@ object_class_table_t* GetObjectClassTable(std::string &config)
 
 object_class_t* GetObjectClass(object_class_table_t *table, int index)
 {
-    if (index < 0 || index >= table->num_classes)  index = table->num_classes;
+    if (index < 0 || (unsigned int)index >= table->num_classes)  index = table->num_classes;
     return & (table->classes[index]);
 }
 

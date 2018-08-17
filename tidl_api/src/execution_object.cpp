@@ -39,7 +39,6 @@
 #include "trace.h"
 #include "ocl_device.h"
 #include "parameters.h"
-#include "configuration.h"
 #include "common_defines.h"
 #include "tidl_create_params.h"
 #include "device_arginfo.h"
@@ -52,10 +51,8 @@ class ExecutionObject::Impl
         Impl(Device* d, uint8_t device_index,
              const DeviceArgInfo& create_arg,
              const DeviceArgInfo& param_heap_arg,
-             size_t extmem_heap_size,
-             int    layers_group_id,
-             bool   output_trace,
-             bool   internal_input);
+             const Configuration& configuration,
+             int    layers_group_id);
         ~Impl() {}
 
         bool RunAsync(CallType ct);
@@ -103,9 +100,7 @@ class ExecutionObject::Impl
 
     private:
         void SetupInitializeKernel(const DeviceArgInfo& create_arg,
-                                   const DeviceArgInfo& param_heap_arg,
-                                   size_t extmem_heap_size,
-                                   bool   internal_input);
+                                   const DeviceArgInfo& param_heap_arg);
         void EnableOutputBufferTrace();
         void SetupProcessKernel();
 
@@ -121,18 +116,20 @@ class ExecutionObject::Impl
         bool                            is_idle_m;
         std::mutex                      mutex_access_m;
         std::condition_variable         cv_access_m;
+
+        const Configuration             configuration_m;
 };
 
 
 ExecutionObject::ExecutionObject(Device* d,
                                  uint8_t device_index,
-                                 const ArgInfo& create_arg,
-                                 const ArgInfo& param_heap_arg,
-                                 size_t extmem_heap_size,
-                                 int    layers_group_id,
-                                 bool   output_trace,
-                                 bool   internal_input)
+                                 const   ArgInfo& create_arg,
+                                 const   ArgInfo& param_heap_arg,
+                                 const   Configuration& configuration,
+                                 int     layers_group_id)
 {
+    TRACE::print("-> ExecutionObject::ExecutionObject()\n");
+
     DeviceArgInfo create_arg_d(create_arg, DeviceArgInfo::Kind::BUFFER);
     DeviceArgInfo param_heap_arg_d(param_heap_arg, DeviceArgInfo::Kind::BUFFER);
 
@@ -140,21 +137,17 @@ ExecutionObject::ExecutionObject(Device* d,
               { new ExecutionObject::Impl(d, device_index,
                                           create_arg_d,
                                           param_heap_arg_d,
-                                          extmem_heap_size,
-                                          layers_group_id,
-                                          output_trace,
-                                          internal_input) };
+                                          configuration,
+                                          layers_group_id) };
+    TRACE::print("<- ExecutionObject::ExecutionObject()\n");
 }
 
 
-ExecutionObject::Impl::Impl(Device* d,
-                                 uint8_t device_index,
-                                 const DeviceArgInfo& create_arg,
-                                 const DeviceArgInfo& param_heap_arg,
-                                 size_t extmem_heap_size,
-                                 int    layers_group_id,
-                                 bool   output_trace,
-                                 bool   internal_input):
+ExecutionObject::Impl::Impl(Device* d, uint8_t device_index,
+                            const DeviceArgInfo& create_arg,
+                            const DeviceArgInfo& param_heap_arg,
+                            const Configuration& configuration,
+                            int    layers_group_id):
     device_m(d),
     device_index_m(device_index),
     tidl_extmem_heap_m (nullptr, &__free_ddr),
@@ -172,7 +165,8 @@ ExecutionObject::Impl::Impl(Device* d,
     k_initialize_m(nullptr),
     k_process_m(nullptr),
     k_cleanup_m(nullptr),
-    is_idle_m(true)
+    is_idle_m(true),
+    configuration_m(configuration)
 {
     device_name_m = device_m->GetDeviceName() + std::to_string(device_index_m);
     // Save number of layers in the network
@@ -180,10 +174,11 @@ ExecutionObject::Impl::Impl(Device* d,
                 static_cast<const TIDL_CreateParams *>(create_arg.ptr());
     num_network_layers_m = cp->net.numLayers;
 
-    SetupInitializeKernel(create_arg, param_heap_arg, extmem_heap_size,
-                          internal_input);
+    SetupInitializeKernel(create_arg, param_heap_arg);
 
-    if (output_trace)  EnableOutputBufferTrace();
+    if (configuration_m.enableOutputTrace)
+        EnableOutputBufferTrace();
+
     SetupProcessKernel();
 }
 
@@ -240,12 +235,14 @@ void ExecutionObject::SetInputOutputBuffer(const IODeviceArgInfo* in,
 
 bool ExecutionObject::ProcessFrameStartAsync()
 {
+    TRACE::print("-> ExecutionObject::ProcessFrameStartAsync()\n");
     assert(GetInputBufferPtr() != nullptr && GetOutputBufferPtr() != nullptr);
     return pimpl_m->RunAsync(ExecutionObject::CallType::PROCESS);
 }
 
 bool ExecutionObject::ProcessFrameWait()
 {
+    TRACE::print("-> ExecutionObject::ProcessFrameWait()\n");
     return pimpl_m->Wait(ExecutionObject::CallType::PROCESS);
 }
 
@@ -317,12 +314,11 @@ void ExecutionObject::ReleaseLock()
 //
 void
 ExecutionObject::Impl::SetupInitializeKernel(const DeviceArgInfo& create_arg,
-                                             const DeviceArgInfo& param_heap_arg,
-                                             size_t extmem_heap_size,
-                                             bool   internal_input)
+                                             const DeviceArgInfo& param_heap_arg)
 {
     // Allocate a heap for TI DL to use on the device
-    tidl_extmem_heap_m.reset(malloc_ddr<char>(extmem_heap_size));
+    tidl_extmem_heap_m.reset(
+                         malloc_ddr<char>(configuration_m.NETWORK_HEAP_SIZE));
 
     // Create a kernel for cleanup
     KernelArgs cleanup_args;
@@ -335,17 +331,21 @@ ExecutionObject::Impl::SetupInitializeKernel(const DeviceArgInfo& create_arg,
     memset(shared_initialize_params_m.get(), 0,
            sizeof(OCL_TIDL_InitializeParams));
 
-    shared_initialize_params_m->tidlHeapSize = extmem_heap_size;
+    shared_initialize_params_m->tidlHeapSize =configuration_m.NETWORK_HEAP_SIZE;
     shared_initialize_params_m->l2HeapSize   = tidl::internal::DMEM1_SIZE;
     shared_initialize_params_m->l1HeapSize   = tidl::internal::DMEM0_SIZE;
-    shared_initialize_params_m->enableTrace  = OCL_TIDL_TRACE_OFF;
-    shared_initialize_params_m->enableInternalInput = internal_input ? 1 : 0;
+    shared_initialize_params_m->enableInternalInput =
+                   configuration_m.enableInternalInput ? 1 : 0;
+
+    // Set up execution trace specified in the configuration
+    EnableExecutionTrace(configuration_m,
+                         &shared_initialize_params_m->enableTrace);
 
     // Setup kernel arguments for initialize
     KernelArgs args = { create_arg,
                         param_heap_arg,
                         DeviceArgInfo(tidl_extmem_heap_m.get(),
-                                      extmem_heap_size,
+                                      configuration_m.NETWORK_HEAP_SIZE,
                                       DeviceArgInfo::Kind::BUFFER),
                         DeviceArgInfo(shared_initialize_params_m.get(),
                                       sizeof(OCL_TIDL_InitializeParams),
@@ -394,10 +394,13 @@ void
 ExecutionObject::Impl::SetupProcessKernel()
 {
     shared_process_params_m.reset(malloc_ddr<OCL_TIDL_ProcessParams>());
-    shared_process_params_m->enableTrace = OCL_TIDL_TRACE_OFF;
     shared_process_params_m->enableInternalInput =
                                shared_initialize_params_m->enableInternalInput;
     shared_process_params_m->cycles = 0;
+
+    // Set up execution trace specified in the configuration
+    EnableExecutionTrace(configuration_m,
+                         &shared_process_params_m->enableTrace);
 
     KernelArgs args = { DeviceArgInfo(shared_process_params_m.get(),
                                       sizeof(OCL_TIDL_ProcessParams),

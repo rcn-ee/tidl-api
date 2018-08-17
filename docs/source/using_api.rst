@@ -89,6 +89,101 @@ Run the network on each input frame.  The frames are processed with available ex
 
 For a complete example of using the API, refer any of the examples available at ``/usr/share/ti/tidl/examples`` on the EVM file system.
 
+Sizing device side heaps
+++++++++++++++++++++++++
+
+TIDL API allocates 2 heaps for device size allocations during network setup/initialization:
+
++-----------+-----------------------------------+-----------------------------+
+| Heap Name | Configuration parameter           | Default size                |
++-----------+-----------------------------------+-----------------------------+
+| Parameter | Configuration::PARAM_HEAP_SIZE    | 9MB,  1 per Executor        |
++-----------+-----------------------------------+-----------------------------+
+| Network   | Configuration::NETWORK_HEAP_SIZE  | 64MB, 1 per ExecutionObject |
++-----------+-----------------------------------+-----------------------------+
+
+Depending on the network being deployed, these defaults may be smaller or larger than required. In order to determine the exact sizes for the heaps, the following approach can be used:
+
+Start with the default heap sizes. The API displays heap usage statistics when Configuration::showHeapStats is set to true.
+
+.. code-block:: c++
+
+    Configuration configuration;
+    bool status = configuration.ReadFromFile(config_file);
+    configuration.showHeapStats = true;
+
+If the heap size is larger than required by device side allocations, the API displays usage statistics. When ``Free`` > 0, the heaps are larger than required.
+
+.. code-block:: bash
+
+    # ./test_tidl -n 1 -t e -c testvecs/config/infer/tidl_config_j11_v2.txt
+    API Version: 01.01.00.00.e4e45c8
+    [eve 0]         TIDL Device Trace: PARAM heap: Size 9437184, Free 6556180, Total requested 2881004
+    [eve 0]         TIDL Device Trace: NETWORK heap: Size 67108864, Free 47047680, Total requested 20061184
+
+
+Update the application to set the heap sizes to the "Total requested size" displayed:
+
+.. code-block:: c++
+
+    configuration.PARAM_HEAP_SIZE   = 2881004;
+    configuration.NETWORK_HEAP_SIZE = 20061184;
+
+.. code-block:: bash
+
+    # ./test_tidl -n 1 -t e -c testvecs/config/infer/tidl_config_j11_v2.txt
+    API Version: 01.01.00.00.e4e45c8
+    [eve 0]         TIDL Device Trace: PARAM heap: Size 2881004, Free 0, Total requested 2881004
+    [eve 0]         TIDL Device Trace: NETWORK heap: Size 20061184, Free 0, Total requested 20061184
+
+Now, the heaps are sized as required by network execution (i.e. ``Free`` is 0)
+and the ``configuration.showHeapStats = true`` line can be removed.
+
+.. note::
+
+    If the default heap sizes are smaller than required, the device will report an allocation failure and indicate the required minimum size. E.g.
+.. code-block:: bash
+
+    # ./test_tidl -n 1 -t e -c testvecs/config/infer/tidl_config_j11_v2.txt
+    API Version: 01.01.00.00.0ba86d4
+    [eve 0]         TIDL Device Error:  Allocation failure with NETWORK heap, request size 161472, avail 102512
+    [eve 0]         TIDL Device Error: Network heap must be >= 20061184 bytes, 19960944 not sufficient. Update Configuration::NETWORK_HEAP_SIZE
+    TIDL Error: [src/execution_object.cpp, Wait, 548]: Allocation failed on device
+
+.. note::
+
+    The memory for parameter and network heaps is itself allocated from OpenCL global memory (CMEM). Refer :ref:`opencl-global-memory` for details.
+
+
+Configuration file
+++++++++++++++++++
+TIDL API allows the user to create a Configuration object by reading from a file or by initializing it directly. Configuration settings supported by ``Configuration::ReadFromFile``:
+
+    * numFrames
+    * inWidth
+    * inHeight
+    * inNumChannels
+    * preProcType
+    * layerIndex2LayerGroupId
+
+    * inData
+    * outData
+
+    * netBinFile
+    * paramsBinFile
+
+    * enableTrace
+
+An example configuration file:
+
+.. literalinclude:: ../../examples/layer_output/j11_v2_trace.txt
+    :language: bash
+
+.. note::
+
+    Refer :ref:`api-documentation` for the complete set of parameters in the ``Configuration`` class and their description.
+
+
 Overriding layer group assignment
 +++++++++++++++++++++++++++++++++
 The `TIDL device translation tool`_ assigns layer group ids to layers during the translation process. TIDL API 1.1 and higher allows the user to override this assignment by specifying explicit mappings. There are two ways for the user to provide an updated mapping:

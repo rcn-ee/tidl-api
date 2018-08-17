@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
         {
             // Run on 2 devices because there is not enough CMEM available by
             // default
-            if (num_eve = 4)
+            if (num_eve == 4)
             {
                 std::cout
                  << "Running on 2 EVE devices instead of the available 4 "

@@ -338,7 +338,6 @@ bool WriteFrameOutput(const ExecutionObject &eo,
                       const Configuration& configuration)
 {
     unsigned char *out = (unsigned char *) eo.GetOutputBufferPtr();
-    int out_size       = eo.GetOutputBufferSizeInBytes();
     int width          = configuration.inWidth;
     int height         = configuration.inHeight;
     int channel_size   = width * height;

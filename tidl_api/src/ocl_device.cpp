@@ -281,7 +281,8 @@ Kernel::Kernel(Device* device, const std::string& name,
                 clSetKernelArg(kernel_m, arg_index, sizeof(cl_mem), &buffer);
                 TRACE::print("  Arg[%d]: %p\n", arg_index, buffer);
 
-                buffers_m.push_back(buffer);
+                if (buffer)
+                    buffers_m.push_back(buffer);
             }
             else if (arg.kind() == DeviceArgInfo::Kind::SCALAR)
             {

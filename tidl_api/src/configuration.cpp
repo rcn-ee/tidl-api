@@ -39,10 +39,12 @@ Configuration::Configuration(): numFrames(0), inHeight(0), inWidth(0),
                      noZeroCoeffsPercentage(100),
                      preProcType(0),
                      runFullNet(false),
-                     enableInternalInput(0),
-                     EXTMEM_HEAP_SIZE(64 << 20),  // 64MB for inceptionNetv1
+                     enableInternalInput(false),
+                     NETWORK_HEAP_SIZE(64 << 20),  // 64MB for inceptionNetv1
                      PARAM_HEAP_SIZE(9 << 20),    // 9MB for mobileNet1
-                     enableOutputTrace(false)
+                     enableOutputTrace(false),
+                     enableApiTrace(false),
+                     showHeapStats(false)
 {
 }
 
@@ -58,7 +60,7 @@ void Configuration::Print(std::ostream &os) const
        << "\nOutputFile               " << outData
        << "\nNetwork                  " << netBinFile
        << "\nParameters               " << paramsBinFile
-       << "\nEO Heap Size (MB)        " << (EXTMEM_HEAP_SIZE >> 20)
+       << "\nEO Heap Size (MB)        " << (NETWORK_HEAP_SIZE >> 20)
        << "\nParameter heap size (MB) " << (PARAM_HEAP_SIZE >> 20)
        << "\n";
 }
@@ -87,28 +89,15 @@ bool Configuration::Validate() const
         errors++;
     }
 
-    size_t paramsBinFileSize = 0;
     if (stat(paramsBinFile.c_str(), &buffer) != 0)
     {
         std::cerr << "paramsBinFile not found: " << paramsBinFile << std::endl;
         errors++;
     }
-    else
-        paramsBinFileSize = buffer.st_size;
 
     if (!inData.empty() && stat(inData.c_str(), &buffer) != 0)
     {
         std::cerr << "inData not found: " << inData << std::endl;
-        errors++;
-    }
-
-    // Due to alignment, the parameter heap must be larger than the
-    // parameter binary. Using 1.1 as a conservative factor.
-    if (paramsBinFileSize > 0 &&
-            (paramsBinFileSize * 1.1) > PARAM_HEAP_SIZE)
-    {
-        std::cerr << "Parameter binary file larger than paramter heap. "
-                     "Increase Configuration::PARAM_HEAP_SIZE" << std::endl;
         errors++;
     }
 
