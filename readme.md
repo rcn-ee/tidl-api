@@ -9,7 +9,7 @@ Debian Build
 
 ```bash
 sudo apt update
-sudo apt install ti-opencl libboost1.62-dev libopencv-core-dev libopencv-imgproc-dev libopencv-highgui-dev
+sudo apt install ti-opencl libboost-dev libopencv-core-dev libopencv-imgproc-dev libopencv-highgui-dev
 
 git clone https://github.com/rcn-ee/tidl-api
 cd tidl-api/
