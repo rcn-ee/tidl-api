@@ -15,5 +15,10 @@ git clone https://github.com/rcn-ee/tidl-api
 cd tidl-api/
 git checkout origin/v01.00.00.03-bb.org -b v01.00.00.03-bb.org
 make -j2 build-api
+
+sudo mkdir -p /usr/share/ti/tidl
+sudo chown -R 1000:1000 /usr/share/ti/tidl/
+
+make -j2 build-examples
 ```
 
