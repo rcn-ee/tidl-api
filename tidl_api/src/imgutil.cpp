@@ -27,6 +27,7 @@
  *****************************************************************************/
 
 #include <iostream>
+#include <cstring>
 #include "imgutil.h"
 
 using namespace tidl;

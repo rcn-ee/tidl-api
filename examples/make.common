@@ -47,7 +47,7 @@ CXXFLAGS += -I$(TI_OCL_INSTALL)/usr/share/ti/opencl
 CXXFLAGS += -I$(TARGET_ROOTDIR)/usr/share/ti/opencl
 
 HEADERS = 
-LIBS    = -lOpenCL -locl_util -lpthread
+LIBS    = -lTIOpenCL -locl_util -lpthread
 
 all: $(EXE)
 
