@@ -8,12 +8,13 @@ TI Deep Learning API User's Guide
    :maxdepth: 3
 
    intro
+   overview
    using_api
    viewer
    example
    api
-   building
    faq/index
+   readme/index
    notice
    disclaimer
 

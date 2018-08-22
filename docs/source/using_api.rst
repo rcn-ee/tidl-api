@@ -1,13 +1,21 @@
 .. _using-tidl-api:
 
-******************
-Using the TIDL API
-******************
+*************
+Using the API
+*************
+
+TIDL API provides 4 C++ classes: ``Configuration``, ``Executor``, ``ExecutionObject``, and ``ExecutionObjectPipeline``. These classes can be used to support multiple use cases.
+
+Use case 1: Each EO runs a :term:`Layer group`
 
 Deploying a TIDL network
 ++++++++++++++++++++++++
 
-This example illustrates using the TIDL API to offload deep learning network processing from a Linux application to the C66x DSPs or EVEs on AM57x devices. The API consists of three classes: ``Configuration``, ``Executor`` and ``ExecutionObject``.
+This section illustrates how easy it is to use TIDL APIs to leverage deep learning application in user applications.  In this example, a configuration object is created from reading a TIDL network config file.  An executor object is created with two EVE devices.  It uses the configuration object to setup and initialize TIDL network on EVEs.  Each of the two execution objects dispatches TIDL processing to a different EVE core.  Because the OpenCL kernel execution is asynchronous, we can pipeline the frames across two EVEs.  When one frame is being processed by a EVE, the next frame can be processed by another EVE.
+
+
+``ReadFrameInput`` and ``WriteFrameOutput`` functions are used to read an input frame and write the result of processing. For example, with OpenCV, ``ReadFrameInput`` is implemented using OpenCV APIs to capture a frame. To execute the same network on DSPs, the only change to :numref:`simple-example` is to replace ``DeviceType::EVE`` with ``DeviceType::DSP``.
+
 
 Step 1
 ======
@@ -86,6 +94,11 @@ Run the network on each input frame.  The frames are processed with available ex
             if (ReadFrame(*eo, frame_idx, configuration, input_data_file))
                 eo->ProcessFrameStartAsync();
         }
+
+Section :ref:`using-tidl-api` contains details on using the APIs. The APIs themselves are documented in section :ref:`api-documentation`.
+
+Sometimes it is beneficial to partition a network and run different parts on different cores because some types of layers could run faster on EVEs while other types could run faster on DSPs.  TIDL APIs provide the flexibility to run partitioned network across EVEs and DSPs. Refer the :ref:`ssd-example` example for details.
+
 
 For a complete example of using the API, refer any of the examples available at ``/usr/share/ti/tidl/examples`` on the EVM file system.
 

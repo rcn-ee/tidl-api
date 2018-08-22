@@ -277,7 +277,9 @@ def setup(app):
 
 
 # -- Breathe extension to integrate doxygen output --
-
+# https://breathe.readthedocs.io/en/latest/index.html
 breathe_projects = {
 "TIDL":"../../tidl_api/doxygen/xml/",
 }
+breathe_default_project = "TIDL"
+
