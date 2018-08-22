@@ -39,6 +39,7 @@
 
 #include <queue>
 #include <vector>
+#include <chrono>
 
 #include "executor.h"
 #include "execution_object.h"
@@ -58,28 +59,34 @@ using namespace tidl;
 using namespace tidl::imgutil;
 using namespace cv;
 
-#define NUM_VIDEO_FRAMES  100
+#define NUM_VIDEO_FRAMES  300
+#define NUM_DEFAULT_INPUTS  1
+const char *default_inputs[NUM_DEFAULT_INPUTS] =
+{
+    "../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg"
+};
+bool is_camera_input = false;
+bool is_video_input  = false;
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type, std::string& input_file);
+bool RunConfiguration(const std::string& config_file,
+                      uint32_t num_dsps, uint32_t num_eves,
+                      std::string& input_file, int num_frames);
 bool RunAllConfigurations(int32_t num_devices, DeviceType device_type);
 
+void ReportTime(ExecutionObject& eo);
 bool ReadFrame(ExecutionObject& eo, int frame_idx,
                const Configuration& configuration, int num_frames,
-               std::string& image_file, VideoCapture &cap);
+               const std::string& input_file, VideoCapture &cap);
 
 bool WriteFrameOutput(const ExecutionObject &eo);
 
-static void ProcessArgs(int argc, char *argv[],
-                        std::string& config,
-                        int& num_devices,
-                        DeviceType& device_type,
-                        std::string& input_file);
+static
+void ProcessArgs(int argc, char *argv[], std::string& config,
+                 uint32_t& num_dsps, uint32_t& num_eves,
+                 std::string& input_file, int &num_frames);
+bool IsCameraOrVideoInput(const std::string& s);
 
 static void DisplayHelp();
-
-static double ms_diff(struct timespec &t0, struct timespec &t1)
-{ return (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6; }
 
 
 int main(int argc, char *argv[])
@@ -89,27 +96,35 @@ int main(int argc, char *argv[])
     signal(SIGTERM, exit);
 
     // If there are no devices capable of offloading TIDL on the SoC, exit
-    uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
-    uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
-    if (num_eve == 0 && num_dsp == 0)
+    uint32_t num_eves = Executor::GetNumDevices(DeviceType::EVE);
+    uint32_t num_dsps = Executor::GetNumDevices(DeviceType::DSP);
+    if (num_eves == 0 && num_dsps == 0)
     {
         std::cout << "TI DL not supported on this SoC." << std::endl;
         return EXIT_SUCCESS;
     }
 
     // Process arguments
-    std::string config      = "j11_v2";
-    std::string input_file  = "../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg";
-    int         num_devices = 1;
-    DeviceType  device_type = (num_eve > 0 ? DeviceType::EVE:DeviceType::DSP);
-    ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
+    std::string config     = "j11_v2";
+    std::string input_file;
+    if (num_eves != 0) { num_eves = 1;  num_dsps = 0; }
+    else               { num_eves = 0;  num_dsps = 1; }
+    int         num_frames  = 1;
+    ProcessArgs(argc, argv, config, num_dsps, num_eves, input_file, num_frames);
 
-    std::cout << "Input: " << input_file << std::endl;
+    assert(num_dsps != 0 || num_eves != 0);
+
+    if (IsCameraOrVideoInput(input_file) && num_frames == 1)
+        num_frames = NUM_VIDEO_FRAMES;
+    if (input_file.empty())
+        std::cout << "Input: " << default_inputs[0] << std::endl;
+    else
+        std::cout << "Input: " << input_file << std::endl;
+
     std::string config_file = "../test/testvecs/config/infer/tidl_config_"
                               + config + ".txt";
-    bool status = RunConfiguration(config_file, num_devices, device_type,
-                                   input_file);
-
+    bool status = RunConfiguration(config_file, num_dsps, num_eves,
+                                   input_file, num_frames);
     if (!status)
     {
         std::cout << "imagenet FAILED" << std::endl;
@@ -120,12 +135,22 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type, std::string& input_file)
+bool IsCameraOrVideoInput(const std::string& s)
 {
-    DeviceIds ids;
-    for (int i = 0; i < num_devices; i++)
-        ids.insert(static_cast<DeviceId>(i));
+    is_camera_input = (s == "camera");
+    is_video_input  = (s.size() > 4 && s.substr(s.size() - 4, 4) == ".mp4");
+    return is_camera_input || is_video_input;
+}
+
+bool RunConfiguration(const std::string& config_file,
+                      uint32_t num_dsps, uint32_t num_eves,
+                      std::string& input_file, int num_frames)
+{
+    DeviceIds dsp_ids, eve_ids;
+    for (int i = 0; i < num_dsps; i++)
+        dsp_ids.insert(static_cast<DeviceId>(i));
+    for (int i = 0; i < num_eves; i++)
+        eve_ids.insert(static_cast<DeviceId>(i));
 
     // Read the TI DL configuration file
     Configuration configuration;
@@ -138,95 +163,88 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     }
 
     // setup input
-    int num_frames = 1;
     VideoCapture cap;
-    std::string image_file;
-    if (input_file == "camera")
+    if (is_camera_input || is_video_input)
     {
-        cap = VideoCapture(1);  // cap = VideoCapture("test.mp4");
+        if (is_camera_input)
+            cap = VideoCapture(1);
+        else
+            cap = VideoCapture(input_file);
         if (! cap.isOpened())
         {
-            std::cerr << "Cannot open camera input." << std::endl;
+            std::cerr << "Cannot open video input: " << input_file << std::endl;
             return false;
         }
-        num_frames = NUM_VIDEO_FRAMES;
         namedWindow("ImageNet", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
-    }
-    else
-    {
-        image_file = input_file;
     }
 
     try
     {
-        // Create a executor with the approriate core type, number of cores
+        // Create Executors with the approriate core type, number of cores
         // and configuration specified
-        Executor executor(device_type, ids, configuration);
+        Executor *e_eve = (num_eves == 0) ? nullptr :
+                         new Executor(DeviceType::EVE, eve_ids, configuration);
+        Executor *e_dsp = (num_dsps == 0) ? nullptr :
+                         new Executor(DeviceType::DSP, dsp_ids, configuration);
+  
+        // Get ExecutionObjects from Executors
+        std::vector<ExecutionObject*> eos;
+        for (int i = 0; i < num_eves; i++)  eos.push_back((*e_eve)[i]);
+        for (int i = 0; i < num_dsps; i++)  eos.push_back((*e_dsp)[i]);
+        int num_eos = eos.size();
 
-        // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects =
-                                                executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
-
-        // Allocate input and output buffers for each execution object
+        // Allocate input and output buffers for each ExecutionObject
         std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
+        for (auto eo : eos)
         {
             size_t in_size  = eo->GetInputBufferSizeInBytes();
             size_t out_size = eo->GetOutputBufferSizeInBytes();
-            ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
-            ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
-            eo->SetInputOutputBuffer(in, out);
+            void*  in_ptr   = malloc(in_size);
+            void*  out_ptr  = malloc(out_size);
+            assert(in_ptr != nullptr && out_ptr != nullptr);
+            buffers.push_back(in_ptr);
+            buffers.push_back(out_ptr);
 
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
+            ArgInfo in  = { ArgInfo(in_ptr,  in_size)};
+            ArgInfo out = { ArgInfo(out_ptr, out_size)};
+            eo->SetInputOutputBuffer(in, out);
         }
 
-        #define MAX_NUM_EOS  4
-        struct timespec t0[MAX_NUM_EOS], t1;
+        std::chrono::time_point<std::chrono::steady_clock> tloop0, tloop1;
+        tloop0 = std::chrono::steady_clock::now();
 
         // Process frames with available execution objects in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
         for (int frame_idx = 0;
              frame_idx < num_frames + num_eos; frame_idx++)
         {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
+            ExecutionObject* eo = eos[frame_idx % num_eos];
 
             // Wait for previous frame on the same eo to finish processing
             if (eo->ProcessFrameWait())
             {
-                clock_gettime(CLOCK_MONOTONIC, &t1);
-                double elapsed_host =
-                                ms_diff(t0[eo->GetFrameIndex() % num_eos], t1);
-                double elapsed_device = eo->GetProcessTimeInMilliSeconds();
-                double overhead = 100 - (elapsed_device/elapsed_host*100);
-
-                std::cout << "frame[" << eo->GetFrameIndex() << "]: "
-                          << "Time on device: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_device << "ms, "
-                          << "host: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_host << "ms ";
-                std::cout << "API overhead: "
-                          << std::setw(6) << std::setprecision(3)
-                          << overhead << " %" << std::endl;
-
+                ReportTime(*eo);
                 WriteFrameOutput(*eo);
             }
 
             // Read a frame and start processing it with current eo
             if (ReadFrame(*eo, frame_idx, configuration, num_frames,
-                          image_file, cap))
+                          input_file, cap))
             {
-                clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
                 eo->ProcessFrameStartAsync();
             }
         }
 
+        tloop1 = std::chrono::steady_clock::now();
+        std::chrono::duration<float> elapsed = tloop1 - tloop0;
+        std::cout << "Loop total time (including read/write/opencv/print/etc): "
+                  << std::setw(6) << std::setprecision(4)
+                  << (elapsed.count() * 1000) << "ms" << std::endl;
+
         for (auto b : buffers)
             free(b);
-
+        delete e_eve;
+        delete e_dsp;
     }
     catch (tidl::Exception &e)
     {
@@ -237,10 +255,27 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     return status;
 }
 
+void ReportTime(ExecutionObject& eo)
+{
+    double elapsed_host   = eo.GetHostProcessTimeInMilliSeconds();
+    double elapsed_device = eo.GetProcessTimeInMilliSeconds();
+    double overhead = 100 - (elapsed_device/elapsed_host*100);
+
+    std::cout << "frame[" << eo.GetFrameIndex() << "]: "
+              << "Time on " << eo.GetDeviceName() << ": "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_device << "ms, "
+              << "host: "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_host << "ms ";
+    std::cout << "API overhead: "
+              << std::setw(6) << std::setprecision(3)
+              << overhead << " %" << std::endl;
+}
 
 bool ReadFrame(ExecutionObject &eo, int frame_idx,
                const Configuration& configuration, int num_frames,
-               std::string& image_file, VideoCapture &cap)
+               const std::string& input_file, VideoCapture &cap)
 {
     if (frame_idx >= num_frames)
         return false;
@@ -250,12 +285,16 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
     assert (frame_buffer != nullptr);
 
     Mat image;
-    if (! image_file.empty())
+    if (! is_camera_input && ! is_video_input)
     {
-        image = cv::imread(image_file, CV_LOAD_IMAGE_COLOR);
+        if (input_file.empty())
+            image = cv::imread(default_inputs[frame_idx % NUM_DEFAULT_INPUTS],
+                               CV_LOAD_IMAGE_COLOR);
+        else
+            image = cv::imread(input_file, CV_LOAD_IMAGE_COLOR);
         if (image.empty())
         {
-            std::cerr << "Unable to read from: " << image_file << std::endl;
+            std::cerr << "Unable to read input image" << std::endl;
             return false;
         }
     }
@@ -264,8 +303,11 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
         Mat v_image;
         if (! cap.grab())  return false;
         if (! cap.retrieve(v_image)) return false;
-        // Crop 640x480 camera input to center 256x256 input
-        image = Mat(v_image, Rect(192, 112, 256, 256));
+        if (is_camera_input)
+            // Crop 640x480 camera input to center 256x256 input
+            image = Mat(v_image, Rect(192, 112, 256, 256));
+        else
+            image = v_image;
         cv::imshow("ImageNet", image);
         waitKey(2);
     }
@@ -324,8 +366,8 @@ bool WriteFrameOutput(const ExecutionObject &eo)
 
 
 void ProcessArgs(int argc, char *argv[], std::string& config,
-                 int& num_devices, DeviceType& device_type,
-                 std::string& input_file)
+                 uint32_t& num_dsps, uint32_t& num_eves,
+                 std::string& input_file, int &num_frames)
 {
     const struct option long_options[] =
     {
@@ -333,6 +375,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
         {"num_devices", required_argument, 0, 'n'},
         {"device_type", required_argument, 0, 't'},
         {"image_file",  required_argument, 0, 'i'},
+        {"num_frames",  required_argument, 0, 'f'},
         {"help",        no_argument,       0, 'h'},
         {"verbose",     no_argument,       0, 'v'},
         {0, 0, 0, 0}
@@ -342,7 +385,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
 
     while (true)
     {
-        int c = getopt_long(argc, argv, "c:n:t:i:hv", long_options, &option_index);
+        int c = getopt_long(argc, argv, "c:d:e:i:f:hv", long_options, &option_index);
 
         if (c == -1)
             break;
@@ -352,23 +395,21 @@ void ProcessArgs(int argc, char *argv[], std::string& config,
             case 'c': config = optarg;
                       break;
 
-            case 'n': num_devices = atoi(optarg);
-                      assert (num_devices > 0 && num_devices <= 4);
+            case 'd': num_dsps = atoi(optarg);
+                      assert(num_dsps >= 0 && num_dsps <=
+                                     Executor::GetNumDevices(DeviceType::DSP));
                       break;
 
-            case 't': if (*optarg == 'e')
-                          device_type = DeviceType::EVE;
-                      else if (*optarg == 'd')
-                          device_type = DeviceType::DSP;
-                      else
-                      {
-                          std::cerr << "Invalid argument to -t, only e or d"
-                                       " allowed" << std::endl;
-                          exit(EXIT_FAILURE);
-                      }
+            case 'e': num_eves = atoi(optarg);
+                      assert(num_eves >= 0 && num_eves <=
+                                     Executor::GetNumDevices(DeviceType::EVE));
                       break;
 
             case 'i': input_file = optarg;
+                      break;
+
+            case 'f': num_frames = atoi(optarg);
+                      assert (num_frames > 0);
                       break;
 
             case 'v': __TI_show_debug_ = true;
@@ -397,10 +438,12 @@ void DisplayHelp()
                  "  different imagenet network. Default is j11_v2.\n"
                  "Optional arguments:\n"
                  " -c <config>          Valid configs: j11_bn, j11_prelu, j11_v2\n"
-                 " -n <number of cores> Number of cores to use (1 - 4)\n"
-                 " -t <d|e>             Type of core. d -> DSP, e -> EVE\n"
+                 " -d <number>          Number of dsp cores to use\n"
+                 " -e <number>          Number of eve cores to use\n"
                  " -i <image>           Path to the image file\n"
                  " -i camera            Use camera as input\n"
+                 " -i *.mp4             Use video file as input\n"
+                 " -f <number>          Number of frames to process\n"
                  " -v                   Verbose output during execution\n"
                  " -h                   Help\n";
 }
