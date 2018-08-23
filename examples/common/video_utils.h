@@ -27,41 +27,27 @@
  *****************************************************************************/
 #pragma once
 
-#include <string>
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include "executor.h"
-#include "execution_object.h"
-#include "execution_object_pipeline.h"
-#include "configuration.h"
+#include "utils.h"
+#include "opencv2/core.hpp"
+#include "opencv2/imgproc.hpp"
+#include "opencv2/highgui.hpp"
+#include "opencv2/videoio.hpp"
 
-using tidl::Executor;
-using tidl::ExecutionObject;
-using tidl::ExecutionObjectPipeline;
-using tidl::Configuration;
+using namespace cv;
 
-bool ReadFrame(ExecutionObject*     eo,
-               int                  frame_idx,
-               const Configuration& configuration,
-               std::istream&        input_file);
+typedef struct cmdline_opts_t_ {
+  std::string config;
+  uint32_t    num_dsps;
+  uint32_t    num_eves;
+  uint32_t    num_frames;
+  std::string input_file;
+  uint32_t    output_width;
+  bool        verbose;
+  bool        is_camera_input;
+  bool        is_video_input;
+} cmdline_opts_t;
 
-bool ReadFrame(ExecutionObjectPipeline* eop,
-               int                      frame_idx,
-               const Configuration&     configuration,
-               std::istream&            input_file);
 
-bool WriteFrame(const ExecutionObject* eo, std::ostream& output_file);
-
-void ReportTime(const ExecutionObject* eo);
-void ReportTime(const ExecutionObjectPipeline* eop);
-
-bool CheckFrame(const ExecutionObject* eo, const char *ref_output);
-bool CheckFrame(const ExecutionObjectPipeline *eop, const char *ref_output);
-
-const char* ReadReferenceOutput(const std::string& name);
-
-void AllocateMemory(const std::vector<ExecutionObject *>& eos);
-void FreeMemory(const std::vector<ExecutionObject *>& eos);
-void AllocateMemory(const std::vector<ExecutionObjectPipeline *>& eops);
-void FreeMemory(const std::vector<ExecutionObjectPipeline *>& eops);
+bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts);
+bool SetVideoInputOutput(VideoCapture &cap, const cmdline_opts_t& opts,
+                         const char* window_name);

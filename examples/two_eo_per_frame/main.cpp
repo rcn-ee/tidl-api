@@ -54,9 +54,6 @@ bool Run(int num_eve,int num_dsp, const char* ref_output);
 Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
                          int layer_group_id);
 
-void AllocateMemory(const vector<EOP *>& EOPs);
-void FreeMemory    (const vector<EOP *>& EOPs);
-
 
 int main(int argc, char *argv[])
 {
@@ -179,27 +176,3 @@ Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
     return new Executor(dt, ids, c, layer_group_id);
 }
 
-// Allocate input and output memory for each EO
-void AllocateMemory(const vector<EOP *>& EOPs)
-{
-    // Allocate input and output buffers for each execution object
-    for (auto eop : EOPs)
-    {
-        size_t in_size  = eop->GetInputBufferSizeInBytes();
-        size_t out_size = eop->GetOutputBufferSizeInBytes();
-        ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
-        ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
-        eop->SetInputOutputBuffer(in, out);
-    }
-}
-
-// Free the input and output memory associated with each EO
-void FreeMemory(const vector<EOP *>& EOPs)
-{
-    for (auto eop : EOPs)
-    {
-        free(eop->GetInputBufferPtr());
-        free(eop->GetOutputBufferPtr());
-    }
-
-}

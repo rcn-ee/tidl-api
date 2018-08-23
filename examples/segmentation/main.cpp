@@ -26,7 +26,6 @@
  *   THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 #include <signal.h>
-#include <getopt.h>
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -40,54 +39,37 @@
 #include <queue>
 #include <vector>
 #include <cstdio>
+#include <chrono>
 
 #include "executor.h"
 #include "execution_object.h"
 #include "configuration.h"
 #include "object_classes.h"
+#include "../common/utils.h"
+#include "../common/video_utils.h"
 
-#include "opencv2/core.hpp"
-#include "opencv2/imgproc.hpp"
-#include "opencv2/highgui.hpp"
-#include "opencv2/videoio.hpp"
-
-#define NUM_VIDEO_FRAMES  100
-#define DEFAULT_CONFIG    "jseg21_tiscapes"
-#define DEFAULT_INPUT     "../test/testvecs/input/000100_1024x512_bgr.y"
-
-bool __TI_show_debug_ = false;
-bool is_default_input = false;
-bool is_preprocessed_input = false;
-bool is_camera_input       = false;
-int  orig_width;
-int  orig_height;
-object_class_table_t *object_class_table;
-
+using namespace std;
 using namespace tidl;
 using namespace cv;
 
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type, std::string& input_file);
-bool RunAllConfigurations(int32_t num_devices, DeviceType device_type);
+#define NUM_VIDEO_FRAMES  300
+#define DEFAULT_CONFIG    "jseg21_tiscapes"
+#define DEFAULT_INPUT     "../test/testvecs/input/000100_1024x512_bgr.y"
+#define DEFAULT_INPUT_FRAMES  (9)
 
-bool ReadFrame(ExecutionObject& eo, int frame_idx,
-               const Configuration& configuration, int num_frames,
-               std::string& image_file, VideoCapture &cap);
+object_class_table_t *object_class_table;
+uint32_t orig_width;
+uint32_t orig_height;
 
-bool WriteFrameOutput(const ExecutionObject &eo,
-                      const Configuration& configuration);
 
-static void ProcessArgs(int argc, char *argv[],
-                        std::string& config,
-                        int& num_devices,
-                        DeviceType& device_type,
-                        std::string& input_file);
-
-static void DisplayHelp();
-
-static double ms_diff(struct timespec &t0, struct timespec &t1)
-{ return (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6; }
+bool RunConfiguration(const cmdline_opts_t& opts);
+Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c);
+bool ReadFrame(ExecutionObject& eo, int frame_idx, const Configuration& c,
+               const cmdline_opts_t& opts, VideoCapture &cap);
+bool WriteFrameOutput(const ExecutionObject &eo, const Configuration& c,
+                      const cmdline_opts_t& opts);
+void DisplayHelp();
 
 
 int main(int argc, char *argv[])
@@ -97,198 +79,171 @@ int main(int argc, char *argv[])
     signal(SIGTERM, exit);
 
     // If there are no devices capable of offloading TIDL on the SoC, exit
-    uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
-    uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
-    if (num_eve == 0 && num_dsp == 0)
+    uint32_t num_eves = Executor::GetNumDevices(DeviceType::EVE);
+    uint32_t num_dsps = Executor::GetNumDevices(DeviceType::DSP);
+    if (num_eves == 0 && num_dsps == 0)
     {
-        std::cout << "TI DL not supported on this SoC." << std::endl;
+        cout << "TI DL not supported on this SoC." << endl;
         return EXIT_SUCCESS;
     }
 
     // Process arguments
-    std::string config      = DEFAULT_CONFIG;
-    std::string input_file  = DEFAULT_INPUT;
-    int         num_devices = 1;
-    DeviceType  device_type = (num_eve > 0 ? DeviceType::EVE:DeviceType::DSP);
-    ProcessArgs(argc, argv, config, num_devices, device_type, input_file);
-
-    if ((object_class_table = GetObjectClassTable(config)) == nullptr)
+    cmdline_opts_t opts;
+    opts.config = DEFAULT_CONFIG;
+    if (num_eves != 0) { opts.num_eves = 1;  opts.num_dsps = 0; }
+    else               { opts.num_eves = 0;  opts.num_dsps = 1; }
+    if (! ProcessArgs(argc, argv, opts))
     {
-        std::cout << "No object classes defined for this config." << std::endl;
+        DisplayHelp();
+        exit(EXIT_SUCCESS);
+    }
+    assert(opts.num_dsps != 0 || opts.num_eves != 0);
+    if (opts.num_frames == 0)
+        opts.num_frames = (opts.is_camera_input || opts.is_video_input) ?
+                          NUM_VIDEO_FRAMES :
+                          (opts.input_file.empty() ? DEFAULT_INPUT_FRAMES : 1);
+    if (opts.input_file.empty())
+        cout << "Input: " << DEFAULT_INPUT << endl;
+    else
+        cout << "Input: " << opts.input_file << endl;
+
+    // Get object class table
+    if ((object_class_table = GetObjectClassTable(opts.config)) == nullptr)
+    {
+        cout << "No object classes defined for this config." << endl;
         return EXIT_FAILURE;
     }
 
-    if (input_file == DEFAULT_INPUT)  is_default_input = true;
-    if (input_file == "camera")       is_camera_input = true;
-    if (input_file.length() > 2 &&
-        input_file.compare(input_file.length() - 2, 2, ".y") == 0)
-        is_preprocessed_input = true;
-    std::cout << "Input: " << input_file << std::endl;
-    std::string config_file = "../test/testvecs/config/infer/tidl_config_"
-                              + config + ".txt";
-    bool status = RunConfiguration(config_file, num_devices, device_type,
-                                   input_file);
-
+    // Run network
+    bool status = RunConfiguration(opts);
     if (!status)
     {
-        std::cout << "segmentation FAILED" << std::endl;
+        cout << "segmentation FAILED" << endl;
         return EXIT_FAILURE;
     }
 
-    std::cout << "segmentation PASSED" << std::endl;
+    cout << "segmentation PASSED" << endl;
     return EXIT_SUCCESS;
 }
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type, std::string& input_file)
+bool RunConfiguration(const cmdline_opts_t& opts)
 {
-    DeviceIds ids;
-    for (int i = 0; i < num_devices; i++)
-        ids.insert(static_cast<DeviceId>(i));
-
     // Read the TI DL configuration file
-    Configuration configuration;
-    bool status = configuration.ReadFromFile(config_file);
+    Configuration c;
+    std::string config_file = "../test/testvecs/config/infer/tidl_config_"
+                              + opts.config + ".txt";
+    bool status = c.ReadFromFile(config_file);
     if (!status)
     {
-        std::cerr << "Error in configuration file: " << config_file
-                  << std::endl;
+        cerr << "Error in configuration file: " << config_file << endl;
         return false;
     }
+    c.enableApiTrace = opts.verbose;
 
-    // setup input
-    int num_frames = is_default_input ? 3 : 1;
+    // setup camera/video input/output
     VideoCapture cap;
-    std::string image_file;
-    if (is_camera_input)
-    {
-        cap = VideoCapture(1);  // cap = VideoCapture("test.mp4");
-        if (! cap.isOpened())
-        {
-            std::cerr << "Cannot open camera input." << std::endl;
-            return false;
-        }
-        num_frames = NUM_VIDEO_FRAMES;
-        namedWindow("Segmentation", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
-    }
-    else
-    {
-        image_file = input_file;
-    }
+    if (! SetVideoInputOutput(cap, opts, "Segmentation"))  return false;
 
     try
     {
-        // Create a executor with the approriate core type, number of cores
+        // Create Executors with the approriate core type, number of cores
         // and configuration specified
-        Executor executor(device_type, ids, configuration);
+        Executor* e_eve = CreateExecutor(DeviceType::EVE, opts.num_eves, c);
+        Executor* e_dsp = CreateExecutor(DeviceType::DSP, opts.num_dsps, c);
 
-        // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects =
-                                                executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
+        // Get ExecutionObjects from Executors
+        vector<ExecutionObject*> eos;
+        for (uint32_t i = 0; i < opts.num_eves; i++) eos.push_back((*e_eve)[i]);
+        for (uint32_t i = 0; i < opts.num_dsps; i++) eos.push_back((*e_dsp)[i]);
+        uint32_t num_eos = eos.size();
 
         // Allocate input and output buffers for each execution object
-        std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
-        {
-            size_t in_size  = eo->GetInputBufferSizeInBytes();
-            size_t out_size = eo->GetOutputBufferSizeInBytes();
-            ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
-            ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
-            eo->SetInputOutputBuffer(in, out);
+        AllocateMemory(eos);
 
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
-        }
+        chrono::time_point<chrono::steady_clock> tloop0, tloop1;
+        tloop0 = chrono::steady_clock::now();
 
-        #define MAX_NUM_EOS  4
-        struct timespec t0[MAX_NUM_EOS], t1;
-
-        // Process frames with available execution objects in a pipelined manner
+        // Process frames with available eos in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
-        for (int frame_idx = 0;
-             frame_idx < num_frames + num_eos; frame_idx++)
+        for (uint32_t frame_idx = 0;
+             frame_idx < opts.num_frames + num_eos; frame_idx++)
         {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
+            ExecutionObject* eo = eos[frame_idx % num_eos];
 
             // Wait for previous frame on the same eo to finish processing
             if (eo->ProcessFrameWait())
             {
-                clock_gettime(CLOCK_MONOTONIC, &t1);
-                double elapsed_host =
-                                ms_diff(t0[eo->GetFrameIndex() % num_eos], t1);
-                double elapsed_device = eo->GetProcessTimeInMilliSeconds();
-                double overhead = 100 - (elapsed_device/elapsed_host*100);
-
-                std::cout << "frame[" << eo->GetFrameIndex() << "]: "
-                          << "Time on device: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_device << "ms, "
-                          << "host: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_host << "ms ";
-                std::cout << "API overhead: "
-                          << std::setw(6) << std::setprecision(3)
-                          << overhead << " %" << std::endl;
-
-                WriteFrameOutput(*eo, configuration);
+                ReportTime(eo);
+                WriteFrameOutput(*eo, c, opts);
             }
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo, frame_idx, configuration, num_frames,
-                          image_file, cap))
-            {
-                clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
+            if (ReadFrame(*eo, frame_idx, c, opts, cap))
                 eo->ProcessFrameStartAsync();
-            }
         }
 
-        for (auto b : buffers)
-            free(b);
+        tloop1 = chrono::steady_clock::now();
+        chrono::duration<float> elapsed = tloop1 - tloop0;
+        cout << "Loop total time (including read/write/opencv/print/etc): "
+                  << setw(6) << setprecision(4)
+                  << (elapsed.count() * 1000) << "ms" << endl;
 
+        FreeMemory(eos);
+        delete e_eve;
+        delete e_dsp;
     }
     catch (tidl::Exception &e)
     {
-        std::cerr << e.what() << std::endl;
+        cerr << e.what() << endl;
         status = false;
     }
 
     return status;
 }
 
-
-bool ReadFrame(ExecutionObject &eo, int frame_idx,
-               const Configuration& configuration, int num_frames,
-               std::string& image_file, VideoCapture &cap)
+// Create an Executor with the specified type and number of EOs
+Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c)
 {
-    if (frame_idx >= num_frames)
+    if (num == 0) return nullptr;
+
+    DeviceIds ids;
+    for (uint32_t i = 0; i < num; i++)
+        ids.insert(static_cast<DeviceId>(i));
+
+    return new Executor(dt, ids, c);
+}
+
+bool ReadFrame(ExecutionObject &eo, int frame_idx, const Configuration& c, 
+               const cmdline_opts_t& opts, VideoCapture &cap)
+{
+    if (frame_idx >= opts.num_frames)
         return false;
     eo.SetFrameIndex(frame_idx);
 
     char*  frame_buffer = eo.GetInputBufferPtr();
     assert (frame_buffer != nullptr);
-    int channel_size = configuration.inWidth * configuration.inHeight;
+    int channel_size = c.inWidth * c.inHeight;
 
     Mat image;
-    if (! image_file.empty())
+    if (! opts.is_camera_input && ! opts.is_video_input)
     {
-        if (is_preprocessed_input)
+        if (opts.input_file.empty())
         {
-            std::ifstream ifs(image_file, std::ios::binary);
-            ifs.seekg(frame_idx * channel_size * 3);
+            ifstream ifs(DEFAULT_INPUT, ios::binary);
+            ifs.seekg((frame_idx % DEFAULT_INPUT_FRAMES) * channel_size * 3);
             ifs.read(frame_buffer, channel_size * 3);
             bool ifs_status = ifs.good();
             ifs.close();
-            orig_width  = configuration.inWidth;
-            orig_height = configuration.inHeight;
+            orig_width  = c.inWidth;
+            orig_height = c.inHeight;
             return ifs_status;  // already PreProc-ed
         }
         else
         {
-            image = cv::imread(image_file, CV_LOAD_IMAGE_COLOR);
+            image = cv::imread(opts.input_file, CV_LOAD_IMAGE_COLOR);
             if (image.empty())
             {
-                std::cerr << "Unable to read from: " << image_file << std::endl;
+                cerr << "Unable to read from: " << opts.input_file << endl;
                 return false;
             }
         }
@@ -309,8 +264,7 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
     Mat s_image, bgr_frames[3];
     orig_width  = image.cols;
     orig_height = image.rows;
-    cv::resize(image, s_image,
-               Size(configuration.inWidth, configuration.inHeight),
+    cv::resize(image, s_image, Size(c.inWidth, c.inHeight),
                0, 0, cv::INTER_AREA);
     cv::split(s_image, bgr_frames);
     memcpy(frame_buffer,                bgr_frames[0].ptr(), channel_size);
@@ -334,12 +288,12 @@ void CreateMask(uchar *classes, uchar *mb, uchar *mg, uchar* mr,
 }
 
 // Create frame overlayed with pixel-level segmentation
-bool WriteFrameOutput(const ExecutionObject &eo,
-                      const Configuration& configuration)
+bool WriteFrameOutput(const ExecutionObject &eo, const Configuration& c,
+                      const cmdline_opts_t& opts)
 {
     unsigned char *out = (unsigned char *) eo.GetOutputBufferPtr();
-    int width          = configuration.inWidth;
-    int height         = configuration.inHeight;
+    int width          = c.inWidth;
+    int height         = c.inHeight;
     int channel_size   = width * height;
 
     Mat mask, frame, blend, r_blend, bgr[3];
@@ -360,8 +314,13 @@ bool WriteFrameOutput(const ExecutionObject &eo,
     // Create overlayed frame
     cv::addWeighted(frame, 0.7, mask, 0.3, 0.0, blend);
 
-    cv::resize(blend, r_blend, Size(orig_width, orig_height));
-    if (is_camera_input)
+    // Resize to output width/height, keep aspect ratio
+    uint32_t output_width = opts.output_width;
+    if (output_width == 0)  output_width = orig_width;
+    uint32_t output_height = (output_width*1.0f) / orig_width * orig_height;
+    cv::resize(blend, r_blend, Size(output_width, output_height));
+
+    if (opts.is_camera_input || opts.is_video_input)
     {
         cv::imshow("Segmentation", r_blend);
         waitKey(1);
@@ -370,7 +329,7 @@ bool WriteFrameOutput(const ExecutionObject &eo,
     {
         int frame_index = eo.GetFrameIndex();
         char outfile_name[64];
-        if (is_preprocessed_input)
+        if (opts.input_file.empty())
         {
             snprintf(outfile_name, 64, "frame_%d.png", frame_index);
             cv::imwrite(outfile_name, frame);
@@ -386,87 +345,25 @@ bool WriteFrameOutput(const ExecutionObject &eo,
     return true;
 }
 
-
-void ProcessArgs(int argc, char *argv[], std::string& config,
-                 int& num_devices, DeviceType& device_type,
-                 std::string& input_file)
-{
-    const struct option long_options[] =
-    {
-        {"config",      required_argument, 0, 'c'},
-        {"num_devices", required_argument, 0, 'n'},
-        {"device_type", required_argument, 0, 't'},
-        {"image_file",  required_argument, 0, 'i'},
-        {"help",        no_argument,       0, 'h'},
-        {"verbose",     no_argument,       0, 'v'},
-        {0, 0, 0, 0}
-    };
-
-    int option_index = 0;
-
-    while (true)
-    {
-        int c = getopt_long(argc, argv, "c:n:t:i:hv", long_options, &option_index);
-
-        if (c == -1)
-            break;
-
-        switch (c)
-        {
-            case 'c': config = optarg;
-                      break;
-
-            case 'n': num_devices = atoi(optarg);
-                      assert (num_devices > 0 && num_devices <= 4);
-                      break;
-
-            case 't': if (*optarg == 'e')
-                          device_type = DeviceType::EVE;
-                      else if (*optarg == 'd')
-                          device_type = DeviceType::DSP;
-                      else
-                      {
-                          std::cerr << "Invalid argument to -t, only e or d"
-                                       " allowed" << std::endl;
-                          exit(EXIT_FAILURE);
-                      }
-                      break;
-
-            case 'i': input_file = optarg;
-                      break;
-
-            case 'v': __TI_show_debug_ = true;
-                      break;
-
-            case 'h': DisplayHelp();
-                      exit(EXIT_SUCCESS);
-                      break;
-
-            case '?': // Error in getopt_long
-                      exit(EXIT_FAILURE);
-                      break;
-
-            default:
-                      std::cerr << "Unsupported option: " << c << std::endl;
-                      break;
-        }
-    }
-}
-
 void DisplayHelp()
 {
-    std::cout << "Usage: segmentation\n"
-                 "  Will run segmentation network to perform pixel-level"
-                 " classification.\n  Use -c to run a different"
-                 "  segmentation network. Default is jseg21_tiscapes.\n"
-                 "Optional arguments:\n"
-                 " -c <config>          Valid configs: jseg21_tiscapes, jseg21\n"
-                 " -n <number of cores> Number of cores to use (1 - 4)\n"
-                 " -t <d|e>             Type of core. d -> DSP, e -> EVE\n"
-                 " -i <image>           Path to the image file\n"
-                 "                      Default are 3 frames in testvecs\n"
-                 " -i camera            Use camera as input\n"
-                 " -v                   Verbose output during execution\n"
-                 " -h                   Help\n";
+    std::cout <<
+    "Usage: segmentation\n"
+    "  Will run segmentation network to perform pixel-level"
+    " classification.\n  Use -c to run a different"
+    "  segmentation network. Default is jseg21_tiscapes.\n"
+    "Optional arguments:\n"
+    " -c <config>          Valid configs: jseg21_tiscapes, jseg21\n"
+    " -d <number>          Number of dsp cores to use\n"
+    " -e <number>          Number of eve cores to use\n"
+    " -i <image>           Path to the image file as input\n"
+    "                      Default are 9 frames in testvecs\n"
+    " -i camera<number>    Use camera as input\n"
+    "                      video input port: /dev/video<number>\n"
+    " -i <name>.{mp4,mov,avi}  Use video file as input\n"
+    " -f <number>          Number of frames to process\n"
+    " -w <number>          Output image/video width\n"
+    " -v                   Verbose output during execution\n"
+    " -h                   Help\n";
 }
 

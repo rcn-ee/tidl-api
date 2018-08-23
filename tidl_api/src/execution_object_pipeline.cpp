@@ -55,6 +55,8 @@ class ExecutionObjectPipeline::Impl
         //! for pipelined execution
         std::vector<ExecutionObject*> eos_m;
         std::vector<IODeviceArgInfo*> iobufs_m;
+        std::vector<float> eo_device_time_m;
+        std::vector<float> eo_host_time_m;
 
         std::string device_name_m;
 
@@ -64,7 +66,8 @@ class ExecutionObjectPipeline::Impl
         //! current execution object index
         uint32_t curr_eo_idx_m;
 
-        // host time tracking: pipeline start to finish
+        // device and host time tracking: pipeline start to finish
+        float device_time_m;
         float host_time_m;
 
     private:
@@ -101,6 +104,11 @@ ExecutionObjectPipeline::~ExecutionObjectPipeline() = default;
 char* ExecutionObjectPipeline::GetInputBufferPtr() const
 {
     return static_cast<char *>(pimpl_m->iobufs_m.front()->GetArg().ptr());
+}
+
+uint32_t ExecutionObjectPipeline::GetNumExecutionObjects() const
+{
+    return pimpl_m->eos_m.size();
 }
 
 size_t ExecutionObjectPipeline::GetInputBufferSizeInBytes() const
@@ -166,15 +174,26 @@ void ExecutionObjectPipeline::RunAsyncNext()
 
 float ExecutionObjectPipeline::GetProcessTimeInMilliSeconds() const
 {
-    float total = 0.0f;
-    for (auto eo : pimpl_m->eos_m)
-        total += eo->GetProcessTimeInMilliSeconds();
-    return total;
+    return pimpl_m->device_time_m;
 }
 
 float ExecutionObjectPipeline::GetHostProcessTimeInMilliSeconds() const
 {
     return pimpl_m->host_time_m;
+}
+
+float ExecutionObjectPipeline::GetProcessTimeInMilliSeconds(
+        uint32_t eo_index) const
+{
+    assert(eo_index < pimpl_m->eos_m.size());
+    return pimpl_m->eo_device_time_m[eo_index];
+}
+
+float ExecutionObjectPipeline::GetHostProcessTimeInMilliSeconds(
+        uint32_t eo_index) const
+{
+    assert(eo_index < pimpl_m->eos_m.size());
+    return pimpl_m->eo_host_time_m[eo_index];
 }
 
 const std::string& ExecutionObjectPipeline::GetDeviceName() const
@@ -253,6 +272,11 @@ void ExecutionObjectPipeline::Impl::Initialize()
         ArgInfo out(ptr, size);
         iobufs_m.push_back(new IODeviceArgInfo(out));
     }
+
+    // Record keeping for each EO's device time and host time
+    // because EO could be shared by another EOP
+    eo_device_time_m.resize(eos_m.size());
+    eo_host_time_m.resize(eos_m.size());
 }
 
 ExecutionObjectPipeline::Impl::~Impl()
@@ -277,12 +301,13 @@ void ExecutionObjectPipeline::Impl::SetInputOutputBuffer(const ArgInfo &in,
 
 bool ExecutionObjectPipeline::Impl::RunAsyncStart()
 {
-    start_m = std::chrono::steady_clock::now();
     has_work_m = true;
     is_processed_m = false;
+    device_time_m = 0.0f;
     host_time_m = 0.0f;
     curr_eo_idx_m = 0;
     eos_m[0]->AcquireLock();
+    start_m = std::chrono::steady_clock::now();
     eos_m[0]->SetInputOutputBuffer(iobufs_m[0], iobufs_m[1]);
     return eos_m[0]->ProcessFrameStartAsync();
 }
@@ -291,6 +316,12 @@ bool ExecutionObjectPipeline::Impl::RunAsyncStart()
 bool ExecutionObjectPipeline::Impl::RunAsyncNext()
 {
     eos_m[curr_eo_idx_m]->ProcessFrameWait();
+    // need to capture EO's device/host time before we release its lock
+    eo_device_time_m[curr_eo_idx_m] = eos_m[curr_eo_idx_m]->
+                                                GetProcessTimeInMilliSeconds();
+    eo_host_time_m[curr_eo_idx_m]   = eos_m[curr_eo_idx_m]->
+                                            GetHostProcessTimeInMilliSeconds();
+    device_time_m += eo_device_time_m[curr_eo_idx_m];
     eos_m[curr_eo_idx_m]->ReleaseLock();
     curr_eo_idx_m += 1;
     if (curr_eo_idx_m < eos_m.size())

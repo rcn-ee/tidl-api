@@ -34,7 +34,7 @@ deep learning networks: classification, segmentation and object detection.
 ``imagenet`` and ``segmentation`` can run on AM57x processors with either EVE or C66x cores.
 ``ssd_multibox`` requires AM57x processors with both EVE and C66x.  The performance
 numbers that we present here were obtained on an AM5729 EVM, which
-includes 2 Arm Cortex-A15 cores running at 1.5GHz, 4 EVE cores at 535MHz, and
+includes 2 Arm Cortex-A15 cores running at 1.5GHz, 2 EVE cores at 650MHz, and
 2 DSP cores at 750MHz.
 
 For each example, we report device processing time, host processing time,
@@ -43,8 +43,8 @@ from the moment processing starts for a frame till processing finishes.
 **Host processing time** is measured on the host, from the moment
 ``ProcessFrameStartAsync()`` is called till ``ProcessFrameWait()`` returns
 in user application.  It includes the TIDL API overhead, the OpenCL runtime
-overhead, and the time to copy user input data into padded TIDL internal
-buffers.
+overhead, and the time to copy between user input/output data and
+the padded TIDL internal buffers.
 
 Imagenet
 --------
@@ -77,15 +77,16 @@ objects as output, and the processing time on either EVE or DSP.
    ====================== ==================== ============
    Device Processing Time Host Processing Time API Overhead
    ====================== ==================== ============
-   EVE: 123.1 ms          124.7 ms             1.34 %
+   EVE: 103.5 ms          104.8 ms             1.21 %
    **OR**
-   DSP: 117.9 ms          119.3 ms             1.14 %
+   DSP: 117.4 ms          118.4 ms             0.827 %
    ====================== ==================== ============
 
 The particular network that we ran in this category, jacintonet11v2,
-has 14 layers.  User can specify whether to run the network on EVE or DSP
-for acceleration.  We can see that EVE time is slightly higher than DSP time.
-We can also see that the overall overhead is less than 1.5%.
+has 14 layers.  Input to the network is RGB image of 224x224.
+User can specify whether to run the network on EVE or DSP
+for acceleration.  We can see that EVE time is slightly faster than DSP time.
+We can also see that the overall overhead is less than 1.3%.
 
 .. note::
     The predicitions reported here are based on the output of the softmax
@@ -107,17 +108,22 @@ in blue and background in gray.
    :width: 600
 
 The network we ran in this category is jsegnet21v2, which has 26 layers.
+Input to the network is RGB image of size 1024x512.  The output is 1024x512
+values, each value indicates which pre-trained category the current pixel
+belongs to.  The example will take the network output, create an overlay,
+and blend the overlay onto the original input image to create an output image.
 From the reported time in the following table, we can see that this network
-runs significantly faster on EVE than on DSP.
+runs significantly faster on EVE than on DSP.  The API overhead is less than
+1.1%.
 
 .. table::
 
    ====================== ==================== ============
    Device Processing Time Host Processing Time API Overhead
    ====================== ==================== ============
-   EVE: 296.5 ms          303.3 ms             2.26 %
+   EVE: 248.7 ms          251.3 ms             1.02 %
    **OR**
-   DSP: 812.0 ms          818.4 ms             0.79 %
+   DSP: 813.2 ms          815.5 ms             0.281 %
    ====================== ==================== ============
 
 .. _ssd-example:
@@ -138,22 +144,32 @@ vehicles in blue and road signs in yellow.
 .. image:: images/pexels-photo-378570-ssd.jpg
    :width: 600
 
+The network we ran in this category is jdenet_ssd, which has 43 layers.
+Input to the network is RGB image of size 768x320.  Output is a list of
+boxes (up to 20), each box has information about the box coordinates, and
+which pre-trained category that the object inside the box belongs to.
+The example will take the network output, draw boxes accordingly,
+and create an output image.
 The network can be run entirely on either EVE or DSP.  But the best
-performance comes with running the first 30 layers on EVE and the
-next 13 layers on DSP, for this particular jdetnet_ssd network.
+performance comes with running the first 30 layers as a group on EVE
+and the next 13 layers as another group on DSP.
 Note the **AND** in the following table for the reported time.
+The overall API overhead is about 1.61%.
 Our end-to-end example shows how easy it is to assign a layers group id
-to an *Executor* and how easy it is to connect the output from one
-*ExecutionObject* to the input to another *ExecutionObject*.
+to an *Executor* and how easy it is to construct an *ExecutionObjectPipeline*
+to connect the output of one *Executor*'s *ExecutionObject*
+to the input of another *Executor*'s *ExecutionObject*.
 
 .. table::
 
    ====================== ==================== ============
    Device Processing Time Host Processing Time API Overhead
    ====================== ==================== ============
-   EVE: 175.2 ms          179.1 ms             2.14 %
+   EVE: 148.0 ms          150.1 ms             1.33 %
    **AND**
-   DSP:  21.1 ms           22.3 ms             5.62 %
+   DSP: 22.27 ms          23.06 ms             3.44 %
+   **TOTAL**
+   EVE+DSP: 170.3 ms      173.1 ms             1.61 %
    ====================== ==================== ============
 
 Test
@@ -169,7 +185,7 @@ Running an example with ``-h`` will show help message with option set.
 The following code section shows how to run the examples, and
 the test program that tests all supported TIDL network configs.
 
-.. code:: shell
+.. code-block:: shell
 
    root@am57xx-evm:~# cd /usr/share/ti/tidl-api/examples/imagenet/
    root@am57xx-evm:/usr/share/ti/tidl-api/examples/imagenet# make -j4
@@ -277,3 +293,70 @@ the test program that tests all supported TIDL network configs.
    frame[0]: Time on device:    960ms, host:  961.1ms API overhead:  0.116 %
    squeeze1_1 : PASSED
    tidl PASSED
+
+Image input
+^^^^^^^^^^^
+
+The image input option, ``-i <image>``, takes an image file as input.
+You can supply an image file with format that OpenCV can read, since
+we use OpenCV for image pre/post-processing.  When ``-f <number>`` option
+is used, the same image will be processed repeatedly.
+
+Camera (live video) input
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The input option, ``-i camera<number>``, enables live frame inputs
+from camera.  ``<number>`` is the video input port number
+of your camera in Linux.  Use the following command to check video
+input ports.  The number defaults to ``1`` for TMDSCM572X camera module
+used on AM57x EVMs.  You can use ``-f <number>`` to specify the number
+of frames you want to process.
+
+.. code-block:: shell
+
+  root@am57xx-evm:~# v4l2-ctl --list-devices
+  omapwb-cap (platform:omapwb-cap):
+        /dev/video11
+
+  omapwb-m2m (platform:omapwb-m2m):
+        /dev/video10
+
+  vip (platform:vip):
+        /dev/video1
+
+  vpe (platform:vpe):
+        /dev/video0
+
+
+Pre-recorded video (mp4/mov/avi) input
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The input option, ``-i <name>.{mp4,mov,avi}``, enables frame inputs from
+pre-recorded video file in mp4, mov or avi format.  If you have a video in
+a different OpenCV-supported format/suffix, you can simply create a softlink
+with one of the mp4, mov or avi suffixes and feed it into the example.
+Again, use ``-f <number>`` to specify the number of frames you want to process.
+
+Displaying video output
+^^^^^^^^^^^^^^^^^^^^^^^
+
+When using video input, live or pre-recorded, the example will display
+the output in a window using OpenCV.  If you have a LCD screen attached
+to the EVM, you will need to kill the ``matrix-gui`` first in order to
+see the example display window, as shown in the following example.
+
+.. code-block:: shell
+
+  root@am57xx-evm:/usr/share/ti/tidl/examples/ssd_multibox# /etc/init.d/matrix-gui-2.0 stop
+  Stopping Matrix GUI application.
+  root@am57xx-evm:/usr/share/ti/tidl/examples/ssd_multibox# ./ssd_multibox -i camera -f 100
+  Input: camera
+  init done
+  Using Wayland-EGL
+  wlpvr: PVR Services Initialised
+  Using the 'xdg-shell-v5' shell integration
+  ... ...
+  root@am57xx-evm:/usr/share/ti/tidl/examples/ssd_multibox# /etc/init.d/matrix-gui-2.0 start
+  /usr/share/ti/tidl/examples/ssd_multibox
+  Removing stale PID file /var/run/matrix-gui-2.0.pid.
+  Starting Matrix GUI application.

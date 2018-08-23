@@ -37,6 +37,7 @@ using boost::format;
 using std::string;
 using std::istream;
 using std::ostream;
+using std::vector;
 
 static bool read_frame_helper(char* ptr, size_t size, istream& input_file);
 
@@ -178,3 +179,60 @@ const char* ReadReferenceOutput(const string& name)
 
     return buffer;
 }
+
+// Allocate input and output memory for each EO
+void AllocateMemory(const vector<ExecutionObject *>& eos)
+{
+    // Allocate input and output buffers for each execution object
+    for (auto eo : eos)
+    {
+        size_t in_size  = eo->GetInputBufferSizeInBytes();
+        size_t out_size = eo->GetOutputBufferSizeInBytes();
+        void*  in_ptr   = malloc(in_size);
+        void*  out_ptr  = malloc(out_size);
+        assert(in_ptr != nullptr && out_ptr != nullptr);
+
+        ArgInfo in  = { ArgInfo(in_ptr,  in_size)};
+        ArgInfo out = { ArgInfo(out_ptr, out_size)};
+        eo->SetInputOutputBuffer(in, out);
+    }
+}
+
+// Free the input and output memory associated with each EO
+void FreeMemory(const vector<ExecutionObject *>& eos)
+{
+    for (auto eo : eos)
+    {
+        free(eo->GetInputBufferPtr());
+        free(eo->GetOutputBufferPtr());
+    }
+}
+
+// Allocate input and output memory for each EOP
+void AllocateMemory(const vector<ExecutionObjectPipeline *>& eops)
+{
+    // Allocate input and output buffers for each execution object
+    for (auto eop : eops)
+    {
+        size_t in_size  = eop->GetInputBufferSizeInBytes();
+        size_t out_size = eop->GetOutputBufferSizeInBytes();
+        void*  in_ptr   = malloc(in_size);
+        void*  out_ptr  = malloc(out_size);
+        assert(in_ptr != nullptr && out_ptr != nullptr);
+
+        ArgInfo in  = { ArgInfo(in_ptr,  in_size)};
+        ArgInfo out = { ArgInfo(out_ptr, out_size)};
+        eop->SetInputOutputBuffer(in, out);
+    }
+}
+
+// Free the input and output memory associated with each EOP
+void FreeMemory(const vector<ExecutionObjectPipeline *>& eops)
+{
+    for (auto eop : eops)
+    {
+        free(eop->GetInputBufferPtr());
+        free(eop->GetOutputBufferPtr());
+    }
+}
+

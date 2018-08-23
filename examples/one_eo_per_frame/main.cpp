@@ -53,9 +53,6 @@ bool Run(const string& config_file, int num_eve,int num_dsp,
 Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c);
 void      CollectEOs(const Executor *e, vector<ExecutionObject *>& EOs);
 
-void AllocateMemory(const vector<ExecutionObject *>& EOs);
-void FreeMemory    (const vector<ExecutionObject *>& EOs);
-
 
 int main(int argc, char *argv[])
 {
@@ -174,27 +171,3 @@ void CollectEOs(const Executor *e, vector<ExecutionObject *>& EOs)
         EOs.push_back((*e)[i]);
 }
 
-// Allocate input and output memory for each EO
-void AllocateMemory(const vector<ExecutionObject *>& EOs)
-{
-    // Allocate input and output buffers for each execution object
-    for (auto eo : EOs)
-    {
-        size_t in_size  = eo->GetInputBufferSizeInBytes();
-        size_t out_size = eo->GetOutputBufferSizeInBytes();
-        ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
-        ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
-        eo->SetInputOutputBuffer(in, out);
-    }
-}
-
-// Free the input and output memory associated with each EO
-void FreeMemory(const vector<ExecutionObject *>& EOs)
-{
-    for (auto eo : EOs)
-    {
-        free(eo->GetInputBufferPtr());
-        free(eo->GetOutputBufferPtr());
-    }
-
-}

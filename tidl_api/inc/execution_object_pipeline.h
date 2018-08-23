@@ -67,6 +67,10 @@ class ExecutionObjectPipeline : public ExecutionObjectInternalInterface
         //! @brief Tear down an ExecutionObjectPipeline and free used resources
         ~ExecutionObjectPipeline();
 
+        //! Returns the number of ExecutionObjects associated with the
+        //! ExecutionObjectPipeline
+        uint32_t GetNumExecutionObjects() const;
+
         //! Specify the input and output buffers used by the EOP
         //! @param in buffer used for input.
         //! @param out buffer used for output.
@@ -108,10 +112,22 @@ class ExecutionObjectPipeline : public ExecutionObjectInternalInterface
         //! @return Number of milliseconds to process a frame on the device.
         float GetProcessTimeInMilliSeconds() const override;
 
+        //! @brief return the number of milliseconds taken *on the device*
+        //! to process a layersGroup by a componenet ExecutionObject
+        //! @return Number of milliseconds to process a layersGroup on the
+        //! device by a component ExecutionObject.
+        float GetProcessTimeInMilliSeconds(uint32_t eo_index) const;
+
         //! @brief return the number of milliseconds taken *on the host* to
         //! execute the process call
         //! @return Number of milliseconds to process a frame on the host.
         float GetHostProcessTimeInMilliSeconds() const override;
+
+        //! @brief return the number of milliseconds taken *on the host*
+        //! to process a layersGroup by a componenet ExecutionObject
+        //! @return Number of milliseconds to process a layersGroup on the
+        //! host by a component ExecutionObject.
+        float GetHostProcessTimeInMilliSeconds(uint32_t eo_index) const;
 
         //! Return the combined device names that this pipeline runs on
         const std::string& GetDeviceName() const override;
