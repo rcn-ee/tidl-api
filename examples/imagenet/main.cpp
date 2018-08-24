@@ -147,9 +147,9 @@ bool RunConfiguration(const std::string& config_file,
                       std::string& input_file, int num_frames)
 {
     DeviceIds dsp_ids, eve_ids;
-    for (int i = 0; i < num_dsps; i++)
+    for (uint32_t i = 0; i < num_dsps; i++)
         dsp_ids.insert(static_cast<DeviceId>(i));
-    for (int i = 0; i < num_eves; i++)
+    for (uint32_t i = 0; i < num_eves; i++)
         eve_ids.insert(static_cast<DeviceId>(i));
 
     // Read the TI DL configuration file
@@ -186,11 +186,11 @@ bool RunConfiguration(const std::string& config_file,
                          new Executor(DeviceType::EVE, eve_ids, configuration);
         Executor *e_dsp = (num_dsps == 0) ? nullptr :
                          new Executor(DeviceType::DSP, dsp_ids, configuration);
-  
+
         // Get ExecutionObjects from Executors
         std::vector<ExecutionObject*> eos;
-        for (int i = 0; i < num_eves; i++)  eos.push_back((*e_eve)[i]);
-        for (int i = 0; i < num_dsps; i++)  eos.push_back((*e_dsp)[i]);
+        for (uint32_t i = 0; i < num_eves; i++)  eos.push_back((*e_eve)[i]);
+        for (uint32_t i = 0; i < num_dsps; i++)  eos.push_back((*e_dsp)[i]);
         int num_eos = eos.size();
 
         // Allocate input and output buffers for each ExecutionObject

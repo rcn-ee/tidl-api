@@ -108,6 +108,11 @@ ExecutionObject* Executor::operator[](uint32_t index) const
     return pimpl_m->execution_objects_m[index].get();
 }
 
+uint32_t Executor::GetNumExecutionObjects() const
+{
+    return pimpl_m->execution_objects_m.size();
+}
+
 bool ExecutorImpl::Initialize(const Configuration& configuration)
 {
     configuration_m = configuration;

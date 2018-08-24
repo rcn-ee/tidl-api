@@ -101,6 +101,10 @@ class Executor
         //! Returns a single execution object at index
         ExecutionObject* operator[](uint32_t index) const;
 
+        //! Returns the number of ExecutionObjects associated with the
+        //! Executor
+        uint32_t GetNumExecutionObjects() const;
+
         //! @brief Returns the number of devices of the specified type
         //! available for TI DL.
         //! @param  device_type DSP or EVE/EVE device
