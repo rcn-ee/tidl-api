@@ -33,34 +33,22 @@
 //
 #include <signal.h>
 #include <iostream>
-#include <iomanip>
 #include <fstream>
 #include <cassert>
 #include <string>
-#include <cstring>
 
 #include "executor.h"
 #include "execution_object.h"
 #include "configuration.h"
-#include <boost/format.hpp>
+#include "utils.h"
 
 using namespace tidl;
 using std::string;
 using std::unique_ptr;
 using std::vector;
-using boost::format;
 
 bool Run(const string& config_file, int num_eve,int num_dsp,
          const char* ref_output);
-
-bool ReadFrame(ExecutionObject*     eo,
-               int                  frame_idx,
-               const Configuration& configuration,
-               std::istream&        input_file);
-bool CheckFrame(const ExecutionObject *eo, const char *ref_output);
-
-const char* ReadReferenceOutput(const string& name);
-void        ReportTime(const ExecutionObject* eo);
 
 Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c);
 void      CollectEOs(const Executor *e, vector<ExecutionObject *>& EOs);
@@ -116,7 +104,6 @@ bool Run(const string& config_file, int num_eve, int num_dsp,
 
     // Open input file for reading
     std::ifstream input_data_file(c.inData, std::ios::binary);
-    assert (input_data_file.good());
 
     bool status = true;
     try
@@ -210,83 +197,4 @@ void FreeMemory(const vector<ExecutionObject *>& EOs)
         free(eo->GetOutputBufferPtr());
     }
 
-}
-
-// Read a frame. Since the sample input has a single frame, read the same
-// frame over and over.
-bool ReadFrame(ExecutionObject *eo, int frame_idx,
-               const Configuration& configuration,
-               std::istream& input_file)
-{
-    char*  frame_buffer = eo->GetInputBufferPtr();
-    assert (frame_buffer != nullptr);
-
-    input_file.seekg(0, input_file.beg);
-
-    input_file.read(eo->GetInputBufferPtr(),
-                    eo->GetInputBufferSizeInBytes());
-
-    if (input_file.eof())
-        return false;
-
-    assert (input_file.good());
-
-    // Note: Frame index is used by the EO for debug messages only
-    eo->SetFrameIndex(frame_idx);
-
-    if (input_file.good())
-        return true;
-
-    return false;
-}
-
-// Compare output against reference output
-bool CheckFrame(const ExecutionObject *eo, const char *ref_output)
-{
-    if (std::memcmp(static_cast<const void*>(ref_output),
-               static_cast<const void*>(eo->GetOutputBufferPtr()),
-               eo->GetOutputBufferSizeInBytes()) == 0)
-        return true;
-
-    return false;
-}
-
-
-void ReportTime(const ExecutionObject* eo)
-{
-    double elapsed_host   = eo->GetHostProcessTimeInMilliSeconds();
-    double elapsed_device = eo->GetProcessTimeInMilliSeconds();
-    double overhead = 100 - (elapsed_device/elapsed_host*100);
-
-    std::cout << format("frame[%3d]: Time on %s: %4.2f ms, host: %4.2f ms"
-                        " API overhead: %2.2f %%\n")
-                        % eo->GetFrameIndex() % eo->GetDeviceName()
-                        % elapsed_device % elapsed_host % overhead;
-}
-
-namespace tidl {
-std::size_t GetBinaryFileSize (const std::string &F);
-bool        ReadBinary        (const std::string &F, char* buffer, int size);
-}
-
-// Read a file into a buffer.
-const char* ReadReferenceOutput(const string& name)
-{
-    size_t size = GetBinaryFileSize(name);
-
-    if (size == 0)
-        return nullptr;
-
-    char* buffer = new char[size];
-
-    if (!buffer)
-        return nullptr;
-
-    if (!ReadBinary(name, buffer, size))
-    {
-        delete [] buffer;
-        return nullptr;
-    }
-
-    return buffer;
 }

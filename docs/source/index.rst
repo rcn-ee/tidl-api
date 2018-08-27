@@ -10,9 +10,9 @@ TI Deep Learning API User's Guide
    intro
    overview
    using_api
-   viewer
    example
    api
+   viewer
    faq/index
    readme/index
    notice

@@ -500,6 +500,31 @@ Device::Ptr Device::Create(DeviceType core_type, const DeviceIds& ids,
     return p;
 }
 
+// Minimum version of OpenCL required for this version of TIDL API
+#define MIN_OCL_VERSION "01.01.16.00"
+static bool CheckOpenCLVersion(cl_platform_id id)
+{
+    cl_int err;
+    size_t length;
+    err = clGetPlatformInfo(id, CL_PLATFORM_VERSION, 0, nullptr, &length);
+    if (err != CL_SUCCESS) return false;
+
+    std::unique_ptr<char> version(new char[length]);
+    err = clGetPlatformInfo(id, CL_PLATFORM_VERSION, length, version.get(),
+                            nullptr);
+    if (err != CL_SUCCESS) return false;
+
+    std::string v(version.get());
+
+    if (v.substr(v.find("01."), sizeof(MIN_OCL_VERSION)) >= MIN_OCL_VERSION)
+        return true;
+
+    std::cerr << "TIDL API Error: OpenCL " << MIN_OCL_VERSION
+              << " or higher required." << std::endl;
+
+    return false;
+}
+
 static bool PlatformIsAM57()
 {
     cl_platform_id id;
@@ -507,6 +532,9 @@ static bool PlatformIsAM57()
 
     err = clGetPlatformIDs(1, &id, nullptr);
     if (err != CL_SUCCESS) return false;
+
+    if (!CheckOpenCLVersion(id))
+       return false;
 
     // Check if the device name is AM57
     size_t length;

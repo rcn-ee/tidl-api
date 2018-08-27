@@ -28,7 +28,9 @@ EXE = one_eo_per_frame
 
 include ../make.common
 
-SOURCES = main.cpp
+CXXFLAGS += -I../common
+
+SOURCES = main.cpp ../common/utils.cpp
 
 $(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
 	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(LDFLAGS) $(LIBS) -o $@

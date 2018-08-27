@@ -1,0 +1,130 @@
+/******************************************************************************
+ * Copyright (c) 2018, Texas Instruments Incorporated - http://www.ti.com/
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *     * Neither the name of Texas Instruments Incorporated nor the
+ *       names of its contributors may be used to endorse or promote products
+ *       derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGE.
+ *****************************************************************************/
+
+#include <boost/format.hpp>
+#include <cstring>
+
+#include "utils.h"
+
+using namespace tidl;
+
+using boost::format;
+using std::string;
+
+bool ReadFrame(ExecutionObject* eo, int frame_idx,
+               const Configuration& configuration,
+               std::istream& input_file)
+{
+    if (frame_idx >= configuration.numFrames)
+        return false;
+
+    assert (eo->GetInputBufferPtr() != nullptr);
+    assert (input_file.good());
+
+    input_file.read(eo->GetInputBufferPtr(),
+                    eo->GetInputBufferSizeInBytes());
+    assert (input_file.good());
+
+    if (input_file.eof())
+        return false;
+
+    // Note: Frame index is used by the EO for debug messages only
+    eo->SetFrameIndex(frame_idx);
+
+    // Wrap-around : if EOF is reached, start reading from the beginning.
+    if (input_file.peek() == EOF)
+        input_file.seekg(0, input_file.beg);
+
+    if (input_file.good())
+        return true;
+
+    return false;
+}
+
+bool WriteFrame(const ExecutionObject* eo, std::ostream& output_file)
+{
+    output_file.write(eo->GetOutputBufferPtr(),
+                      eo->GetOutputBufferSizeInBytes());
+    assert(output_file.good() == true);
+
+    if (output_file.good())
+        return true;
+
+    return false;
+}
+
+void ReportTime(const ExecutionObject* eo)
+{
+    double elapsed_host   = eo->GetHostProcessTimeInMilliSeconds();
+    double elapsed_device = eo->GetProcessTimeInMilliSeconds();
+    double overhead = 100 - (elapsed_device/elapsed_host*100);
+
+    std::cout << format("frame[%3d]: Time on %s: %4.2f ms, host: %4.2f ms"
+                        " API overhead: %2.2f %%\n")
+                        % eo->GetFrameIndex() % eo->GetDeviceName()
+                        % elapsed_device % elapsed_host % overhead;
+}
+
+// Compare output against reference output
+bool CheckFrame(const ExecutionObject *eo, const char *ref_output)
+{
+    if (std::memcmp(static_cast<const void*>(ref_output),
+               static_cast<const void*>(eo->GetOutputBufferPtr()),
+               eo->GetOutputBufferSizeInBytes()) == 0)
+        return true;
+
+    return false;
+}
+
+
+namespace tidl {
+std::size_t GetBinaryFileSize (const std::string &F);
+bool        ReadBinary        (const std::string &F, char* buffer, int size);
+}
+
+// Read file into a buffer.
+const char* ReadReferenceOutput(const string& name)
+{
+    size_t size = GetBinaryFileSize(name);
+
+    if (size == 0)
+        return nullptr;
+
+    char* buffer = new char[size];
+
+    if (!buffer)
+        return nullptr;
+
+    if (!ReadBinary(name, buffer, size))
+    {
+        delete [] buffer;
+        return nullptr;
+    }
+
+    return buffer;
+}

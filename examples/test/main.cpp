@@ -28,48 +28,44 @@
 #include <signal.h>
 #include <getopt.h>
 #include <iostream>
-#include <iomanip>
 #include <fstream>
 #include <cassert>
 #include <string>
-#include <functional>
-#include <algorithm>
-#include <time.h>
+#include <vector>
 
 #include "executor.h"
 #include "execution_object.h"
 #include "configuration.h"
-
-bool __TI_show_debug_ = false;
+#include "utils.h"
 
 using namespace tidl;
+using std::string;
 
-bool RunMultipleExecutors(const std::string& config_file_1,
-                          const std::string& config_file_2,
-                          uint32_t num_devices_available);
+bool RunMultipleExecutors(const string& config_file_1,
+                          const string& config_file_2,
+                          uint32_t      num_devices_available);
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type);
-bool RunAllConfigurations(int32_t num_devices, DeviceType device_type);
+bool RunConfiguration(const string& config_file,
+                      int           num_devices,
+                      DeviceType    device_type);
 
-bool ReadFrame(ExecutionObject&     eo,
-               int                  frame_idx,
-               const Configuration& configuration,
-               std::istream&        input_file);
+bool RunAllConfigurations(int32_t    num_devices,
+                          DeviceType device_type);
 
-bool WriteFrame(const ExecutionObject &eo,
-                std::ostream& output_file);
+bool RunNetwork(DeviceType           device_type,
+                const DeviceIds&     ids,
+                const Configuration& c,
+                std::istream&        input,
+                std::ostream&        output);
 
 static void ProcessArgs(int argc, char *argv[],
-                        std::string& config_file,
-                        int& num_devices,
+                        string&     config_file,
+                        int&        num_devices,
                         DeviceType& device_type);
 
 static void DisplayHelp();
 
-static double ms_diff(struct timespec &t0, struct timespec &t1)
-{ return (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6; }
-
+bool verbose = false;
 
 int main(int argc, char *argv[])
 {
@@ -82,13 +78,12 @@ int main(int argc, char *argv[])
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
     if (num_eve == 0 && num_dsp == 0)
     {
-        std::cout << "TI DL not supported on this SoC." << std::endl;
+        std::cout << "TI DL not supported on this processor." << std::endl;
         return EXIT_SUCCESS;
     }
-    std::cout << "API Version: " << Executor::GetAPIVersion() << std::endl;
 
     // Process arguments
-    std::string config_file;
+    string      config_file;
     int         num_devices = 1;
     DeviceType  device_type = DeviceType::EVE;
     ProcessArgs(argc, argv, config_file, num_devices, device_type);
@@ -144,92 +139,78 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
         ids.insert(static_cast<DeviceId>(i));
 
     // Read the TI DL configuration file
-    Configuration configuration;
-    bool status = configuration.ReadFromFile(config_file);
-    if (!status)
-    {
-        std::cerr << "Error in configuration file: " << config_file
-                  << std::endl;
-        return false;
-    }
+    Configuration c;
+    if (!c.ReadFromFile(config_file)) return false;
+    if (verbose)                      c.enableApiTrace = true;
 
     // Open input and output files
-    std::ifstream input_data_file(configuration.inData, std::ios::binary);
-    std::ofstream output_data_file(configuration.outData, std::ios::binary);
+    std::ifstream input_data_file(c.inData, std::ios::binary);
+    std::ofstream output_data_file(c.outData, std::ios::binary);
     assert (input_data_file.good());
     assert (output_data_file.good());
 
+    bool status = RunNetwork(device_type, ids, c,
+                             input_data_file, output_data_file);
+
+    input_data_file.close();
+    output_data_file.close();
+
+    return status;
+}
+
+bool RunNetwork(DeviceType           device_type,
+                const DeviceIds&     ids,
+                const Configuration& c,
+                std::istream&        input,
+                std::ostream&        output)
+{
+    bool status = true;
+
     try
     {
-        // Create a executor with the approriate core type, number of cores
-        // and configuration specified
-        Executor executor(device_type, ids, configuration);
+        // Create a executor with the specified core type, number of cores
+        // and configuration
+        Executor E(device_type, ids, c);
 
-        // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects =
-                                                executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
+        std::vector<ExecutionObject *> EOs;
+        for (unsigned int i = 0; i < E.GetNumExecutionObjects(); i++)
+            EOs.push_back(E[i]);
+
+        int num_eos = EOs.size();
 
         // Allocate input and output buffers for each execution object
-        std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
+        for (auto eo : EOs)
         {
             size_t in_size  = eo->GetInputBufferSizeInBytes();
             size_t out_size = eo->GetOutputBufferSizeInBytes();
             ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
             ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
             eo->SetInputOutputBuffer(in, out);
-
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
         }
-
-        #define MAX_NUM_EOS  4
-        struct timespec t0[MAX_NUM_EOS], t1;
 
         // Process frames with available execution objects in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
-        for (int frame_idx = 0;
-             frame_idx < configuration.numFrames + num_eos; frame_idx++)
+        for (int frame_idx = 0; frame_idx < c.numFrames + num_eos; frame_idx++)
         {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
+            ExecutionObject* eo = EOs[frame_idx % num_eos];
 
             // Wait for previous frame on the same eo to finish processing
             if (eo->ProcessFrameWait())
             {
-                clock_gettime(CLOCK_MONOTONIC, &t1);
-                double elapsed_host =
-                                ms_diff(t0[eo->GetFrameIndex() % num_eos], t1);
-                double elapsed_device = eo->GetProcessTimeInMilliSeconds();
-                double overhead = 100 - (elapsed_device/elapsed_host*100);
-
-                std::cout << "frame[" << eo->GetFrameIndex() << "]: "
-                          << "Time on device: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_device << "ms, "
-                          << "host: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_host << "ms ";
-                std::cout << "API overhead: "
-                          << std::setw(6) << std::setprecision(3)
-                          << overhead << " %" << std::endl;
-
-                WriteFrame(*eo, output_data_file);
-                if (configuration.enableOutputTrace)
-                    eo->WriteLayerOutputsToFile();
+                ReportTime(eo);
+                WriteFrame(eo, output);
             }
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo, frame_idx, configuration, input_data_file))
-            {
-                clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
+            if (ReadFrame(eo, frame_idx, c, input))
                 eo->ProcessFrameStartAsync();
-            }
         }
 
-        for (auto b : buffers)
-            free(b);
-
+        for (auto eo : EOs)
+        {
+            free(eo->GetInputBufferPtr());
+            free(eo->GetOutputBufferPtr());
+        }
     }
     catch (tidl::Exception &e)
     {
@@ -237,12 +218,9 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
         status = false;
     }
 
-
-    input_data_file.close();
-    output_data_file.close();
-
     return status;
 }
+
 
 namespace tidl {
 extern bool CompareFiles (const std::string &F1, const std::string &F2);
@@ -303,49 +281,6 @@ bool RunAllConfigurations(int32_t num_devices, DeviceType device_type)
     return true;
 }
 
-
-
-bool ReadFrame(ExecutionObject &eo, int frame_idx,
-               const Configuration& configuration,
-               std::istream& input_file)
-{
-    if (frame_idx >= configuration.numFrames)
-        return false;
-
-    char*  frame_buffer = eo.GetInputBufferPtr();
-    assert (frame_buffer != nullptr);
-
-    input_file.read(eo.GetInputBufferPtr(),
-                    eo.GetInputBufferSizeInBytes());
-
-    if (input_file.eof())
-        return false;
-
-    assert (input_file.good());
-
-    // Set the frame index  being processed by the EO. This is used to
-    // sort the frames before they are output
-    eo.SetFrameIndex(frame_idx);
-
-    if (input_file.good())
-        return true;
-
-    return false;
-}
-
-bool WriteFrame(const ExecutionObject &eo, std::ostream& output_file)
-{
-    output_file.write(
-            eo.GetOutputBufferPtr(), eo.GetOutputBufferSizeInBytes());
-    assert(output_file.good() == true);
-
-    if (output_file.good())
-        return true;
-
-    return false;
-}
-
-
 void ProcessArgs(int argc, char *argv[], std::string& config_file,
                  int& num_devices, DeviceType& device_type)
 {
@@ -389,7 +324,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
                       }
                       break;
 
-            case 'v': __TI_show_debug_ = true;
+            case 'v': verbose = true;
                       break;
 
             case 'h': DisplayHelp();
