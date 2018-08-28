@@ -41,6 +41,7 @@
 
 #include "executor.h"
 #include "execution_object.h"
+#include "execution_object_pipeline.h"
 #include "configuration.h"
 
 #include "opencv2/core.hpp"
@@ -50,8 +51,7 @@
 
 //#define TWO_ROIs
 #define LIVE_DISPLAY
-//#define PERF_VERBOSE
-
+#define PERF_VERBOSE
 //#define RMT_GST_STREAMER
 
 #define MAX_NUM_ROI 4
@@ -82,7 +82,7 @@ char video_clip[320];
 int NUM_ROI = NUM_ROI_X * NUM_ROI_Y;
 
 //Temporal averaging
-int TOP_CANDIDATES = 2;
+int TOP_CANDIDATES = 3;
 
 using namespace tidl;
 using namespace cv;
@@ -105,26 +105,18 @@ static int selclass_history[MAX_NUM_ROI][3];  // from most recent to oldest at t
 
 bool __TI_show_debug_ = false;
 
-bool RunMultipleExecutors(const std::string& config_file_1,
-                          const std::string& config_file_2,
-                          uint32_t num_devices_available);
+bool RunConfiguration(const std::string& config_file, int num_layers_groups,
+                      uint32_t num_dsps, uint32_t num_eves);
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type);
-bool RunAllConfigurations(int32_t num_devices, DeviceType device_type);
-
-bool ReadFrame(ExecutionObject&     eo,
+bool ReadFrame(ExecutionObjectPipeline&   ep,
                int                  frame_idx,
                const Configuration& configuration,
                std::istream&        input_file);
 
-bool WriteFrame(const ExecutionObject &eo,
-                std::ostream& output_file);
-
 static void ProcessArgs(int argc, char *argv[],
                         std::string& config_file,
-                        int& num_devices,
-                        DeviceType& device_type);
+                        uint32_t & num_dsps, uint32_t &num_eves,
+                        int & num_layers_groups);
 
 static void DisplayHelp();
 extern std::string labels_classes[];
@@ -134,9 +126,21 @@ extern int selected_items[];
 extern int populate_selected_items (char *filename);
 extern void populate_labels (char *filename);
 
-static double ms_diff(struct timespec &t0, struct timespec &t1)
-{ return (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6; }
-
+void ReportTime(int frame_index, std::string device_name, double elapsed_host,
+                double elapsed_device)
+{
+    double overhead = 100 - (elapsed_device/elapsed_host*100);
+    std::cout << "frame[" << frame_index << "]: "
+              << "Time on " << device_name << ": "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_device << "ms, "
+              << "host: "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_host << "ms ";
+    std::cout << "API overhead: "
+              << std::setw(6) << std::setprecision(3)
+              << overhead << " %" << std::endl;
+}
 
 int main(int argc, char *argv[])
 {
@@ -145,11 +149,11 @@ int main(int argc, char *argv[])
     signal(SIGTERM, exit);
 
     // If there are no devices capable of offloading TIDL on the SoC, exit
-    uint32_t num_dla =
-                Executor::GetNumDevices(DeviceType::EVE);
-    uint32_t num_dsp =
-                Executor::GetNumDevices(DeviceType::DSP);
-    if (num_dla == 0 && num_dsp == 0)
+    uint32_t num_eves = Executor::GetNumDevices(DeviceType::EVE);
+    uint32_t num_dsps = Executor::GetNumDevices(DeviceType::DSP);
+    int num_layers_groups = 1;
+
+    if (num_eves == 0 && num_dsps == 0)
     {
         std::cout << "TI DL not supported on this SoC." << std::endl;
         return EXIT_SUCCESS;
@@ -157,14 +161,12 @@ int main(int argc, char *argv[])
 
     // Process arguments
     std::string config_file;
-    int         num_devices = 1;
-    DeviceType  device_type = DeviceType::EVE;
-    ProcessArgs(argc, argv, config_file, num_devices, device_type);
+    ProcessArgs(argc, argv, config_file, num_dsps, num_eves, num_layers_groups);
 
     bool status = true;
     if (!config_file.empty()) {
         std::cout << "Run single configuration: " << config_file << std::endl;
-        status = RunConfiguration(config_file, num_devices, device_type);
+        status = RunConfiguration(config_file, num_layers_groups, num_dsps, num_eves);
     } else
     {
         status = false;
@@ -180,13 +182,17 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type)
+bool RunConfiguration(const std::string& config_file, int num_layers_groups, uint32_t num_dsps, uint32_t num_eves)
 {
-    DeviceIds ids;
     char imagenet_win[160];
-    for (int i = 0; i < num_devices; i++)
-        ids.insert(static_cast<DeviceId>(i));
+
+    DeviceIds ids_eve, ids_dsp;
+
+    for (uint32_t i = 0; i < num_eves; i++)
+        ids_eve.insert(static_cast<DeviceId>(i));
+    for (uint32_t i = 0; i < num_dsps; i++)
+        ids_dsp.insert(static_cast<DeviceId>(i));
+
 
     // Read the TI DL configuration file
     Configuration configuration;
@@ -203,35 +209,72 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     assert (input_data_file.good());
     assert (output_data_file.good());
 
-    sprintf(imagenet_win, "Imagenet_%sx%d", (device_type == DeviceType::EVE) ? "EVE" : "DSP", num_devices);
-
-    // Determine input frame size from configuration
-    size_t frame_sz_in = configuration.inWidth * configuration.inHeight *
-                         configuration.inNumChannels * (configuration.inNumChannels == 1 ? 1 : 1);
-    size_t frame_sz_out = configuration.inWidth * configuration.inHeight * 3;
+    sprintf(imagenet_win, "Imagenet_EVEx%d_DSPx%d", num_eves, num_dsps);
 
     try
     {
-        // Create a executor with the approriate core type, number of cores
-        // and configuration specified
-        Executor executor(device_type, ids, configuration);
-
-
-        // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects =
-                                                executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
-
-        // Allocate input and output buffers for each execution object
-        std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
+        Executor *exe_eve = NULL;
+        Executor *exe_dsp = NULL;
+        int num_eps = 0;
+        std::vector<ExecutionObjectPipeline *> eps;
+        switch(num_layers_groups)
         {
-            ArgInfo in  = { ArgInfo(malloc_ddr<char>(frame_sz_in),  frame_sz_in)};
-            ArgInfo out = { ArgInfo(malloc_ddr<char>(frame_sz_out), frame_sz_out)};
-            eo->SetInputOutputBuffer(in, out);
+        case 1: // Single layers group
+           exe_eve = num_eves > 0 ? new Executor(DeviceType::EVE, ids_eve, configuration) : NULL;
+           exe_dsp = num_dsps > 0 ? new Executor(DeviceType::DSP, ids_dsp, configuration) : NULL;
+           num_eps = num_eves + num_dsps;
 
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
+           // Construct ExecutionObjectPipeline with single Execution Object to
+           // process each frame. This is parallel processing of frames with as many
+           // DSP and EVE cores that we have on hand.
+           for (uint32_t i = 0; i < num_eves; i++)
+              eps.push_back(new ExecutionObjectPipeline({(*exe_eve)[i]}));
+
+           for (uint32_t i = 0; i < num_dsps; i++)
+              eps.push_back(new ExecutionObjectPipeline({(*exe_dsp)[i]}));
+
+           break;
+
+         case 2: // Two layers group
+          // JacintoNet11 specific : specify only layers that will be in layers group 2
+          // ...by default all other layers are in group 1.
+          configuration.layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} };
+
+          // Create a executor with the approriate core type, number of cores
+          // and configuration specified
+          // EVE will run layersGroupId 1 in the network, while
+          // DSP will run layersGroupId 2 in the network
+          exe_eve = num_eves > 0 ? new Executor(DeviceType::EVE, ids_eve, configuration, 1) : NULL;
+          exe_dsp = num_dsps > 0 ? new Executor(DeviceType::DSP, ids_dsp, configuration, 2) : NULL;
+
+          // Construct ExecutionObjectPipeline that utilizes multiple
+          // ExecutionObjects to process a single frame, each ExecutionObject
+          // processes one layerGroup of the network
+          num_eps = std::max(num_eves, num_dsps);
+          for (int i = 0; i < num_eps; i++)
+              eps.push_back(new ExecutionObjectPipeline({(*exe_eve)[i%num_eves],
+                                                         (*exe_dsp)[i%num_dsps]}));
+          break;
+
+         default:
+           std::cout << "Layers groups can be either 1 or 2!" << std::endl;
+           return false;
+        }
+        // Allocate input/output memory for each EOP
+        std::vector<void *> buffers;
+        for (auto ep : eps)
+        {
+           size_t in_size  = ep->GetInputBufferSizeInBytes();
+           size_t out_size = ep->GetOutputBufferSizeInBytes();
+           void*  in_ptr   = malloc(in_size);
+           void*  out_ptr  = malloc(out_size);
+           assert(in_ptr != nullptr && out_ptr != nullptr);
+           buffers.push_back(in_ptr);
+           buffers.push_back(out_ptr);
+
+           ArgInfo in(in_ptr,   in_size);
+           ArgInfo out(out_ptr, out_size);
+           ep->SetInputOutputBuffer(in, out);
         }
 
 #ifdef LIVE_DISPLAY
@@ -277,6 +320,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     Mat r_frame, r_mframe, r_blend;
     Mat to_stream;
     VideoCapture cap;
+    double avg_fps = 0.0;
 
    if(live_input >= 0)
    {
@@ -291,7 +335,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
 #ifdef RMT_GST_STREAMER
       writer.open(" appsrc ! videoconvert ! video/x-raw, format=(string)NV12, width=(int)640, height=(int)480, framerate=(fraction)30/1 ! \
                 ducatih264enc bitrate=2000 ! queue ! h264parse config-interval=1 ! \
-                mpegtsmux ! udpsink host=158.218.102.235 sync=false port=5000",
+                mpegtsmux ! udpsink host=192.168.1.2 sync=false port=5000",
                 0,fps,Size(640,480),true);
 
       if (!writer.isOpened()) {
@@ -314,72 +358,48 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
    std::cout << "About to start ProcessFrame loop!!" << std::endl;
 
 
-    Rect rectCrop[NUM_ROI];
-    for (int y = 0; y < NUM_ROI_Y; y ++) {
+   Rect rectCrop[NUM_ROI];
+   for (int y = 0; y < NUM_ROI_Y; y ++) {
       for (int x = 0; x < NUM_ROI_X; x ++) {
          rectCrop[y * NUM_ROI_X + x] = Rect(X_OFFSET + x * X_STEP, Y_OFFSET + y * Y_STEP, 224, 224);
          std::cout << "Rect[" << X_OFFSET + x * X_STEP << ", " << Y_OFFSET + y * Y_STEP << "]" << std::endl;
       }
-    }
-    int num_frames = 99999;
+   }
+   int num_frames = 99999;
 
-    if (!cap.isOpened()) {
+   if (!cap.isOpened()) {
       std::cout << "Video input not opened!" << std::endl;
       return false;
-    }
-    Mat in_image, image, r_image, show_image, bgr_frames[3];
-    int is_object;
-    for(int k = 0; k < NUM_ROI; k++) {
+   }
+   Mat in_image, image, r_image, show_image, bgr_frames[3];
+   int is_object;
+   for(int k = 0; k < NUM_ROI; k++) {
       for(int i = 0; i < 3; i ++) selclass_history[k][i] = -1;
-    }
+   }
 
-        #define MAX_NUM_EOS  4
-        struct timespec t0[MAX_NUM_EOS], t1;
+   // Process frames with available execution objects in a pipelined manner
+   // additional num_eps iterations to flush the pipeline (epilogue)
+   for (int frame_idx = 0; frame_idx < configuration.numFrames + num_eps; frame_idx++)
+   {
+        ExecutionObjectPipeline* ep = eps[frame_idx % num_eps];
 
-        // Process frames with available execution objects in a pipelined manner
-        // additional num_eos iterations to flush the pipeline (epilogue)
-        for (int frame_idx = 0;
-             frame_idx < configuration.numFrames + num_eos; frame_idx++)
+        // Wait for previous frame on the same eo to finish processing
+        if (ep->ProcessFrameWait())
         {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
-
-            // Wait for previous frame on the same eo to finish processing
-            if (eo->ProcessFrameWait())
-            {
-                clock_gettime(CLOCK_MONOTONIC, &t1);
-                double elapsed_host =
-                                ms_diff(t0[eo->GetFrameIndex() % num_eos], t1);
-                double elapsed_device = eo->GetProcessTimeInMilliSeconds();
+             double elapsed_host = ep->GetHostProcessTimeInMilliSeconds();
+             /* Exponential averaging */
+             avg_fps = 0.1 * ((double)num_eps * 1000.0 / ((double)NUM_ROI * elapsed_host)) + 0.9 * avg_fps;
 #ifdef PERF_VERBOSE
-                std::cout << "frame[" << eo->GetFrameIndex() << "]: "
-                          << "Time on device: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_device << "ms, "
-                          << "host: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_host << "ms ";
-                std::cout << "API overhead: "
-                          << std::setw(6) << std::setprecision(3)
-                          << overhead << " %" << std::endl;
+             ReportTime(ep->GetFrameIndex(), ep->GetDeviceName(),
+                        ep->GetHostProcessTimeInMilliSeconds(),
+                        ep->GetProcessTimeInMilliSeconds());
 #endif
-
-             int f_id = eo->GetFrameIndex();
+             int f_id = ep->GetFrameIndex();
              int curr_roi = f_id % NUM_ROI;
-             is_object = tf_postprocess((uchar*) eo->GetOutputBufferPtr(), IMAGE_CLASSES_NUM, curr_roi, frame_idx, f_id);
+             is_object = tf_postprocess((uchar*) ep->GetOutputBufferPtr(), IMAGE_CLASSES_NUM, curr_roi, frame_idx, f_id);
              selclass_history[curr_roi][2] = selclass_history[curr_roi][1];
              selclass_history[curr_roi][1] = selclass_history[curr_roi][0];
              selclass_history[curr_roi][0] = is_object;
-
-             if(is_object >= 0) {
-                  std::cout << "frame[" << eo->GetFrameIndex() << "]: "
-                          << "Time on device: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_device << "ms, "
-                          << "host: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_host << "ms ";
-             }
-
              for (int r = 0; r < NUM_ROI; r ++)
              {
 	        int rpt_id =  ShowRegion(selclass_history[r]);
@@ -406,7 +426,12 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
                                  0.75,
                                  selected_items[k] == rpt_id ? cv::Scalar(0,0,255) : cv::Scalar(255,255,255), 1, 8);
                   }
-                  sprintf(tmp_classwindow_string, "FPS:%5.2lf", (double)num_devices * 1000.0 / elapsed_host );
+                  sprintf(tmp_classwindow_string, "FPS:%5.2lf", avg_fps );
+
+#ifdef PERF_VERBOSE
+                  std::cout << "Device:" << ep->GetDeviceName() << " eps(" << num_eps << "), EVES(" << num_eves <<
+                       ") DSPS(" << num_dsps << ") FPS:" << avg_fps << std::endl;
+#endif
                   cv::putText(classlist_image, tmp_classwindow_string,
                               cv::Point(5, 20),
                               cv::FONT_HERSHEY_COMPLEX_SMALL,
@@ -427,9 +452,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
 #ifdef LIVE_DISPLAY
              waitKey(2);
 #endif
-
-            }
-
+        }
 
         if (cap.grab() && frame_idx < num_frames)
         {
@@ -448,12 +471,11 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
 #endif
                 //Convert from BGR pixel interleaved to BGR plane interleaved!
                 cv::split(r_image, bgr_frames);
-                tf_preprocess((uchar*) eo->GetInputBufferPtr(), bgr_frames[0].ptr(), 224*224);
-                tf_preprocess((uchar*) eo->GetInputBufferPtr()+224*224, bgr_frames[1].ptr(), 224*224);
-                tf_preprocess((uchar*) eo->GetInputBufferPtr()+2*224*224, bgr_frames[2].ptr(), 224*224);
-                eo->SetFrameIndex(frame_idx);
-                clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
-                eo->ProcessFrameStartAsync();
+                tf_preprocess((uchar*) ep->GetInputBufferPtr(), bgr_frames[0].ptr(), 224*224);
+                tf_preprocess((uchar*) ep->GetInputBufferPtr()+224*224, bgr_frames[1].ptr(), 224*224);
+                tf_preprocess((uchar*) ep->GetInputBufferPtr()+2*224*224, bgr_frames[2].ptr(), 224*224);
+                ep->SetFrameIndex(frame_idx);
+                ep->ProcessFrameStartAsync();
 
 #ifdef RMT_GST_STREAMER
                 cv::resize(Mat(image, Rect(0,32,640,448)), to_stream, Size(640,480));
@@ -472,12 +494,11 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
             cap.open(std::string(video_clip));
           }
         }
-
-        }
-
-        for (auto b : buffers)
-            __free_ddr(b);
-
+      }
+      for (auto ep : eps)    delete ep;
+      for (auto b : buffers) free(b);
+      if(num_dsps) delete exe_dsp;
+      if(num_eves) delete exe_eve;
     }
     catch (tidl::Exception &e)
     {
@@ -492,18 +513,18 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     return status;
 }
 
-bool ReadFrame(ExecutionObject &eo, int frame_idx,
+bool ReadFrame(ExecutionObjectPipeline &ep, int frame_idx,
                const Configuration& configuration,
                std::istream& input_file)
 {
     if (frame_idx >= configuration.numFrames)
         return false;
 
-    char*  frame_buffer = eo.GetInputBufferPtr();
+    char*  frame_buffer = ep.GetInputBufferPtr();
     assert (frame_buffer != nullptr);
 
-    memset (frame_buffer, 0,  eo.GetInputBufferSizeInBytes());
-    input_file.read(frame_buffer, eo.GetInputBufferSizeInBytes() / (configuration.inNumChannels == 1 ? 2 : 1));
+    memset (frame_buffer, 0,  ep.GetInputBufferSizeInBytes());
+    input_file.read(frame_buffer, ep.GetInputBufferSizeInBytes() / (configuration.inNumChannels == 1 ? 2 : 1));
 
     if (input_file.eof())
         return false;
@@ -512,7 +533,7 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
 
     // Set the frame index  being processed by the EO. This is used to
     // sort the frames before they are output
-    eo.SetFrameIndex(frame_idx);
+    ep.SetFrameIndex(frame_idx);
 
     if (input_file.good())
         return true;
@@ -520,28 +541,18 @@ bool ReadFrame(ExecutionObject &eo, int frame_idx,
     return false;
 }
 
-bool WriteFrame(const ExecutionObject &eo, std::ostream& output_file)
-{
-    output_file.write(
-            eo.GetOutputBufferPtr(), eo.GetOutputBufferSizeInBytes());
-    assert(output_file.good() == true);
-
-    if (output_file.good())
-        return true;
-
-    return false;
-}
-
+// Function to process all command line arguments
 void ProcessArgs(int argc, char *argv[], std::string& config_file,
-                 int& num_devices, DeviceType& device_type)
+                 uint32_t & num_dsps, uint32_t & num_eves, int & num_layers_groups )
 {
     const struct option long_options[] =
     {
         {"labels_classes_file", required_argument, 0, 'l'},
         {"selected_classes_file", required_argument, 0, 's'},
         {"config_file", required_argument, 0, 'c'},
-        {"num_devices", required_argument, 0, 'n'},
-        {"device_type", required_argument, 0, 't'},
+        {"num_dsps", required_argument, 0, 'd'},
+        {"num_eves", required_argument, 0, 'e'},
+        {"num_layers_groups", required_argument, 0, 'g'},
         {"help",        no_argument,       0, 'h'},
         {"verbose",     no_argument,       0, 'v'},
         {0, 0, 0, 0}
@@ -551,7 +562,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
 
     while (true)
     {
-        int c = getopt_long(argc, argv, "l:c:s:i:n:t:hv", long_options, &option_index);
+        int c = getopt_long(argc, argv, "l:c:s:i:d:e:g:hv", long_options, &option_index);
 
         if (c == -1)
             break;
@@ -576,20 +587,16 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
             case 'c': config_file = optarg;
                       break;
 
-            case 'n': num_devices = atoi(optarg);
-                      assert (num_devices > 0 && num_devices <= 4);
+            case 'g': num_layers_groups = atoi(optarg);
+                      assert(num_layers_groups >= 1 && num_layers_groups <= 2);
                       break;
 
-            case 't': if (*optarg == 'e')
-                          device_type = DeviceType::EVE;
-                      else if (*optarg == 'd')
-                          device_type = DeviceType::DSP;
-                      else
-                      {
-                          std::cerr << "Invalid argument to -t, only e or d"
-                                       " allowed" << std::endl;
-                          exit(EXIT_FAILURE);
-                      }
+            case 'd': num_dsps = atoi(optarg);
+                      assert (num_dsps >= 0 && num_dsps <= 2);
+                      break;
+
+            case 'e': num_eves = atoi(optarg);
+                      assert (num_eves >= 0 && num_eves <= 2);
                       break;
 
             case 'v': __TI_show_debug_ = true;
@@ -612,22 +619,22 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
 
 void DisplayHelp()
 {
-    std::cout << "Usage: tidl\n"
+    std::cout << "Usage: tidl_classification\n"
                  "  Will run all available networks if tidl is invoked without"
                  " any arguments.\n  Use -c to run a single network.\n"
                  "Optional arguments:\n"
                  " -c                   Path to the configuration file\n"
-                 " -n <number of cores> Number of cores to use (1 - 4)\n"
-                 " -t <d|e>             Type of core. d -> DSP, e -> EVE\n"
+                 " -d <number of DSP cores> Number of DSP cores to use (0 - 2)\n"
+                 " -e <number of EVE cores> Number of EVE cores to use (0 - 2)\n"
+                 " -g <1|2>             Number of layer groups\n"
                  " -l                   List of label strings (of all classes in model)\n"
                  " -s                   List of strings with selected classes\n"
                  " -i                   Video input (for camera:0,1 or video clip)\n"
                  " -v                   Verbose output during execution\n"
                  " -h                   Help\n";
-
 }
 
-
+// Function to filter all the reported decisions
 bool tf_expected_id(int id)
 {
    // Filter out unexpected IDs
@@ -640,9 +647,9 @@ bool tf_expected_id(int id)
 
 int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
 {
+  //prob_i = exp(TIDL_Lib_output_i) / sum(exp(TIDL_Lib_output))
   // sort and get k largest values and corresponding indices
   const int k = TOP_CANDIDATES;
-  int accum_in = 0;
   int rpt_id = -1;
 
   typedef std::pair<uchar, int> val_index;
@@ -651,7 +658,6 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
   // initialize priority queue with smallest value on top
   for (int i = 0; i < k; i++) {
     queue.push(val_index(in[i], i));
-    accum_in += (int)in[i];
   }
   // for rest input, if larger than current minimum, pop mininum, push new val
   for (int i = k; i < size; i++)
@@ -661,7 +667,6 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
       queue.pop();
       queue.push(val_index(in[i], i));
     }
-    accum_in += (int)in[i];
   }
 
   // output top k values in reverse order: largest val first
@@ -679,8 +684,8 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
       if (tf_expected_id(id))
       {
         std::cout << "Frame:" << frame_idx << "," << f_id << " ROI[" << roi_idx << "]: rank="
-                  << k-i << ", prob=" << (float) sorted[i].first / 255 << ", "
-                  << labels_classes[sorted[i].second] << " accum_in=" << accum_in << std::endl;
+                  << k-i << ", outval=" << (float)sorted[i].first / 255 << ", "
+                  << labels_classes[sorted[i].second] << std::endl;
         rpt_id = id;
       }
   }

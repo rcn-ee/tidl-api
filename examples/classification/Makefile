@@ -31,7 +31,7 @@ include ../make.common
 LIBS     += -lopencv_highgui -lopencv_imgcodecs -lopencv_videoio\
 			-lopencv_imgproc -lopencv_core
 
-SOURCES = main.cpp multiple_executors.cpp findclasses.cpp
+SOURCES = main.cpp findclasses.cpp
 
 $(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
 	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(LDFLAGS) $(LIBS) -o $@
