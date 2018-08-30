@@ -32,17 +32,30 @@
 #include <fstream>
 #include "executor.h"
 #include "execution_object.h"
+#include "execution_object_pipeline.h"
 #include "configuration.h"
 
-bool ReadFrame(tidl::ExecutionObject*     eo,
-               int                        frame_idx,
-               const tidl::Configuration& configuration,
-               std::istream&              input_file);
+using tidl::Executor;
+using tidl::ExecutionObject;
+using tidl::ExecutionObjectPipeline;
+using tidl::Configuration;
 
-bool WriteFrame(const tidl::ExecutionObject* eo, std::ostream& output_file);
+bool ReadFrame(ExecutionObject*     eo,
+               int                  frame_idx,
+               const Configuration& configuration,
+               std::istream&        input_file);
 
-void ReportTime(const tidl::ExecutionObject* eo);
+bool ReadFrame(ExecutionObjectPipeline* eop,
+               int                      frame_idx,
+               const Configuration&     configuration,
+               std::istream&            input_file);
 
-bool CheckFrame(const tidl::ExecutionObject* eo, const char *ref_output);
+bool WriteFrame(const ExecutionObject* eo, std::ostream& output_file);
+
+void ReportTime(const ExecutionObject* eo);
+void ReportTime(const ExecutionObjectPipeline* eop);
+
+bool CheckFrame(const ExecutionObject* eo, const char *ref_output);
+bool CheckFrame(const ExecutionObjectPipeline *eop, const char *ref_output);
 
 const char* ReadReferenceOutput(const std::string& name);

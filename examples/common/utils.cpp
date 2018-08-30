@@ -35,26 +35,53 @@ using namespace tidl;
 
 using boost::format;
 using std::string;
+using std::istream;
+using std::ostream;
 
-bool ReadFrame(ExecutionObject* eo, int frame_idx,
+static bool read_frame_helper(char* ptr, size_t size, istream& input_file);
+
+bool ReadFrame(ExecutionObject*     eo,
+               int                  frame_idx,
                const Configuration& configuration,
-               std::istream& input_file)
+               std::istream&        input_file)
 {
     if (frame_idx >= configuration.numFrames)
         return false;
 
-    assert (eo->GetInputBufferPtr() != nullptr);
+    // Note: Frame index is used by the EO for debug messages only
+    eo->SetFrameIndex(frame_idx);
+
+    return read_frame_helper(eo->GetInputBufferPtr(),
+                             eo->GetInputBufferSizeInBytes(),
+                             input_file);
+}
+
+bool ReadFrame(ExecutionObjectPipeline* eop,
+               int                      frame_idx,
+               const Configuration&     configuration,
+               std::istream&            input_file)
+{
+    if (frame_idx >= configuration.numFrames)
+        return false;
+
+    // Note: Frame index is used by the EOP for debug messages only
+    eop->SetFrameIndex(frame_idx);
+
+    return read_frame_helper(eop->GetInputBufferPtr(),
+                             eop->GetInputBufferSizeInBytes(),
+                             input_file);
+}
+
+bool read_frame_helper(char* ptr, size_t size, istream& input_file)
+{
+    assert (ptr != nullptr);
     assert (input_file.good());
 
-    input_file.read(eo->GetInputBufferPtr(),
-                    eo->GetInputBufferSizeInBytes());
+    input_file.read(ptr, size);
     assert (input_file.good());
 
     if (input_file.eof())
         return false;
-
-    // Note: Frame index is used by the EO for debug messages only
-    eo->SetFrameIndex(frame_idx);
 
     // Wrap-around : if EOF is reached, start reading from the beginning.
     if (input_file.peek() == EOF)
@@ -66,7 +93,8 @@ bool ReadFrame(ExecutionObject* eo, int frame_idx,
     return false;
 }
 
-bool WriteFrame(const ExecutionObject* eo, std::ostream& output_file)
+
+bool WriteFrame(const ExecutionObject* eo, ostream& output_file)
 {
     output_file.write(eo->GetOutputBufferPtr(),
                       eo->GetOutputBufferSizeInBytes());
@@ -90,12 +118,34 @@ void ReportTime(const ExecutionObject* eo)
                         % elapsed_device % elapsed_host % overhead;
 }
 
+void ReportTime(const ExecutionObjectPipeline* eop)
+{
+    double elapsed_host   = eop->GetHostProcessTimeInMilliSeconds();
+    double elapsed_device = eop->GetProcessTimeInMilliSeconds();
+    double overhead = 100 - (elapsed_device/elapsed_host*100);
+
+    std::cout << format("frame[%3d]: Time on %s: %4.2f ms, host: %4.2f ms"
+                        " API overhead: %2.2f %%\n")
+                        % eop->GetFrameIndex() % eop->GetDeviceName()
+                        % elapsed_device % elapsed_host % overhead;
+}
+
 // Compare output against reference output
 bool CheckFrame(const ExecutionObject *eo, const char *ref_output)
 {
     if (std::memcmp(static_cast<const void*>(ref_output),
                static_cast<const void*>(eo->GetOutputBufferPtr()),
                eo->GetOutputBufferSizeInBytes()) == 0)
+        return true;
+
+    return false;
+}
+
+bool CheckFrame(const ExecutionObjectPipeline *eop, const char *ref_output)
+{
+    if (std::memcmp(static_cast<const void*>(ref_output),
+               static_cast<const void*>(eop->GetOutputBufferPtr()),
+               eop->GetOutputBufferSizeInBytes()) == 0)
         return true;
 
     return false;

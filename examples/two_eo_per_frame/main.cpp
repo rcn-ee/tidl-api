@@ -27,8 +27,7 @@
  *****************************************************************************/
 
 //
-// This example illustrates using a single EO to process a frame. To increase
-// throughput, multiple EOs are used.
+// This example illustrates using multiple EOs to process a single frame
 // For details, refer http://downloads.ti.com/mctools/esd/docs/tidl-api/
 //
 #include <signal.h>
@@ -39,6 +38,7 @@
 
 #include "executor.h"
 #include "execution_object.h"
+#include "execution_object_pipeline.h"
 #include "configuration.h"
 #include "utils.h"
 
@@ -47,14 +47,15 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 
-bool Run(const string& config_file, int num_eve,int num_dsp,
-         const char* ref_output);
+using EOP = tidl::ExecutionObjectPipeline;
 
-Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c);
-void      CollectEOs(const Executor *e, vector<ExecutionObject *>& EOs);
+bool Run(int num_eve,int num_dsp, const char* ref_output);
 
-void AllocateMemory(const vector<ExecutionObject *>& EOs);
-void FreeMemory    (const vector<ExecutionObject *>& EOs);
+Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
+                         int layer_group_id);
+
+void AllocateMemory(const vector<EOP *>& EOPs);
+void FreeMemory    (const vector<EOP *>& EOPs);
 
 
 int main(int argc, char *argv[])
@@ -63,21 +64,19 @@ int main(int argc, char *argv[])
     signal(SIGABRT, exit);
     signal(SIGTERM, exit);
 
-    // If there are no devices capable of offloading TIDL on the SoC, exit
+    // This example requires both EVE and C66x
     uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
     uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
-    if (num_eve == 0 && num_dsp == 0)
+    if (num_eve == 0 || num_dsp == 0)
     {
         std::cout << "TI DL not supported on this SoC." << std::endl;
         return EXIT_SUCCESS;
     }
 
-    string config_file ="../test/testvecs/config/infer/tidl_config_j11_v2.txt";
-    string ref_file    ="../test/testvecs/reference/j11_v2_ref.bin";
-
+    string ref_file ="../test/testvecs/reference/j11_v2_ref.bin";
     unique_ptr<const char> reference_output(ReadReferenceOutput(ref_file));
 
-    bool status = Run(config_file, num_eve, num_dsp, reference_output.get());
+    bool status = Run(num_eve, num_dsp, reference_output.get());
 
     if (!status)
     {
@@ -89,9 +88,10 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-bool Run(const string& config_file, int num_eve, int num_dsp,
-         const char* ref_output)
+bool Run(int num_eve, int num_dsp, const char* ref_output)
 {
+    string config_file ="../test/testvecs/config/infer/tidl_config_j11_v2.txt";
+
     Configuration c;
     if (!c.ReadFromFile(config_file))
         return false;
@@ -102,44 +102,57 @@ bool Run(const string& config_file, int num_eve, int num_dsp,
 
     c.numFrames = 16;
 
+    // Assign layers 12, 13 and 14 to layer group 2
+    c.layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} };
+
     // Open input file for reading
-    std::ifstream input_data_file(c.inData, std::ios::binary);
+    std::ifstream input(c.inData, std::ios::binary);
 
     bool status = true;
     try
     {
         // Create Executors - use all the DSP and EVE cores available
-        unique_ptr<Executor> e_dsp(CreateExecutor(DeviceType::DSP, num_dsp, c));
-        unique_ptr<Executor> e_eve(CreateExecutor(DeviceType::EVE, num_eve, c));
+        // Layer group 1 will be executed on EVE, 2 on DSP
+        unique_ptr<Executor> eve(CreateExecutor(DeviceType::EVE,num_eve,c,1));
+        unique_ptr<Executor> dsp(CreateExecutor(DeviceType::DSP,num_dsp,c,2));
 
-        // Accumulate all the EOs from across the Executors
-        vector<ExecutionObject *> EOs;
-        CollectEOs(e_eve.get(), EOs);
-        CollectEOs(e_dsp.get(), EOs);
+        // Create pipelines. Each pipeline has 1 EVE and 1 DSP. If there are
+        // more EVEs than DSPs, the DSPs are shared across multiple
+        // pipelines. E.g.
+        // 2 EVE, 2 DSP: EVE1 -> DSP1, EVE2 -> DSP2
+        // 4 EVE, 2 DSP: EVE1 -> DSP1, EVE2 -> DSP2, EVE3 -> DSP1, EVE4 ->DSP2
+        std::vector<EOP *> EOPs;
+        uint32_t num_pipe = std::max(num_eve, num_dsp);
+        for (uint32_t i = 0; i < num_pipe; i++)
+              EOPs.push_back(new EOP( { (*eve)[i % num_eve],
+                                        (*dsp)[i % num_dsp] } ));
 
-        AllocateMemory(EOs);
+        AllocateMemory(EOPs);
 
         // Process frames with EOs in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
-        int num_eos = EOs.size();
-        for (int frame_idx = 0; frame_idx < c.numFrames + num_eos; frame_idx++)
+        int num_eops = EOPs.size();
+        for (int frame_idx = 0; frame_idx < c.numFrames + num_eops; frame_idx++)
         {
-            ExecutionObject* eo = EOs[frame_idx % num_eos];
+            EOP* eop = EOPs[frame_idx % num_eops];
 
             // Wait for previous frame on the same eo to finish processing
-            if (eo->ProcessFrameWait())
+            if (eop->ProcessFrameWait())
             {
-                ReportTime(eo);
-                if (frame_idx < num_eos && !CheckFrame(eo, ref_output))
+                ReportTime(eop);
+
+                // The reference output is valid only for the first frame
+                // processed on each EOP
+                if (frame_idx < num_eops && !CheckFrame(eop, ref_output))
                     status = false;
             }
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(eo, frame_idx, c, input_data_file))
-                eo->ProcessFrameStartAsync();
+            if (ReadFrame(eop, frame_idx, c, input))
+                eop->ProcessFrameStartAsync();
         }
 
-        FreeMemory(EOs);
+        FreeMemory(EOPs);
 
     }
     catch (tidl::Exception &e)
@@ -148,13 +161,14 @@ bool Run(const string& config_file, int num_eve, int num_dsp,
         status = false;
     }
 
-    input_data_file.close();
+    input.close();
 
     return status;
 }
 
 // Create an Executor with the specified type and number of EOs
-Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c)
+Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
+                         int layer_group_id)
 {
     if (num == 0) return nullptr;
 
@@ -162,39 +176,30 @@ Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c)
     for (int i = 0; i < num; i++)
         ids.insert(static_cast<DeviceId>(i));
 
-    return new Executor(dt, ids, c);
-}
-
-// Accumulate EOs from an Executor into a vector of EOs
-void CollectEOs(const Executor *e, vector<ExecutionObject *>& EOs)
-{
-    if (!e) return;
-
-    for (unsigned int i = 0; i < e->GetNumExecutionObjects(); i++)
-        EOs.push_back((*e)[i]);
+    return new Executor(dt, ids, c, layer_group_id);
 }
 
 // Allocate input and output memory for each EO
-void AllocateMemory(const vector<ExecutionObject *>& EOs)
+void AllocateMemory(const vector<EOP *>& EOPs)
 {
     // Allocate input and output buffers for each execution object
-    for (auto eo : EOs)
+    for (auto eop : EOPs)
     {
-        size_t in_size  = eo->GetInputBufferSizeInBytes();
-        size_t out_size = eo->GetOutputBufferSizeInBytes();
+        size_t in_size  = eop->GetInputBufferSizeInBytes();
+        size_t out_size = eop->GetOutputBufferSizeInBytes();
         ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
         ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
-        eo->SetInputOutputBuffer(in, out);
+        eop->SetInputOutputBuffer(in, out);
     }
 }
 
 // Free the input and output memory associated with each EO
-void FreeMemory(const vector<ExecutionObject *>& EOs)
+void FreeMemory(const vector<EOP *>& EOPs)
 {
-    for (auto eo : EOs)
+    for (auto eop : EOPs)
     {
-        free(eo->GetInputBufferPtr());
-        free(eo->GetOutputBufferPtr());
+        free(eop->GetInputBufferPtr());
+        free(eop->GetOutputBufferPtr());
     }
 
 }

@@ -2,29 +2,37 @@
 Examples
 ********
 
-+---------------------+-----------------------------------------------------+
-| Example             | Description                                         |
-+---------------------+-----------------------------------------------------+
-| one_eo_per_frame    | Simple example to illustrate processing a single    |
-|                     | frame with one :term:`EO` using the j11_v2 network. |
-|                     | The per-frame processing time for this network is   |
-|                     | fairly similar across EVE and C66x DSP. The example |
-|                     | parallelizes frame processing across all available  |
-|                     | EVE and C66x cores.                                 |
-+---------------------+-----------------------------------------------------+
-| imagenet            | Classification                                      |
-+---------------------+-----------------------------------------------------+
-| segmentation        | Pixel level segmentation                            |
-+---------------------+-----------------------------------------------------+
-| ssd_multibox        | Object detection                                    |
-+---------------------+-----------------------------------------------------+
-| tidl_classification | Classification                                      |
-+---------------------+-----------------------------------------------------+
-| test                | Unit test. Tests supported networks on C66x and EVE |
-+---------------------+-----------------------------------------------------+
++---------------------+----------------------------------------------------------------+
+| Example             | Description                                                    |
++---------------------+----------------------------------------------------------------+
+| one_eo_per_frame    | Simple example to illustrate processing a single               |
+|                     | frame with one :term:`EO` using the j11_v2 network.            |
+|                     | Per-frame processing time for this network is farily similar   |
+|                     | across EVE and C66x DSP. The enables frame processing to be    |
+|                     | parallelized by distributing frames across all available EVE   |
+|                     | and C66x cores.                                                |
++---------------------+----------------------------------------------------------------+
+| two_eo_per_frame    | Simple example to illustrate processing a single               |
+|                     | frame with two :term:`EOs<EO>` using the j11_v2 network.       |
++---------------------+----------------------------------------------------------------+
+| imagenet            | Classification                                                 |
++---------------------+----------------------------------------------------------------+
+| segmentation        | Pixel level segmentation                                       |
++---------------------+----------------------------------------------------------------+
+| ssd_multibox        | Object detection                                               |
++---------------------+----------------------------------------------------------------+
+| tidl_classification | Classification                                                 |
++---------------------+----------------------------------------------------------------+
+| layer_output        | Illustrates using TIDL APIs to access output buffers           |
+|                     | of intermediate :term:`Layer`s in the network.                 |
++---------------------+----------------------------------------------------------------+
+| test                | Unit test. Tests supported networks on C66x and EVE            |
++---------------------+----------------------------------------------------------------+
 
 The examples included in the tidl-api package demonstrate three categories of
-deep learning networks: classification, segmentation and object detection. ``imagenet`` and ``segmentation`` can run on AM57x processors with either EVE or C66x cores. ``ssd_multibox`` requires AM57x processors with both EVE and C66x.  The performance
+deep learning networks: classification, segmentation and object detection.
+``imagenet`` and ``segmentation`` can run on AM57x processors with either EVE or C66x cores.
+``ssd_multibox`` requires AM57x processors with both EVE and C66x.  The performance
 numbers that we present here were obtained on an AM5729 EVM, which
 includes 2 Arm Cortex-A15 cores running at 1.5GHz, 4 EVE cores at 535MHz, and
 2 DSP cores at 750MHz.

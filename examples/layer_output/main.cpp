@@ -28,32 +28,19 @@
 #include <signal.h>
 #include <getopt.h>
 #include <iostream>
-#include <iomanip>
 #include <fstream>
 #include <cassert>
 #include <string>
-#include <functional>
-#include <algorithm>
-#include <time.h>
 
 #include "executor.h"
 #include "execution_object.h"
 #include "configuration.h"
-
-bool __TI_show_debug_ = false;
+#include "utils.h"
 
 using namespace tidl;
 
 bool RunConfiguration(const std::string& config_file, int num_devices,
                       DeviceType device_type);
-
-bool ReadFrame(ExecutionObject&     eo,
-               int                  frame_idx,
-               const Configuration& configuration,
-               std::istream&        input_file);
-
-bool WriteFrame(const ExecutionObject &eo,
-                std::ostream& output_file);
 
 static void ProcessTrace(const ExecutionObject* eo, const Configuration& c);
 
@@ -100,63 +87,58 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
         ids.insert(static_cast<DeviceId>(i));
 
     // Read the TI DL configuration file
-    Configuration configuration;
-    bool status = configuration.ReadFromFile(config_file);
-    if (!status)
-    {
-        std::cerr << "Error in configuration file: " << config_file
-                  << std::endl;
+    Configuration c;
+    if (!c.ReadFromFile(config_file))
         return false;
-    }
 
     // Open input files
-    std::ifstream input_data_file(configuration.inData, std::ios::binary);
-    assert (input_data_file.good());
+    std::ifstream input(c.inData, std::ios::binary);
+    assert (input.good());
+
+    bool status = true;
 
     try
     {
-        // Create a executor with the approriate core type, number of cores
-        // and configuration specified
-        Executor executor(device_type, ids, configuration);
+        // Create a executor with the specified core type, number of cores
+        // and configuration
+        Executor E(device_type, ids, c);
 
-        // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects =
-                                                executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
+        std::vector<ExecutionObject *> EOs;
+        for (unsigned int i = 0; i < E.GetNumExecutionObjects(); i++)
+            EOs.push_back(E[i]);
+
+        int num_eos = EOs.size();
 
         // Allocate input and output buffers for each execution object
-        std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
+        for (auto eo : EOs)
         {
             size_t in_size  = eo->GetInputBufferSizeInBytes();
             size_t out_size = eo->GetOutputBufferSizeInBytes();
             ArgInfo in  = { ArgInfo(malloc(in_size),  in_size)};
             ArgInfo out = { ArgInfo(malloc(out_size), out_size)};
             eo->SetInputOutputBuffer(in, out);
-
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
         }
 
-        // Process frames across execution objects in a pipelined manner
+        // Process frames with available EOs in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
-        for (int frame_idx = 0;
-             frame_idx < configuration.numFrames + num_eos; frame_idx++)
+        for (int frame_idx = 0; frame_idx < c.numFrames + num_eos; frame_idx++)
         {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
+            ExecutionObject* eo = EOs[frame_idx % num_eos];
 
             // Wait for previous frame on the same eo to finish processing
             if (eo->ProcessFrameWait())
-                ProcessTrace(eo, configuration);
+                ProcessTrace(eo, c);
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo, frame_idx, configuration, input_data_file))
+            if (ReadFrame(eo, frame_idx, c, input))
                 eo->ProcessFrameStartAsync();
         }
 
-        for (auto b : buffers)
-            free(b);
-
+        for (auto eo : EOs)
+        {
+            free(eo->GetInputBufferPtr());
+            free(eo->GetOutputBufferPtr());
+        }
     }
     catch (tidl::Exception &e)
     {
@@ -164,7 +146,7 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
         status = false;
     }
 
-    input_data_file.close();
+    input.close();
 
     return status;
 }
@@ -177,7 +159,12 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
 void ProcessTrace(const ExecutionObject* eo, const Configuration& c)
 {
     if (!c.enableOutputTrace)
+    {
+        std::cout << "Trace is not enabled. Set"
+                     " Configuration::enableOutputTrace to true"
+                  << std::endl;
         return;
+    }
 
     // 1. Write the outputs from each layer to files
     // filename: trace_data_<layer_index>_<channels>_<width>_<height>.bin
@@ -185,6 +172,7 @@ void ProcessTrace(const ExecutionObject* eo, const Configuration& c)
 
     // 2. Get all outputs from all layers and iterate through them
     const LayerOutputs* los = eo->GetOutputsFromAllLayers();
+    if (!los) return;
 
     for (const std::unique_ptr<const LayerOutput> &lo : *los)
     {
@@ -201,43 +189,14 @@ void ProcessTrace(const ExecutionObject* eo, const Configuration& c)
 
     // 3. Get the output from a single layer
     const LayerOutput* lo = eo->GetOutputFromLayer(1);
+    if (!lo) return;
 
-    if (lo)
-    {
-        std::cout << "Layer index: " << lo->LayerIndex()
-              << " Shape: " << lo->NumberOfChannels() << " x "
-              << lo->Width() << " x " << lo->Height()
-              << " Data ptr: " << static_cast<const void*>(lo->Data())
-              << " Size in bytes: " << lo->Size()
-              << std::endl;
+    std::cout << "Layer index: " << lo->LayerIndex()
+          << " Shape: " << lo->NumberOfChannels() << " x "
+          << lo->Width() << " x " << lo->Height()
+          << " Data ptr: " << static_cast<const void*>(lo->Data())
+          << " Size in bytes: " << lo->Size()
+          << std::endl;
 
-        delete lo;
-    }
-}
-
-
-bool ReadFrame(ExecutionObject &eo, int frame_idx,
-               const Configuration& configuration,
-               std::istream& input_file)
-{
-    if (frame_idx >= configuration.numFrames)
-        return false;
-
-    char*  frame_buffer = eo.GetInputBufferPtr();
-    assert (frame_buffer != nullptr);
-
-    input_file.read(eo.GetInputBufferPtr(),
-                    eo.GetInputBufferSizeInBytes());
-
-    if (input_file.eof())
-        return false;
-
-    assert (input_file.good());
-
-    eo.SetFrameIndex(frame_idx);
-
-    if (input_file.good())
-        return true;
-
-    return false;
+    delete lo;
 }

@@ -24,7 +24,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-EXE = layer_output
+EXE = two_eo_per_frame
 
 include ../make.common
 
@@ -34,3 +34,4 @@ SOURCES = main.cpp ../common/utils.cpp
 
 $(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
 	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(LDFLAGS) $(LIBS) -o $@
+
