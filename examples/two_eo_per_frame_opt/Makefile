@@ -24,28 +24,14 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-# Create a list of examples to build
-MFS  = $(wildcard */Makefile)
-DIRS = $(patsubst %/Makefile,%,$(MFS))
+EXE = two_eo_per_frame_opt
 
-# classification cannot be run from command line without attached display
-RUN_DIRS := $(filter-out classification, $(DIRS))
+include ../make.common
 
-define make_in_dirs
-	@for dir in $(1); do \
-	  echo "=============== " $$dir " =================" ; \
-	  $(MAKE) --no-print-directory $(MAKEFILE) -C $$dir $(2); \
-	done
-endef
+CXXFLAGS += -I../common
 
+SOURCES = main.cpp ../common/utils.cpp
 
-all:
-	$(call make_in_dirs, $(DIRS), )
+$(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
+	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(LDFLAGS) $(LIBS) -o $@
 
-.PHONY: run
-run:
-	$(call make_in_dirs, $(RUN_DIRS), run)
-
-.PHONY: clean
-clean:
-	$(call make_in_dirs, $(DIRS), clean)

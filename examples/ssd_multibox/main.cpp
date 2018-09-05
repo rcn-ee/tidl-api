@@ -256,8 +256,9 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
                const Configuration& c, const cmdline_opts_t& opts,
                VideoCapture &cap)
 {
-    if (frame_idx >= opts.num_frames)
+    if ((uint32_t)frame_idx >= opts.num_frames)
         return false;
+
     eop.SetFrameIndex(frame_idx);
 
     char*  frame_buffer = eop.GetInputBufferPtr();

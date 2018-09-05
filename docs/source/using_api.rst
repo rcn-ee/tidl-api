@@ -4,103 +4,186 @@
 Using the API
 *************
 
-TIDL API provides 4 C++ classes: ``Configuration``, ``Executor``, ``ExecutionObject``, and ``ExecutionObjectPipeline``. These classes can be used to support multiple use cases.
+This section illustrates using TIDL APIs to leverage deep learning in user applications. The overall flow is as follows:
 
-Use case 1: Each EO runs a :term:`Layer group`
+* Create a :term:`Configuration` object to specify the set of parameters required for network exectution.
+* Create :term:`Executor` objects - one to manage overall execution on the EVEs, the other for C66x DSPs.
+* Use the :term:`Execution Objects<EO>` (EO) created by the Executor to process :term:`frames<Frame>`. There are two approaches to processing frames using Execution Objects:
 
-Deploying a TIDL network
-++++++++++++++++++++++++
+  #. Each EO processes a single frame.
+  #. Split processing frame across multiple EOs.
 
-This section illustrates how easy it is to use TIDL APIs to leverage deep learning application in user applications.  In this example, a configuration object is created from reading a TIDL network config file.  An executor object is created with two EVE devices.  It uses the configuration object to setup and initialize TIDL network on EVEs.  Each of the two execution objects dispatches TIDL processing to a different EVE core.  Because the OpenCL kernel execution is asynchronous, we can pipeline the frames across two EVEs.  When one frame is being processed by a EVE, the next frame can be processed by another EVE.
+Refer Section :ref:`api-documentation` for API documentation.
+
+Use Cases
++++++++++
+
+.. _use-case-1:
+
+Each EO processes a single frame
+================================
+
+In this approach, the :term:`network<Network>` is set up as a single :term:`Layer Group`. An :term:`EO` runs the entire layer group on a single frame. To increase throughput, frame processing can be pipelined across available EOs. For example, on AM5749, frames can be processed by 4 EOs: one each on EVE1, EVE2, DSP1, and DSP2.
 
 
-``ReadFrameInput`` and ``WriteFrameOutput`` functions are used to read an input frame and write the result of processing. For example, with OpenCV, ``ReadFrameInput`` is implemented using OpenCV APIs to capture a frame. To execute the same network on DSPs, the only change to :numref:`simple-example` is to replace ``DeviceType::EVE`` with ``DeviceType::DSP``.
+.. figure:: images/tidl-one-eo-per-frame.png
+    :align: center
+    :scale: 80
+
+    Processing a frame with one EO. Not to scale. Fn: Frame n, LG: Layer Group.
+
+#. Determine if there are any TIDL capable :term:`compute cores<Compute core>` on the AM57x Processor:
+
+    .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 64-65
+        :linenos:
+
+#. Create a Configuration object by reading it from a file or by initializing it directly. The example below parses a configuration file and initializes the Configuration object. See ``examples/test/testvecs/config/infer`` for examples of configuration files.
+
+    .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 92-94
+        :linenos:
+
+#. Create Executor on C66x and EVE. In this example, all available C66x and EVE  cores are used (lines 1-2 and :ref:`CreateExecutor`).
+#. Create a vector of available ExecutionObjects from both Executors (lines 7-8 and :ref:`CollectEOs`).
+#. Allocate input and output buffers for each ExecutionObject (:ref:`AllocateMemory`)
+#. Run the network on each input frame.  The frames are processed with available execution objects in a pipelined manner. The additional num_eos iterations are required to flush the pipeline (lines 15-26).
+
+   * Wait for the EO to finish processing. If the EO is not processing a frame (the first iteration on each EO), the call to ``ProcessFrameWait`` returns false. ``ReportTime`` is used to report host and device execution times.
+   * Read a frame and start running the network. ``ProcessFrameStartAsync`` is asynchronous and returns before processing is complete. ``ReadFrame`` is application specific and used to read an input frame for processing. For example, with OpenCV, ``ReadFrame`` is implemented using OpenCV APIs to capture a frame from the camera.
+
+    .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 108-127,129,133-139
+        :linenos:
+
+    .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 154-163
+        :linenos:
+        :caption: CreateExecutor
+        :name: CreateExecutor
+
+    .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 166-172
+        :linenos:
+        :caption: CollectEOs
+        :name: CollectEOs
+
+    .. literalinclude:: ../../examples/common/utils.cpp
+        :language: c++
+        :lines: 197-212
+        :linenos:
+        :caption: AllocateMemory
+        :name: AllocateMemory
+
+The complete example is available at ``/usr/share/ti/tidl/examples/one_eo_per_frame/main.cpp``.
+
+.. _use-case-2:
+
+Frame split across EOs
+======================
+This approach is typically used to reduce the latency of processing a single frame. Certain network layers such as Softmax and Pooling run faster on the C66x vs. EVE. Running these layers on C66x can lower the per-frame latency.
+
+Time to process a single frame 224x224x3 frame on AM574x IDK EVM (Arm @ 1GHz, C66x @ 0.75GHz, EVE @ 0.65GHz) with JacintoNet11 (tidl_net_imagenet_jacintonet11v2.bin), TIDL API v1.1:
+
+======      =======     ===================
+EVE         C66x        EVE + C66x
+======      =======     ===================
+~112ms      ~120ms      ~64ms :sup:`1`
+======      =======     ===================
+
+:sup:`1` BatchNorm and Convolution layers run on EVE are placed in a :term:`Layer Group` and run on EVE. Pooling, InnerProduct, SoftMax layers are placed in a second :term:`Layer Group` and run on C66x. The EVE layer group takes ~57.5ms, C66x layer group takes ~6.5ms.
+
+.. _frame-across-eos:
+.. figure:: images/tidl-frame-across-eos.png
+    :align: center
+    :scale: 80
+
+    Processing a frame across EOs. Not to scale. Fn: Frame n, LG: Layer Group.
+
+The network consists of 2 :term:`Layer Groups<Layer Group>`. :term:`Execution Objects<EO>` are organized into :term:`Execution Object Pipelines<EOP>` (EOP). Each :term:`EOP` processes a frame. The API manages inter-EO synchronization.
+
+#. Determine if there are any TIDL capable :term:`compute cores<Compute core>` on the AM57x Processor:
+
+    .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 64-65
+        :linenos:
+
+#. Create a Configuration object by reading it from a file or by initializing it directly. The example below parses a configuration file and initializes the Configuration object. See ``examples/test/testvecs/config/infer`` for examples of configuration files.
+
+    .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 92-94
+        :linenos:
+
+#. Update the default layer group index assignment. Pooling (layer 12), InnerProduct (layer 13) and SoftMax (layer 14) are added to a second layer group. Refer :ref:`layer-group-override` for details.
+
+    .. literalinclude:: ../../examples/two_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 101-102
+        :linenos:
+
+#. Create :term:`Executors<Executor>` on C66x and EVE. The EVE Executor runs layer group 1, the C66x executor runs layer group 2.
+
+#. Create two :term:`Execution Object Pipelines<EOP>`.  Each EOP contains one EVE and one C66x :term:`Execution Object<EO>` respectively.
+#. Allocate input and output buffers for each ExecutionObject in the EOP. (:ref:`AllocateMemory2`)
+#. Run the network on each input frame.  The frames are processed with available EOPs in a pipelined manner. For ease of use, EOP and EO present the same interface to the user.
+
+   * Wait for the EOP to finish processing. If the EOP is not processing a frame (the first iteration on each EOP), the call to ``ProcessFrameWait`` returns false. ``ReportTime`` is used to report host and device execution times.
+   * Read a frame and start running the network. ``ProcessFrameStartAsync`` is asynchronous and returns before processing is complete. ``ReadFrame`` is application specific and used to read an input frame for processing. For example, with OpenCV, ``ReadFrame`` is implemented using OpenCV APIs to capture a frame from the camera.
 
 
-Step 1
-======
+    .. literalinclude:: ../../examples/two_eo_per_frame/main.cpp
+        :language: c++
+        :lines: 110-138,140,147-153
+        :linenos:
 
-Determine if there are any TIDL capable devices on the AM57x SoC:
+    .. literalinclude:: ../../examples/common/utils.cpp
+        :language: c++
+        :lines: 225-240
+        :linenos:
+        :caption: AllocateMemory
+        :name: AllocateMemory2
 
-.. code-block:: c++
 
-    uint32_t num_eve = Executor::GetNumDevices(DeviceType::EVE);
-    uint32_t num_dsp = Executor::GetNumDevices(DeviceType::DSP);
+The complete example is available at ``/usr/share/ti/tidl/examples/two_eo_per_frame/main.cpp``. Another example of using the EOP is :ref:`ssd-example`.
+
+.. _use-case-3:
+
+Frame split across EOs with double buffering
+============================================
+The timeline shown in :numref:`frame-across-eos` indicates that EO-EVE1 waits for processing on E0-DSP1 to complete before it starts processing its next frame. It is possible to optimize the example further and overlap processing F :sub:`n-2` on EO-DSP1 and F :sub:`n` on E0-EVE1. This is illustrated in :numref:`frame-across-eos-opt`.
+
+.. _frame-across-eos-opt:
+.. figure:: images/tidl-frame-across-eos-opt.png
+    :align: center
+    :scale: 80
+
+    Optimizing using double buffered EOPs. Not to scale. Fn: Frame n, LG: Layer Group.
+
+EOP1 and EOP2 use the same :term:`EOs<EO>`: E0-EVE1 and E0-DSP1. Each :term:`EOP` has it's own input and output buffer. This enables EOP2 to read an input frame when EOP1 is processing its input frame. This in turn enables EOP2 to start processing on EO-EVE1 as soon as EOP1 completes processing on E0-EVE1.
+
+The only change in the code compared to :ref:`use-case-2` is to create an additional set of EOPs for double buffering:
+
+.. literalinclude:: ../../examples/two_eo_per_frame_opt/main.cpp
+    :language: c++
+    :lines: 117-129
+    :linenos:
+    :caption: Setting up EOPs for double buffering
+    :name: test-code
 
 .. note::
-    By default, the OpenCL runtime is configured with sufficient global memory
-    (via CMEM) to offload TIDL networks to 2 OpenCL devices. On devices where
-    ``Executor::GetNumDevices`` returns 4 (E.g. AM5729 with 4 EVE OpenCL
-    devices) the amount of memory available to the runtime must be increased.
-    Refer :ref:`opencl-global-memory` for details
+    EOP1 in :numref:`frame-across-eos-opt` -> EOPs[0] in :numref:`test-code`.
+    EOP2 in :numref:`frame-across-eos-opt` -> EOPs[1] in :numref:`test-code`.
+    EOP3 in :numref:`frame-across-eos-opt` -> EOPs[2] in :numref:`test-code`.
+    EOP4 in :numref:`frame-across-eos-opt` -> EOPs[3] in :numref:`test-code`.
 
-Step 2
-======
-Create a Configuration object by reading it from a file or by initializing it directly. The example below parses a configuration file and initializes the Configuration object. See ``examples/test/testvecs/config/infer`` for examples of configuration files.
-
-.. code::
-
-    Configuration configuration;
-    bool status = configuration.ReadFromFile(config_file);
-
-.. note::
-    Refer `Processor SDK Linux Software Developer's Guide (TIDL chapter)`_ for creating TIDL network and parameter binary files from TensorFlow and Caffe.
-
-Step 3
-======
-Create an Executor with the appropriate device type, set of devices and a configuration. In the snippet below, an Executor is created on 2 EVEs.
-
-.. code-block:: c++
-
-        DeviceIds ids = {DeviceId::ID0, DeviceId::ID1};
-        Executor executor(DeviceType::EVE, ids, configuration);
-
-Step 4
-======
-Get the set of available ExecutionObjects and allocate input and output buffers for each ExecutionObject.
-
-.. code-block:: c++
-
-        const ExecutionObjects& execution_objects = executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
-
-        // Allocate input and output buffers for each execution object
-        std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
-        {
-            ArgInfo in  = { ArgInfo(malloc(frame_sz), frame_sz)};
-            ArgInfo out = { ArgInfo(malloc(frame_sz), frame_sz)};
-            eo->SetInputOutputBuffer(in, out);
-
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
-        }
-
-Step 5
-======
-Run the network on each input frame.  The frames are processed with available execution objects in a pipelined manner with additional num_eos iterations to flush the pipeline (epilogue).
-
-.. code-block:: c++
-
-        for (int frame_idx = 0; frame_idx < configuration.numFrames + num_eos; frame_idx++)
-        {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
-
-            // Wait for previous frame on the same eo to finish processing
-            if (eo->ProcessFrameWait())
-                WriteFrame(*eo, output_data_file);
-
-            // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo, frame_idx, configuration, input_data_file))
-                eo->ProcessFrameStartAsync();
-        }
-
-Section :ref:`using-tidl-api` contains details on using the APIs. The APIs themselves are documented in section :ref:`api-documentation`.
-
-Sometimes it is beneficial to partition a network and run different parts on different cores because some types of layers could run faster on EVEs while other types could run faster on DSPs.  TIDL APIs provide the flexibility to run partitioned network across EVEs and DSPs. Refer the :ref:`ssd-example` example for details.
-
-
-For a complete example of using the API, refer any of the examples available at ``/usr/share/ti/tidl/examples`` on the EVM file system.
+The complete example is available at ``/usr/share/ti/tidl/examples/two_eo_per_frame_opt/main.cpp``.
 
 Sizing device side heaps
 ++++++++++++++++++++++++
@@ -168,58 +251,6 @@ and the ``configuration.showHeapStats = true`` line can be removed.
     The memory for parameter and network heaps is itself allocated from OpenCL global memory (CMEM). Refer :ref:`opencl-global-memory` for details.
 
 
-Configuration file
-++++++++++++++++++
-TIDL API allows the user to create a Configuration object by reading from a file or by initializing it directly. Configuration settings supported by ``Configuration::ReadFromFile``:
-
-    * numFrames
-    * inWidth
-    * inHeight
-    * inNumChannels
-    * preProcType
-    * layerIndex2LayerGroupId
-
-    * inData
-    * outData
-
-    * netBinFile
-    * paramsBinFile
-
-    * enableTrace
-
-An example configuration file:
-
-.. literalinclude:: ../../examples/layer_output/j11_v2_trace.txt
-    :language: bash
-
-.. note::
-
-    Refer :ref:`api-documentation` for the complete set of parameters in the ``Configuration`` class and their description.
-
-
-Overriding layer group assignment
-+++++++++++++++++++++++++++++++++
-The `TIDL device translation tool`_ assigns layer group ids to layers during the translation process. TIDL API 1.1 and higher allows the user to override this assignment by specifying explicit mappings. There are two ways for the user to provide an updated mapping:
-
-1. Specify a mapping in the configuration file to indicate that layers 12, 13 and 14 are assigned to layer group 2:
-
-.. code-block:: c++
-
-    layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} }
-
-
-2. User can also provide the layer index to group mapping in the code:
-
-.. code-block:: c++
-
-    Configuration c;
-    c.ReadFromFile("test.cfg");
-    c.layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} };
-
-
-.. role:: cpp(code)
-   :language: c++
-
 Accessing outputs of network layers
 +++++++++++++++++++++++++++++++++++
 
@@ -236,4 +267,3 @@ See ``examples/layer_output/main.cpp, ProcessTrace()`` for examples of using the
 
 .. _Processor SDK Linux Software Developer's Guide: http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/index.html
 .. _Processor SDK Linux Software Developer's Guide (TIDL chapter): http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/Foundational_Components_TIDL.html
-.. _TIDL device translation tool: http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/Foundational_Components_TIDL.html#import-process

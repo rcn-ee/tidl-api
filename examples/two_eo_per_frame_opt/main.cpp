@@ -114,16 +114,19 @@ bool Run(int num_eve, int num_dsp, const char* ref_output)
         unique_ptr<Executor> dsp(CreateExecutor(DeviceType::DSP,
                                                 num_dsp, c, DSP_LG));
 
-        // Create pipelines. Each pipeline has 1 EVE and 1 DSP. If there are
-        // more EVEs than DSPs, the DSPs are shared across multiple
-        // pipelines. E.g.
-        // 2 EVE, 2 DSP: EVE1 -> DSP1, EVE2 -> DSP2
-        // 4 EVE, 2 DSP: EVE1 -> DSP1, EVE2 -> DSP2, EVE3 -> DSP1, EVE4 ->DSP2
+        // On AM5749, create a total of 4 pipelines (EOPs):
+        // EOPs[0] : { EVE1, DSP1 }
+        // EOPs[1] : { EVE1, DSP1 } for double buffering
+        // EOPs[2] : { EVE2, DSP2 }
+        // EOPs[3] : { EVE2, DSP2 } for double buffering
+
+        const uint32_t pipeline_depth = 2;  // 2 EOs in EOP => depth 2
         std::vector<EOP *> EOPs;
         uint32_t num_pipe = std::max(num_eve, num_dsp);
         for (uint32_t i = 0; i < num_pipe; i++)
-              EOPs.push_back(new EOP( { (*eve)[i % num_eve],
-                                        (*dsp)[i % num_dsp] } ));
+            for (uint32_t j = 0; j < pipeline_depth; j++)
+                EOPs.push_back(new EOP( { (*eve)[i % num_eve],
+                                          (*dsp)[i % num_dsp] } ));
 
         AllocateMemory(EOPs);
 

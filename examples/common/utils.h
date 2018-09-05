@@ -40,6 +40,10 @@ using tidl::Executor;
 using tidl::ExecutionObject;
 using tidl::ExecutionObjectPipeline;
 using tidl::Configuration;
+using tidl::DeviceType;
+
+Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
+                         int layer_group_id);
 
 bool ReadFrame(ExecutionObject*     eo,
                int                  frame_idx,

@@ -2,9 +2,9 @@
 Introduction
 ************
 
-TI Deep Learning (TIDL) API brings deep learning to the edge by enabling applications to leverage TI's proprietary, highly optimized CNN/DNN implementation on the EVE and C66x DSP compute engines. TIDL will initially target Vision/2D use cases on AM57x Sitara Processors.
+TI Deep Learning (TIDL) API brings deep learning to the edge by enabling applications to leverage TI's proprietary, highly optimized CNN/DNN implementation on the EVE and C66x DSP compute engines. TIDL will initially target Vision/2D use cases on AM57x Sitara |(TM)| Processors.
 
-The TIDL API leverages TI's `OpenCL`_ product to offload deep learning applications to both EVE(s) and DSP(s).  The TIDL API significantly improves the out-of-box deep learning experience for users and enables them to focus on their overall use case. They do not have to spend time on the mechanics of ARM ↔ DSP/EVE communication or implementing optimized network layers on EVE(s) and/or DSP(s).  The API allows customers to easily integrate frameworks such as OpenCV and rapidly prototype deep learning applications.
+The TIDL API leverages TI's `OpenCL`_ |(TM)| product to offload deep learning applications to both EVE(s) and DSP(s).  The TIDL API significantly improves the out-of-box deep learning experience for users and enables them to focus on their overall use case. They do not have to spend time on the mechanics of Arm |(R)| ↔ DSP/EVE communication or implementing optimized network layers on EVE(s) and/or DSP(s).  The API allows customers to easily integrate frameworks such as OpenCV and rapidly prototype deep learning applications.
 
 .. note::
 
@@ -15,7 +15,7 @@ Key Features
 **Ease of use**
 
 * Easily integrate TIDL APIs into other frameworks such as `OpenCV`_
-* Provides a common host abstraction for user applications across multiple compute engines (EVEs and C66x DSPs)
+* Provides simple host abstractions for user applications to run a network across multiple compute cores (EVEs and C66x DSPs). Refer :ref:`use-case-1` and :ref:`use-case-2` for details.
 
 **Low overhead**
 
@@ -38,3 +38,9 @@ Development Flow
 .. _Processor SDK Linux Software Developer's Guide (TIDL chapter): http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/Foundational_Components_TIDL.html
 .. _OpenCV: http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/Foundational_Components.html#opencv
 .. _OpenCL: http://software-dl.ti.com/mctools/esd/docs/opencl/index.html
+
+.. |(TM)| unicode:: U+2122
+    :ltrim:
+
+.. |(R)| unicode:: U+00AE
+    :ltrim:

@@ -211,6 +211,7 @@ bool ReadFrame(ExecutionObject &eo, uint32_t frame_idx, const Configuration& c,
 {
     if (frame_idx >= opts.num_frames)
         return false;
+
     eo.SetFrameIndex(frame_idx);
 
     char*  frame_buffer = eo.GetInputBufferPtr();

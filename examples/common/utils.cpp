@@ -39,6 +39,19 @@ using std::istream;
 using std::ostream;
 using std::vector;
 
+
+// Create an Executor with the specified type and number of EOs
+Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
+                         int layer_group_id)
+{
+    if (num == 0) return nullptr;
+
+    DeviceIds ids;
+    for (int i = 0; i < num; i++)
+        ids.insert(static_cast<DeviceId>(i));
+
+    return new Executor(dt, ids, c, layer_group_id);
+}
 static bool read_frame_helper(char* ptr, size_t size, istream& input_file);
 
 bool ReadFrame(ExecutionObject*     eo,
