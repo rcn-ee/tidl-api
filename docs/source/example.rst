@@ -96,6 +96,33 @@ C66x      117.9 ms               118.7 ms             0.93 %
 The :term:`network<Network>` used in the example is jacintonet11v2. It has
 14 layers. Input to the network is RGB image of 224x224. Users can specify whether to run the network on EVE or C66x.
 
+The example code sets ``buffer_factor`` to 2 to create duplicated
+ExecutionObjectPipelines with identical ExecutionObjects to
+perform double buffering, so that host pre/post-processing can be overlapped
+with device processing (see comments in the code for details).
+The following table shows the loop overall time over 10 frames
+with single buffering and double buffering,
+``./imagenet -f 10 -d <num> -e <num>``.
+
+.. list-table:: Loop overall time over 10 frames
+   :header-rows: 1
+
+   * - Device(s)
+     - Single Buffering (buffer_factor=1)
+     - Double Buffering (buffer_factor=2)
+   * - 1 EVE
+     - 1744 ms
+     - 1167 ms
+   * - 2 EVEs
+     - 966 ms
+     - 795 ms
+   * - 1 C66x
+     - 1879 ms
+     - 1281 ms
+   * - 2 C66xs
+     - 1021 ms
+     - 814 ms
+
 .. note::
     The predicitions reported here are based on the output of the softmax
     layer in the network, which are not normalized to the real probabilities.
@@ -130,6 +157,33 @@ Device      Device Processing Time Host Processing Time API Overhead
 EVE         251.8 ms               254.2 ms             0.96 %
 C66x        812.7 ms               815.0 ms             0.27 %
 =======     ====================== ==================== ============
+
+The example code sets ``buffer_factor`` to 2 to create duplicated
+ExecutionObjectPipelines with identical ExecutionObjects to
+perform double buffering, so that host pre/post-processing can be overlapped
+with device processing (see comments in the code for details).
+The following table shows the loop overall time over 10 frames
+with single buffering and double buffering,
+``./segmentation -f 10 -d <num> -e <num>``.
+
+.. list-table:: Loop overall time over 10 frames
+   :header-rows: 1
+
+   * - Device(s)
+     - Single Buffering (buffer_factor=1)
+     - Double Buffering (buffer_factor=2)
+   * - 1 EVE
+     - 5233 ms
+     - 3017 ms
+   * - 2 EVEs
+     - 3032 ms
+     - 3015 ms
+   * - 1 C66x
+     - 10890 ms
+     - 8416 ms
+   * - 2 C66xs
+     - 5742 ms
+     - 4638 ms
 
 .. _ssd-example:
 
@@ -167,6 +221,29 @@ Device        Device Processing Time Host Processing Time API Overhead
 ========      ====================== ==================== ============
 EVE+C66x      169.5ms                172.0ms              1.68 %
 ========      ====================== ==================== ============
+
+The example code sets ``pipeline_depth`` to 2 to create duplicated
+ExecutionObjectPipelines with identical ExecutionObjects to
+perform pipelined execution at the ExecutionObject level.
+The side effect is that it also overlaps host pre/post-processing
+with device processing (see comments in the code for details).
+The following table shows the loop overall time over 10 frames
+with pipelining at ExecutionObjectPipeline level
+versus ExecutionObject level.
+``./ssd_multibox -f 10 -d <num> -e <num>``.
+
+.. list-table:: Loop overall time over 10 frames
+   :header-rows: 1
+
+   * - Device(s)
+     - pipeline_depth=1
+     - pipeline_depth=2
+   * - 1 EVE + 1 C66x
+     - 2900 ms
+     - 1735 ms
+   * - 2 EVEs + 2 C66xs
+     - 1630 ms
+     - 1408 ms
 
 Running Examples
 ----------------

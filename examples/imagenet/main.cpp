@@ -42,6 +42,7 @@
 
 #include "executor.h"
 #include "execution_object.h"
+#include "execution_object_pipeline.h"
 #include "configuration.h"
 #include "imagenet_classes.h"
 #include "imgutil.h"
@@ -67,9 +68,10 @@ const char *default_inputs[NUM_DEFAULT_INPUTS] =
 
 Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c);
 bool RunConfiguration(cmdline_opts_t& opts);
-bool ReadFrame(ExecutionObject& eo, uint32_t frame_idx, const Configuration& c,
+bool ReadFrame(ExecutionObjectPipeline& eop,
+               uint32_t frame_idx, const Configuration& c,
                const cmdline_opts_t& opts, VideoCapture &cap);
-bool WriteFrameOutput(const ExecutionObject &eo);
+bool WriteFrameOutput(const ExecutionObjectPipeline &eop);
 void DisplayHelp();
 
 
@@ -150,29 +152,56 @@ bool RunConfiguration(cmdline_opts_t& opts)
         for (uint32_t i = 0; i < opts.num_dsps; i++) eos.push_back((*e_dsp)[i]);
         uint32_t num_eos = eos.size();
 
-        // Allocate input and output buffers for each ExecutionObject
-        AllocateMemory(eos);
+        // Use duplicate EOPs to do double buffering on frame input/output
+        //    because each EOP has its own set of input/output buffers,
+        //    so that host ReadFrame() can be overlapped with device processing
+        // Use one EO as an example, with different buffer_factor,
+        //    we have different execution behavior:
+        // If buffer_factor is set to 1 -> single buffering
+        //    we create one EOP: eop0 (eo0)
+        //    pipeline execution of multiple frames over time is as follows:
+        //    --------------------- time ------------------->
+        //    eop0: [RF][eo0.....][WF]
+        //    eop0:                   [RF][eo0.....][WF]
+        //    eop0:                                     [RF][eo0.....][WF]
+        // If buffer_factor is set to 2 -> double buffering
+        //    we create two EOPs: eop0 (eo0), eop1(eo0)
+        //    pipeline execution of multiple frames over time is as follows:
+        //    --------------------- time ------------------->
+        //    eop0: [RF][eo0.....][WF]
+        //    eop1:     [RF]      [eo0.....][WF]
+        //    eop0:                   [RF]  [eo0.....][WF]
+        //    eop1:                             [RF]  [eo0.....][WF]
+        vector<ExecutionObjectPipeline *> eops;
+        uint32_t buffer_factor = 2;  // set to 1 for single buffering
+        for (uint32_t j = 0; j < buffer_factor; j++)
+            for (uint32_t i = 0; i < num_eos; i++)
+                eops.push_back(new ExecutionObjectPipeline({eos[i]}));
+        uint32_t num_eops = eops.size();
+
+        // Allocate input and output buffers for each EOP
+        AllocateMemory(eops);
 
         chrono::time_point<chrono::steady_clock> tloop0, tloop1;
         tloop0 = chrono::steady_clock::now();
 
-        // Process frames with available eos in a pipelined manner
+        // Process frames with available eops in a pipelined manner
         // additional num_eos iterations to flush the pipeline (epilogue)
         for (uint32_t frame_idx = 0;
-             frame_idx < opts.num_frames + num_eos; frame_idx++)
+             frame_idx < opts.num_frames + num_eops; frame_idx++)
         {
-            ExecutionObject* eo = eos[frame_idx % num_eos];
+            ExecutionObjectPipeline* eop = eops[frame_idx % num_eops];
 
-            // Wait for previous frame on the same eo to finish processing
-            if (eo->ProcessFrameWait())
+            // Wait for previous frame on the same eop to finish processing
+            if (eop->ProcessFrameWait())
             {
-                ReportTime(eo);
-                WriteFrameOutput(*eo);
+                ReportTime(eop);
+                WriteFrameOutput(*eop);
             }
 
-            // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo, frame_idx, c, opts, cap))
-                eo->ProcessFrameStartAsync();
+            // Read a frame and start processing it with current eop
+            if (ReadFrame(*eop, frame_idx, c, opts, cap))
+                eop->ProcessFrameStartAsync();
         }
 
         tloop1 = chrono::steady_clock::now();
@@ -181,7 +210,8 @@ bool RunConfiguration(cmdline_opts_t& opts)
                   << setw(6) << setprecision(4)
                   << (elapsed.count() * 1000) << "ms" << endl;
 
-        FreeMemory(eos);
+        FreeMemory(eops);
+        for (auto eop : eops)  delete eop;
         delete e_eve;
         delete e_dsp;
     }
@@ -206,15 +236,16 @@ Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c)
     return new Executor(dt, ids, c);
 }
 
-bool ReadFrame(ExecutionObject &eo, uint32_t frame_idx, const Configuration& c,
+bool ReadFrame(ExecutionObjectPipeline &eop,
+               uint32_t frame_idx, const Configuration& c,
                const cmdline_opts_t& opts, VideoCapture &cap)
 {
     if (frame_idx >= opts.num_frames)
         return false;
 
-    eo.SetFrameIndex(frame_idx);
+    eop.SetFrameIndex(frame_idx);
 
-    char*  frame_buffer = eo.GetInputBufferPtr();
+    char*  frame_buffer = eop.GetInputBufferPtr();
     assert (frame_buffer != nullptr);
 
     Mat image;
@@ -256,11 +287,11 @@ bool ReadFrame(ExecutionObject &eo, uint32_t frame_idx, const Configuration& c,
 }
 
 // Display top 5 classified imagenet classes with probabilities
-bool WriteFrameOutput(const ExecutionObject &eo)
+bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
 {
     const int k = 5;
-    unsigned char *out = (unsigned char *) eo.GetOutputBufferPtr();
-    int out_size = eo.GetOutputBufferSizeInBytes();
+    unsigned char *out = (unsigned char *) eop.GetOutputBufferPtr();
+    int out_size = eop.GetOutputBufferSizeInBytes();
 
     // sort and get k largest values and corresponding indices
     typedef pair<unsigned char, int> val_index;
