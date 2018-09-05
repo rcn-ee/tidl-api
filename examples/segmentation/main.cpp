@@ -64,8 +64,8 @@ uint32_t orig_height;
 
 
 bool RunConfiguration(const cmdline_opts_t& opts);
-Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c);
-bool ReadFrame(ExecutionObject& eo, int frame_idx, const Configuration& c,
+Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c);
+bool ReadFrame(ExecutionObject& eo, uint32_t frame_idx, const Configuration& c,
                const cmdline_opts_t& opts, VideoCapture &cap);
 bool WriteFrameOutput(const ExecutionObject &eo, const Configuration& c,
                       const cmdline_opts_t& opts);
@@ -202,7 +202,7 @@ bool RunConfiguration(const cmdline_opts_t& opts)
 }
 
 // Create an Executor with the specified type and number of EOs
-Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c)
+Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c)
 {
     if (num == 0) return nullptr;
 
@@ -213,7 +213,7 @@ Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c)
     return new Executor(dt, ids, c);
 }
 
-bool ReadFrame(ExecutionObject &eo, int frame_idx, const Configuration& c, 
+bool ReadFrame(ExecutionObject &eo, uint32_t frame_idx, const Configuration& c,
                const cmdline_opts_t& opts, VideoCapture &cap)
 {
     if (frame_idx >= opts.num_frames)

@@ -116,6 +116,8 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
         opts.is_video_input = (suffix == ".mp4") || (suffix == ".avi") ||
                               (suffix == ".mov");
     }
+
+    return true;
 }
 
 // Set Video Input and Output
@@ -141,5 +143,7 @@ bool SetVideoInputOutput(VideoCapture &cap, const cmdline_opts_t& opts,
         }
         namedWindow(window_name, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
     }
+
+    return true;
 }
 

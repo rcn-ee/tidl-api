@@ -65,9 +65,9 @@ uint32_t orig_height;
 
 
 bool RunConfiguration(const cmdline_opts_t& opts);
-Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
+Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c,
                          int layers_group_id);
-bool ReadFrame(ExecutionObjectPipeline& eop, int frame_idx,
+bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
                const Configuration& c, const cmdline_opts_t& opts,
                VideoCapture &cap);
 bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
@@ -159,9 +159,38 @@ bool RunConfiguration(const cmdline_opts_t& opts)
         // Construct ExecutionObjectPipeline that utilizes multiple
         // ExecutionObjects to process a single frame, each ExecutionObject
         // processes one layerGroup of the network
+        //
+        // Pipeline depth can enable more optimized pipeline execution:
+        // Given one EVE and one DSP as an example, with different
+        //     pipeline_depth, we have different execution behavior:
+        // If pipeline_depth is set to 1,
+        //    we create one EOP: eop0 (eve0, dsp0)
+        //    pipeline execution of multiple frames over time is as follows:
+        //    --------------------- time ------------------->
+        //    eop0: [eve0...][dsp0]
+        //    eop0:                [eve0...][dsp0]
+        //    eop0:                               [eve0...][dsp0]
+        //    eop0:                                              [eve0...][dsp0]
+        // If pipeline_depth is set to 2,
+        //    we create two EOPs: eop0 (eve0, dsp0), eop1(eve0, dsp0)
+        //    pipeline execution of multiple frames over time is as follows:
+        //    --------------------- time ------------------->
+        //    eop0: [eve0...][dsp0]
+        //    eop1:          [eve0...][dsp0]
+        //    eop0:                   [eve0...][dsp0]
+        //    eop1:                            [eve0...][dsp0]
+        // Additional benefit of setting pipeline_depth to 2 is that
+        //    it can also overlap host ReadFrame() with device processing:
+        //    --------------------- time ------------------->
+        //    eop0: [RF][eve0...][dsp0]
+        //    eop1:     [RF]     [eve0...][dsp0]
+        //    eop0:                    [RF][eve0...][dsp0]
+        //    eop1:                             [RF][eve0...][dsp0]
         vector<ExecutionObjectPipeline *> eops;
-        for (uint32_t i = 0; i < max(opts.num_eves, opts.num_dsps); i++)
-            eops.push_back(new ExecutionObjectPipeline(
+        uint32_t pipeline_depth = 2;  // 2 EOs in EOP -> depth 2
+        for (uint32_t j = 0; j < pipeline_depth; j++)
+            for (uint32_t i = 0; i < max(opts.num_eves, opts.num_dsps); i++)
+                eops.push_back(new ExecutionObjectPipeline(
                       {(*e_eve)[i%opts.num_eves], (*e_dsp)[i%opts.num_dsps]}));
         uint32_t num_eops = eops.size();
 
@@ -211,7 +240,7 @@ bool RunConfiguration(const cmdline_opts_t& opts)
 }
 
 // Create an Executor with the specified type and number of EOs
-Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
+Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c,
                          int layers_group_id)
 {
     if (num == 0) return nullptr;
@@ -223,7 +252,7 @@ Executor* CreateExecutor(DeviceType dt, int num, const Configuration& c,
     return new Executor(dt, ids, c, layers_group_id);
 }
 
-bool ReadFrame(ExecutionObjectPipeline& eop, int frame_idx,
+bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
                const Configuration& c, const cmdline_opts_t& opts,
                VideoCapture &cap)
 {
