@@ -79,7 +79,7 @@ char video_clip[320];
 #define Y_STEP   224
 #endif
 
-int NUM_ROI = NUM_ROI_X * NUM_ROI_Y;
+#define NUM_ROI (NUM_ROI_X * NUM_ROI_Y)
 
 //Temporal averaging
 int TOP_CANDIDATES = 3;
@@ -88,6 +88,10 @@ using namespace tidl;
 using namespace cv;
 
 #ifdef LIVE_DISPLAY
+char imagenet_win[160];
+char tmp_classwindow_string[160];
+Mat  classlist_image;
+
 void imagenetCallBackFunc(int event, int x, int y, int flags, void* userdata)
 {
     if  ( event == EVENT_RBUTTONDOWN )
@@ -98,25 +102,40 @@ void imagenetCallBackFunc(int event, int x, int y, int flags, void* userdata)
 }
 #endif
 
+Mat in_image, image, r_image, show_image, bgr_frames[3];
+Mat to_stream;
+Rect rectCrop[NUM_ROI];
+double avg_fps;
+
 static int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id);
 static void tf_preprocess(uchar *out, uchar *in, int size);
 static int ShowRegion(int roi_history[]);
-static int selclass_history[MAX_NUM_ROI][3];  // from most recent to oldest at top indices
+// from most recent to oldest at top indices
+static int selclass_history[MAX_NUM_ROI][3];
 
 bool __TI_show_debug_ = false;
 
 bool RunConfiguration(const std::string& config_file, int num_layers_groups,
                       uint32_t num_dsps, uint32_t num_eves);
-
-bool ReadFrame(ExecutionObjectPipeline&   ep,
-               int                  frame_idx,
-               const Configuration& configuration,
-               std::istream&        input_file);
-
+bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
+                                    Configuration& configuration, 
+                                    uint32_t num_layers_groups,
+                                    Executor*& e_eve, Executor*& e_dsp,
+                                  std::vector<ExecutionObjectPipeline*>& eops);
+void AllocateMemory(const std::vector<ExecutionObjectPipeline*>& eops);
+void SetupLiveDisplay(uint32_t num_eves, uint32_t num_dsps);
+bool SetupInput(VideoCapture& cap, VideoWriter& writer);
+bool ReadFrame(ExecutionObjectPipeline* eop,
+               uint32_t frame_idx, uint32_t num_frames,
+               VideoCapture &cap, VideoWriter& writer);
+void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
+                  uint32_t frame_idx, uint32_t num_eops,
+                  uint32_t num_eves, uint32_t num_dsps);
 static void ProcessArgs(int argc, char *argv[],
                         std::string& config_file,
                         uint32_t & num_dsps, uint32_t &num_eves,
                         int & num_layers_groups);
+void ReportTime(const ExecutionObjectPipeline* eop);
 
 static void DisplayHelp();
 extern std::string labels_classes[];
@@ -126,21 +145,6 @@ extern int selected_items[];
 extern int populate_selected_items (char *filename);
 extern void populate_labels (char *filename);
 
-void ReportTime(int frame_index, std::string device_name, double elapsed_host,
-                double elapsed_device)
-{
-    double overhead = 100 - (elapsed_device/elapsed_host*100);
-    std::cout << "frame[" << frame_index << "]: "
-              << "Time on " << device_name << ": "
-              << std::setw(6) << std::setprecision(4)
-              << elapsed_device << "ms, "
-              << "host: "
-              << std::setw(6) << std::setprecision(4)
-              << elapsed_host << "ms ";
-    std::cout << "API overhead: "
-              << std::setw(6) << std::setprecision(3)
-              << overhead << " %" << std::endl;
-}
 
 int main(int argc, char *argv[])
 {
@@ -163,13 +167,10 @@ int main(int argc, char *argv[])
     std::string config_file;
     ProcessArgs(argc, argv, config_file, num_dsps, num_eves, num_layers_groups);
 
-    bool status = true;
+    bool status = false;
     if (!config_file.empty()) {
         std::cout << "Run single configuration: " << config_file << std::endl;
         status = RunConfiguration(config_file, num_layers_groups, num_dsps, num_eves);
-    } else
-    {
-        status = false;
     }
 
     if (!status)
@@ -184,15 +185,6 @@ int main(int argc, char *argv[])
 
 bool RunConfiguration(const std::string& config_file, int num_layers_groups, uint32_t num_dsps, uint32_t num_eves)
 {
-    char imagenet_win[160];
-
-    DeviceIds ids_eve, ids_dsp;
-
-    for (uint32_t i = 0; i < num_eves; i++)
-        ids_eve.insert(static_cast<DeviceId>(i));
-    for (uint32_t i = 0; i < num_dsps; i++)
-        ids_dsp.insert(static_cast<DeviceId>(i));
-
 
     // Read the TI DL configuration file
     Configuration configuration;
@@ -209,296 +201,68 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
     assert (input_data_file.good());
     assert (output_data_file.good());
 
-    sprintf(imagenet_win, "Imagenet_EVEx%d_DSPx%d", num_eves, num_dsps);
 
     try
     {
-        Executor *exe_eve = NULL;
-        Executor *exe_dsp = NULL;
-        int num_eps = 0;
-        std::vector<ExecutionObjectPipeline *> eps;
-        switch(num_layers_groups)
-        {
-        case 1: // Single layers group
-           exe_eve = num_eves > 0 ? new Executor(DeviceType::EVE, ids_eve, configuration) : NULL;
-           exe_dsp = num_dsps > 0 ? new Executor(DeviceType::DSP, ids_dsp, configuration) : NULL;
-           num_eps = num_eves + num_dsps;
+        // Create ExecutionObjectPipelines
+        Executor *e_eve = NULL;
+        Executor *e_dsp = NULL;
+        std::vector<ExecutionObjectPipeline *> eops;
+        if (! CreateExecutionObjectPipelines(num_eves, num_dsps, configuration,
+                                        num_layers_groups, e_eve, e_dsp, eops))
+            return false;
+        uint32_t num_eops = eops.size();
 
-           // Construct ExecutionObjectPipeline with single Execution Object to
-           // process each frame. This is parallel processing of frames with as many
-           // DSP and EVE cores that we have on hand.
-           for (uint32_t i = 0; i < num_eves; i++)
-              eps.push_back(new ExecutionObjectPipeline({(*exe_eve)[i]}));
-
-           for (uint32_t i = 0; i < num_dsps; i++)
-              eps.push_back(new ExecutionObjectPipeline({(*exe_dsp)[i]}));
-
-           break;
-
-         case 2: // Two layers group
-          // JacintoNet11 specific : specify only layers that will be in layers group 2
-          // ...by default all other layers are in group 1.
-          configuration.layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} };
-
-          // Create a executor with the approriate core type, number of cores
-          // and configuration specified
-          // EVE will run layersGroupId 1 in the network, while
-          // DSP will run layersGroupId 2 in the network
-          exe_eve = num_eves > 0 ? new Executor(DeviceType::EVE, ids_eve, configuration, 1) : NULL;
-          exe_dsp = num_dsps > 0 ? new Executor(DeviceType::DSP, ids_dsp, configuration, 2) : NULL;
-
-          // Construct ExecutionObjectPipeline that utilizes multiple
-          // ExecutionObjects to process a single frame, each ExecutionObject
-          // processes one layerGroup of the network
-          num_eps = std::max(num_eves, num_dsps);
-          for (int i = 0; i < num_eps; i++)
-              eps.push_back(new ExecutionObjectPipeline({(*exe_eve)[i%num_eves],
-                                                         (*exe_dsp)[i%num_dsps]}));
-          break;
-
-         default:
-           std::cout << "Layers groups can be either 1 or 2!" << std::endl;
-           return false;
-        }
         // Allocate input/output memory for each EOP
-        std::vector<void *> buffers;
-        for (auto ep : eps)
+        AllocateMemory(eops);
+
+        // Setup Live Display
+        SetupLiveDisplay(num_eves, num_dsps);
+
+        // Setup Input
+        VideoCapture cap;
+        VideoWriter writer;  // gstreamer
+        if (! SetupInput(cap, writer))  return false;
+
+
+        // More initialization
+        for (int k = 0; k < NUM_ROI; k++)
+            for(int i = 0; i < 3; i ++)
+                selclass_history[k][i] = -1;
+        avg_fps = 0.0;
+        int num_frames = 99999;
+        std::cout << "About to start ProcessFrame loop!!" << std::endl;
+ 
+        // Process frames with available EOPs in a pipelined manner
+        // additional num_eops iterations to flush the pipeline (epilogue)
+        for (uint32_t frame_idx = 0;
+             frame_idx < configuration.numFrames + num_eops; frame_idx++)
         {
-           size_t in_size  = ep->GetInputBufferSizeInBytes();
-           size_t out_size = ep->GetOutputBufferSizeInBytes();
-           void*  in_ptr   = malloc(in_size);
-           void*  out_ptr  = malloc(out_size);
-           assert(in_ptr != nullptr && out_ptr != nullptr);
-           buffers.push_back(in_ptr);
-           buffers.push_back(out_ptr);
+            ExecutionObjectPipeline* eop = eops[frame_idx % num_eops];
 
-           ArgInfo in(in_ptr,   in_size);
-           ArgInfo out(out_ptr, out_size);
-           ep->SetInputOutputBuffer(in, out);
-        }
-
-#ifdef LIVE_DISPLAY
-    if(NUM_ROI > 1)
-    {
-      for(int i = 0; i < NUM_ROI; i ++) {
-        char tmp_string[80];
-        sprintf(tmp_string, "ROI[%02d]", i);
-        namedWindow(tmp_string, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
-      }
-    }
-    Mat sw_stack_image = imread("/usr/share/ti/tidl/examples/classification/tidl-sw-stack-small.png", IMREAD_COLOR); // Read the file
-    if( sw_stack_image.empty() )                      // Check for invalid input
-    {
-      std::cout <<  "Could not open or find the tidl-sw-stack-small image" << std::endl ;
-    } else {
-      namedWindow( "TIDL SW Stack", WINDOW_AUTOSIZE | CV_GUI_NORMAL ); // Create a window for display.
-      cv::imshow( "TIDL SW Stack", sw_stack_image );                // Show our image inside it.
-    }
-
-    namedWindow("ClassList", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
-    namedWindow(imagenet_win, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
-    //set the callback function for any mouse event
-    setMouseCallback(imagenet_win, imagenetCallBackFunc, NULL);
-
-    Mat classlist_image = cv::Mat::zeros(40 + selected_items_size * 20, 220, CV_8UC3);
-    char tmp_classwindow_string[160];
-    //Erase window
-    classlist_image.setTo(Scalar::all(0));
-
-    for (int i = 0; i < selected_items_size; i ++)
-    {
-      sprintf(tmp_classwindow_string, "%2d) %12s", 1+i, labels_classes[selected_items[i]].c_str());
-      cv::putText(classlist_image, tmp_classwindow_string,
-                  cv::Point(5, 40 + i * 20),
-                  cv::FONT_HERSHEY_COMPLEX_SMALL,
-                  0.75,
-                  cv::Scalar(255,255,255), 1, 8);
-    }
-    cv::imshow("ClassList", classlist_image);
-
-#endif
-    Mat r_frame, r_mframe, r_blend;
-    Mat to_stream;
-    VideoCapture cap;
-    double avg_fps = 0.0;
-
-   if(live_input >= 0)
-   {
-      cap.open(live_input);
-      VideoWriter writer;  // gstreamer
-
-      const double fps = cap.get(CAP_PROP_FPS);
-      const int width  = cap.get(CAP_PROP_FRAME_WIDTH);
-      const int height = cap.get(CAP_PROP_FRAME_HEIGHT);
-      std::cout << "Capture camera with " << fps << " fps, " << width << "x" << height << " px" << std::endl;
-
-#ifdef RMT_GST_STREAMER
-      writer.open(" appsrc ! videoconvert ! video/x-raw, format=(string)NV12, width=(int)640, height=(int)480, framerate=(fraction)30/1 ! \
-                ducatih264enc bitrate=2000 ! queue ! h264parse config-interval=1 ! \
-                mpegtsmux ! udpsink host=192.168.1.2 sync=false port=5000",
-                0,fps,Size(640,480),true);
-
-      if (!writer.isOpened()) {
-        cap.release();
-        std::cerr << "Can't create gstreamer writer. Do you have the correct version installed?" << std::endl;
-        std::cerr << "Print out OpenCV build information" << std::endl;
-        std::cout << getBuildInformation() << std::endl;
-        return false;
-      }
-#endif
-   } else {
-     std::cout << "Video input clip: " << video_clip << std::endl;
-     cap.open(std::string(video_clip));
-      const double fps = cap.get(CAP_PROP_FPS);
-      const int width  = cap.get(CAP_PROP_FRAME_WIDTH);
-      const int height = cap.get(CAP_PROP_FRAME_HEIGHT);
-      std::cout << "Clip with " << fps << " fps, " << width << "x" << height << " px" << std::endl;
-
-   }
-   std::cout << "About to start ProcessFrame loop!!" << std::endl;
-
-
-   Rect rectCrop[NUM_ROI];
-   for (int y = 0; y < NUM_ROI_Y; y ++) {
-      for (int x = 0; x < NUM_ROI_X; x ++) {
-         rectCrop[y * NUM_ROI_X + x] = Rect(X_OFFSET + x * X_STEP, Y_OFFSET + y * Y_STEP, 224, 224);
-         std::cout << "Rect[" << X_OFFSET + x * X_STEP << ", " << Y_OFFSET + y * Y_STEP << "]" << std::endl;
-      }
-   }
-   int num_frames = 99999;
-
-   if (!cap.isOpened()) {
-      std::cout << "Video input not opened!" << std::endl;
-      return false;
-   }
-   Mat in_image, image, r_image, show_image, bgr_frames[3];
-   int is_object;
-   for(int k = 0; k < NUM_ROI; k++) {
-      for(int i = 0; i < 3; i ++) selclass_history[k][i] = -1;
-   }
-
-   // Process frames with available execution objects in a pipelined manner
-   // additional num_eps iterations to flush the pipeline (epilogue)
-   for (int frame_idx = 0; frame_idx < configuration.numFrames + num_eps; frame_idx++)
-   {
-        ExecutionObjectPipeline* ep = eps[frame_idx % num_eps];
-
-        // Wait for previous frame on the same eo to finish processing
-        if (ep->ProcessFrameWait())
-        {
-             double elapsed_host = ep->GetHostProcessTimeInMilliSeconds();
-             /* Exponential averaging */
-             avg_fps = 0.1 * ((double)num_eps * 1000.0 / ((double)NUM_ROI * elapsed_host)) + 0.9 * avg_fps;
-#ifdef PERF_VERBOSE
-             ReportTime(ep->GetFrameIndex(), ep->GetDeviceName(),
-                        ep->GetHostProcessTimeInMilliSeconds(),
-                        ep->GetProcessTimeInMilliSeconds());
-#endif
-             int f_id = ep->GetFrameIndex();
-             int curr_roi = f_id % NUM_ROI;
-             is_object = tf_postprocess((uchar*) ep->GetOutputBufferPtr(), IMAGE_CLASSES_NUM, curr_roi, frame_idx, f_id);
-             selclass_history[curr_roi][2] = selclass_history[curr_roi][1];
-             selclass_history[curr_roi][1] = selclass_history[curr_roi][0];
-             selclass_history[curr_roi][0] = is_object;
-             for (int r = 0; r < NUM_ROI; r ++)
-             {
-	        int rpt_id =  ShowRegion(selclass_history[r]);
-                if(rpt_id >= 0)
-                {
-                  // overlay the display window, if ball seen during last two times
-                  cv::putText(show_image, labels_classes[rpt_id].c_str(),
-                    cv::Point(rectCrop[r].x + 5,rectCrop[r].y + 20), // Coordinates
-                    cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
-                    1.0, // Scale. 2.0 = 2x bigger
-                    cv::Scalar(0,0,255), // Color
-                    1, // Thickness
-                    8); // Line type
-                  cv::rectangle(show_image, rectCrop[r], Scalar(255,0,0), 3);
-                  std::cout << "ROI(" << r << ")(" << rpt_id << ")=" << labels_classes[rpt_id].c_str() << std::endl;
-
-                  classlist_image.setTo(Scalar::all(0));
-                  for (int k = 0; k < selected_items_size; k ++)
-                  {
-                     sprintf(tmp_classwindow_string, "%2d) %12s", 1+k, labels_classes[selected_items[k]].c_str());
-                     cv::putText(classlist_image, tmp_classwindow_string,
-                                 cv::Point(5, 40 + k * 20),
-                                 cv::FONT_HERSHEY_COMPLEX_SMALL,
-                                 0.75,
-                                 selected_items[k] == rpt_id ? cv::Scalar(0,0,255) : cv::Scalar(255,255,255), 1, 8);
-                  }
-                  sprintf(tmp_classwindow_string, "FPS:%5.2lf", avg_fps );
-
-#ifdef PERF_VERBOSE
-                  std::cout << "Device:" << ep->GetDeviceName() << " eps(" << num_eps << "), EVES(" << num_eves <<
-                       ") DSPS(" << num_dsps << ") FPS:" << avg_fps << std::endl;
-#endif
-                  cv::putText(classlist_image, tmp_classwindow_string,
-                              cv::Point(5, 20),
-                              cv::FONT_HERSHEY_COMPLEX_SMALL,
-                              0.75,
-                              cv::Scalar(0,255,0), 1, 8);
-                  cv::imshow("ClassList", classlist_image);
-               }
-             }
-#ifdef LIVE_DISPLAY
-             cv::imshow(imagenet_win, show_image);
-#endif
-
-#ifdef RMT_GST_STREAMER
-             cv::resize(show_image, to_stream, cv::Size(640,480));
-             writer << to_stream;
-#endif
-
-#ifdef LIVE_DISPLAY
-             waitKey(2);
-#endif
-        }
-
-        if (cap.grab() && frame_idx < num_frames)
-        {
-            if (cap.retrieve(in_image))
+            // Wait for previous frame on the same eo to finish processing
+            if (eop->ProcessFrameWait())
             {
-                cv::resize(in_image, image, Size(RES_X,RES_Y));
-                r_image = Mat(image, rectCrop[frame_idx % NUM_ROI]);
-
-#ifdef LIVE_DISPLAY
-                if(NUM_ROI > 1)
-                {
-                   char tmp_string[80];
-                   sprintf(tmp_string, "ROI[%02d]", frame_idx % NUM_ROI);
-                   cv::imshow(tmp_string, r_image);
-                }
-#endif
-                //Convert from BGR pixel interleaved to BGR plane interleaved!
-                cv::split(r_image, bgr_frames);
-                tf_preprocess((uchar*) ep->GetInputBufferPtr(), bgr_frames[0].ptr(), 224*224);
-                tf_preprocess((uchar*) ep->GetInputBufferPtr()+224*224, bgr_frames[1].ptr(), 224*224);
-                tf_preprocess((uchar*) ep->GetInputBufferPtr()+2*224*224, bgr_frames[2].ptr(), 224*224);
-                ep->SetFrameIndex(frame_idx);
-                ep->ProcessFrameStartAsync();
-
-#ifdef RMT_GST_STREAMER
-                cv::resize(Mat(image, Rect(0,32,640,448)), to_stream, Size(640,480));
-                writer << to_stream;
-#endif
-
-#ifdef LIVE_DISPLAY
-                //waitKey(2);
-                image.copyTo(show_image);
-#endif
+                 #ifdef PERF_VERBOSE
+                 ReportTime(eop);
+                 #endif
+                 DisplayFrame(eop, writer, frame_idx, num_eops,
+                              num_eves, num_dsps);
             }
-        } else {
-          if(live_input == -1) {
-            //Rewind!
-            cap.release();
-            cap.open(std::string(video_clip));
-          }
+
+            if (ReadFrame(eop, frame_idx, num_frames, cap, writer))
+                eop->ProcessFrameStartAsync();
         }
-      }
-      for (auto ep : eps)    delete ep;
-      for (auto b : buffers) free(b);
-      if(num_dsps) delete exe_dsp;
-      if(num_eves) delete exe_eve;
+
+        // Cleanup
+        for (auto eop : eops)
+        {
+            free(eop->GetInputBufferPtr());
+            free(eop->GetOutputBufferPtr());
+            delete eop;
+        }
+        if(num_dsps) delete e_dsp;
+        if(num_eves) delete e_eve;
     }
     catch (tidl::Exception &e)
     {
@@ -513,32 +277,331 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
     return status;
 }
 
-bool ReadFrame(ExecutionObjectPipeline &ep, int frame_idx,
-               const Configuration& configuration,
-               std::istream& input_file)
+
+bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
+                                    Configuration& configuration, 
+                                    uint32_t num_layers_groups,
+                                    Executor*& e_eve, Executor*& e_dsp,
+                                    std::vector<ExecutionObjectPipeline*>& eops)
 {
-    if (frame_idx >= configuration.numFrames)
+    DeviceIds ids_eve, ids_dsp;
+    for (uint32_t i = 0; i < num_eves; i++)
+        ids_eve.insert(static_cast<DeviceId>(i));
+    for (uint32_t i = 0; i < num_dsps; i++)
+        ids_dsp.insert(static_cast<DeviceId>(i));
+
+    switch(num_layers_groups)
+    {
+    case 1: // Single layers group
+        e_eve = num_eves == 0 ? nullptr :
+                new Executor(DeviceType::EVE, ids_eve, configuration);
+        e_dsp = num_dsps == 0 ? nullptr :
+                new Executor(DeviceType::DSP, ids_dsp, configuration);
+
+        // Construct ExecutionObjectPipeline with single Execution Object to
+        // process each frame. This is parallel processing of frames with
+        // as many DSP and EVE cores that we have on hand.
+        for (uint32_t i = 0; i < num_eves; i++)
+            eops.push_back(new ExecutionObjectPipeline({(*e_eve)[i]}));
+        for (uint32_t i = 0; i < num_dsps; i++)
+            eops.push_back(new ExecutionObjectPipeline({(*e_dsp)[i]}));
+        break;
+
+    case 2: // Two layers group
+        // JacintoNet11 specific : specify only layers that will be in
+        // layers group 2 ... by default all other layers are in group 1.
+        configuration.layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} };
+
+        // Create Executors with the approriate core type, number of cores
+        // and configuration specified
+        // EVE will run layersGroupId 1 in the network, while
+        // DSP will run layersGroupId 2 in the network
+        e_eve = num_eves == 0 ? nullptr :
+                new Executor(DeviceType::EVE, ids_eve, configuration, 1);
+        e_dsp = num_dsps == 0 ? nullptr :
+                new Executor(DeviceType::DSP, ids_dsp, configuration, 2);
+
+        // Construct ExecutionObjectPipeline that utilizes multiple
+        // ExecutionObjects to process a single frame, each ExecutionObject
+        // processes one layerGroup of the network
+        for (uint32_t i = 0; i < std::max(num_eves, num_dsps); i++)
+            eops.push_back(new ExecutionObjectPipeline({(*e_eve)[i%num_eves],
+                                                        (*e_dsp)[i%num_dsps]}));
+        break;
+
+    default:
+        std::cout << "Layers groups can be either 1 or 2!" << std::endl;
         return false;
+        break;
+    }
 
-    char*  frame_buffer = ep.GetInputBufferPtr();
-    assert (frame_buffer != nullptr);
+    return true;
+}
 
-    memset (frame_buffer, 0,  ep.GetInputBufferSizeInBytes());
-    input_file.read(frame_buffer, ep.GetInputBufferSizeInBytes() / (configuration.inNumChannels == 1 ? 2 : 1));
+void AllocateMemory(const std::vector<ExecutionObjectPipeline*>& eops)
+{
+    for (auto eop : eops)
+    {
+       size_t in_size  = eop->GetInputBufferSizeInBytes();
+       size_t out_size = eop->GetOutputBufferSizeInBytes();
+       void*  in_ptr   = malloc(in_size);
+       void*  out_ptr  = malloc(out_size);
+       assert(in_ptr != nullptr && out_ptr != nullptr);
 
-    if (input_file.eof())
+       ArgInfo in(in_ptr,   in_size);
+       ArgInfo out(out_ptr, out_size);
+       eop->SetInputOutputBuffer(in, out);
+    }
+}
+
+void SetupLiveDisplay(uint32_t num_eves, uint32_t num_dsps)
+{
+#ifdef LIVE_DISPLAY
+    sprintf(imagenet_win, "Imagenet_EVEx%d_DSPx%d", num_eves, num_dsps);
+
+    if(NUM_ROI > 1)
+    {
+      for(int i = 0; i < NUM_ROI; i ++) {
+        char tmp_string[80];
+        sprintf(tmp_string, "ROI[%02d]", i);
+        namedWindow(tmp_string, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
+      }
+    }
+    Mat sw_stack_image = imread(
+          "/usr/share/ti/tidl/examples/classification/tidl-sw-stack-small.png",
+          IMREAD_COLOR); // Read the file
+    if( sw_stack_image.empty() )                      // Check for invalid input
+    {
+      std::cout <<  "Could not open or find the tidl-sw-stack-small image"
+                << std::endl ;
+    } else {
+      // Create a window for display.
+      namedWindow( "TIDL SW Stack", WINDOW_AUTOSIZE | CV_GUI_NORMAL );
+      // Show our image inside it.
+      cv::imshow( "TIDL SW Stack", sw_stack_image );
+    }
+
+    namedWindow("ClassList", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
+    namedWindow(imagenet_win, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
+    //set the callback function for any mouse event
+    setMouseCallback(imagenet_win, imagenetCallBackFunc, NULL);
+
+    classlist_image = cv::Mat::zeros(40 + selected_items_size * 20, 220,
+                                     CV_8UC3);
+    //Erase window
+    classlist_image.setTo(Scalar::all(0));
+
+    for (int i = 0; i < selected_items_size; i ++)
+    {
+      sprintf(tmp_classwindow_string, "%2d) %12s", 1+i,
+              labels_classes[selected_items[i]].c_str());
+      cv::putText(classlist_image, tmp_classwindow_string,
+                  cv::Point(5, 40 + i * 20),
+                  cv::FONT_HERSHEY_COMPLEX_SMALL,
+                  0.75,
+                  cv::Scalar(255,255,255), 1, 8);
+    }
+    cv::imshow("ClassList", classlist_image);
+#endif
+}
+
+bool SetupInput(VideoCapture& cap, VideoWriter& writer)
+{
+   if(live_input >= 0)
+   {
+      cap.open(live_input);
+
+      const double fps = cap.get(CAP_PROP_FPS);
+      const int width  = cap.get(CAP_PROP_FRAME_WIDTH);
+      const int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+      std::cout << "Capture camera with " << fps << " fps, " << width << "x"
+                << height << " px" << std::endl;
+
+#ifdef RMT_GST_STREAMER
+      writer.open(" appsrc ! videoconvert ! video/x-raw, format=(string)NV12, width=(int)640, height=(int)480, framerate=(fraction)30/1 ! \
+                ducatih264enc bitrate=2000 ! queue ! h264parse config-interval=1 ! \
+                mpegtsmux ! udpsink host=192.168.1.2 sync=false port=5000",
+                0,fps,Size(640,480),true);
+
+      if (!writer.isOpened()) {
+        cap.release();
+        std::cerr << "Can't create gstreamer writer. "
+                  << "Do you have the correct version installed?" << std::endl;
+        std::cerr << "Print out OpenCV build information" << std::endl;
+        std::cout << getBuildInformation() << std::endl;
         return false;
+      }
+#endif
+   } else {
+     std::cout << "Video input clip: " << video_clip << std::endl;
+     cap.open(std::string(video_clip));
+      const double fps = cap.get(CAP_PROP_FPS);
+      const int width  = cap.get(CAP_PROP_FRAME_WIDTH);
+      const int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+      std::cout << "Clip with " << fps << " fps, " << width << "x"
+                << height << " px" << std::endl;
+   }
 
-    assert (input_file.good());
+   if (!cap.isOpened()) {
+      std::cout << "Video input not opened!" << std::endl;
+      return false;
+   }
 
-    // Set the frame index  being processed by the EO. This is used to
-    // sort the frames before they are output
-    ep.SetFrameIndex(frame_idx);
+   for (int y = 0; y < NUM_ROI_Y; y ++) {
+      for (int x = 0; x < NUM_ROI_X; x ++) {
+         rectCrop[y * NUM_ROI_X + x] = Rect(X_OFFSET + x * X_STEP,
+                                            Y_OFFSET + y * Y_STEP, 224, 224);
+         std::cout << "Rect[" << X_OFFSET + x * X_STEP << ", "
+                   << Y_OFFSET + y * Y_STEP << "]" << std::endl;
+      }
+   }
 
-    if (input_file.good())
-        return true;
+   return true;
+}
+
+bool ReadFrame(ExecutionObjectPipeline* eop,
+               uint32_t frame_idx, uint32_t num_frames,
+               VideoCapture &cap, VideoWriter& writer)
+{
+    if (cap.grab() && frame_idx < num_frames)
+    {
+        if (cap.retrieve(in_image))
+        {
+            cv::resize(in_image, image, Size(RES_X,RES_Y));
+            r_image = Mat(image, rectCrop[frame_idx % NUM_ROI]);
+
+#ifdef LIVE_DISPLAY
+            if(NUM_ROI > 1)
+            {
+               char tmp_string[80];
+               sprintf(tmp_string, "ROI[%02d]", frame_idx % NUM_ROI);
+               cv::imshow(tmp_string, r_image);
+            }
+#endif
+                //Convert from BGR pixel interleaved to BGR plane interleaved!
+            cv::split(r_image, bgr_frames);
+            tf_preprocess((uchar*) eop->GetInputBufferPtr(),
+                          bgr_frames[0].ptr(), 224*224);
+            tf_preprocess((uchar*) eop->GetInputBufferPtr()+224*224,
+                          bgr_frames[1].ptr(), 224*224);
+            tf_preprocess((uchar*) eop->GetInputBufferPtr()+2*224*224,
+                          bgr_frames[2].ptr(), 224*224);
+            eop->SetFrameIndex(frame_idx);
+
+#ifdef RMT_GST_STREAMER
+            cv::resize(Mat(image, Rect(0,32,640,448)), to_stream,
+                       Size(640,480));
+            writer << to_stream;
+#endif
+
+#ifdef LIVE_DISPLAY
+                //waitKey(2);
+            image.copyTo(show_image);
+#endif
+            return true;
+        }
+    } else {
+        if(live_input == -1) {
+            //Rewind!
+            cap.release();
+            cap.open(std::string(video_clip));
+        }
+    }
 
     return false;
+}
+
+void ReportTime(const ExecutionObjectPipeline* eop)
+{
+    uint32_t frame_index    = eop->GetFrameIndex();
+    std::string device_name = eop->GetDeviceName();
+    float elapsed_host      = eop->GetHostProcessTimeInMilliSeconds();
+    float elapsed_device    = eop->GetProcessTimeInMilliSeconds();
+    double overhead         = 100 - (elapsed_device/elapsed_host*100);
+    std::cout << "frame[" << frame_index << "]: "
+              << "Time on " << device_name << ": "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_device << "ms, "
+              << "host: "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_host << "ms ";
+    std::cout << "API overhead: "
+              << std::setw(6) << std::setprecision(3)
+              << overhead << " %" << std::endl;
+}
+
+void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
+                  uint32_t frame_idx, uint32_t num_eops,
+                  uint32_t num_eves, uint32_t num_dsps)
+{
+    int f_id = eop->GetFrameIndex();
+    int curr_roi = f_id % NUM_ROI;
+    int is_object = tf_postprocess((uchar*) eop->GetOutputBufferPtr(),
+                                 IMAGE_CLASSES_NUM, curr_roi, frame_idx, f_id);
+    selclass_history[curr_roi][2] = selclass_history[curr_roi][1];
+    selclass_history[curr_roi][1] = selclass_history[curr_roi][0];
+    selclass_history[curr_roi][0] = is_object;
+    for (int r = 0; r < NUM_ROI; r ++)
+    {
+        int rpt_id =  ShowRegion(selclass_history[r]);
+        if(rpt_id >= 0)
+        {
+            // overlay the display window, if ball seen during last two times
+            cv::putText(show_image, labels_classes[rpt_id].c_str(),
+                cv::Point(rectCrop[r].x + 5,rectCrop[r].y + 20), // Coordinates
+                cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
+                1.0, // Scale. 2.0 = 2x bigger
+                cv::Scalar(0,0,255), // Color
+                1, // Thickness
+                8); // Line type
+            cv::rectangle(show_image, rectCrop[r], Scalar(255,0,0), 3);
+            std::cout << "ROI(" << r << ")(" << rpt_id << ")="
+                      << labels_classes[rpt_id].c_str() << std::endl;
+
+            classlist_image.setTo(Scalar::all(0));
+            for (int k = 0; k < selected_items_size; k ++)
+            {
+               sprintf(tmp_classwindow_string, "%2d) %12s", 1+k,
+                       labels_classes[selected_items[k]].c_str());
+               cv::putText(classlist_image, tmp_classwindow_string,
+                           cv::Point(5, 40 + k * 20),
+                           cv::FONT_HERSHEY_COMPLEX_SMALL,
+                           0.75,
+                           selected_items[k] == rpt_id ? cv::Scalar(0,0,255) :
+                                                cv::Scalar(255,255,255), 1, 8);
+            }
+            double elapsed_host = eop->GetHostProcessTimeInMilliSeconds();
+            /* Exponential averaging */
+            avg_fps = 0.1 * ((double)num_eops * 1000.0 /
+                             ((double)NUM_ROI * elapsed_host)) + 0.9 * avg_fps;
+            sprintf(tmp_classwindow_string, "FPS:%5.2lf", avg_fps );
+
+#ifdef PERF_VERBOSE
+            std::cout << "Device:" << eop->GetDeviceName() << " eops("
+                      << num_eops << "), EVES(" << num_eves << ") DSPS("
+                      << num_dsps << ") FPS:" << avg_fps << std::endl;
+#endif
+            cv::putText(classlist_image, tmp_classwindow_string,
+                       cv::Point(5, 20),
+                       cv::FONT_HERSHEY_COMPLEX_SMALL,
+                       0.75,
+                       cv::Scalar(0,255,0), 1, 8);
+            cv::imshow("ClassList", classlist_image);
+        }
+    }
+
+#ifdef LIVE_DISPLAY
+    cv::imshow(imagenet_win, show_image);
+#endif
+
+#ifdef RMT_GST_STREAMER
+    cv::resize(show_image, to_stream, cv::Size(640,480));
+    writer << to_stream;
+#endif
+
+#ifdef LIVE_DISPLAY
+    waitKey(2);
+#endif
 }
 
 // Function to process all command line arguments
@@ -615,6 +678,9 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
                       break;
         }
     }
+
+    // if no eves available, we can only run full net as one layer group
+    if (num_eves == 0)  num_layers_groups = 1;
 }
 
 void DisplayHelp()
