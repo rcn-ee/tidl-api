@@ -11,7 +11,7 @@ This section illustrates using TIDL APIs to leverage deep learning in user appli
 * Use the :term:`Execution Objects<EO>` (EO) created by the Executor to process :term:`frames<Frame>`. There are two approaches to processing frames using Execution Objects:
 
   #. Each EO processes a single frame.
-  #. Split processing frame across multiple EOs.
+  #. Split processing frame across multiple EOs using an :term:`ExecutionObjectPipeline`.
 
 Refer Section :ref:`api-documentation` for API documentation.
 
@@ -81,6 +81,9 @@ In this approach, the :term:`network<Network>` is set up as a single :term:`Laye
         :name: AllocateMemory
 
 The complete example is available at ``/usr/share/ti/tidl/examples/one_eo_per_frame/main.cpp``.
+
+.. note::
+    The double buffering technique described in :ref:`use-case-3` can be used with a single :term:`ExecutionObject` to overlap reading a frame with the processing of the previous frame.
 
 .. _use-case-2:
 
@@ -155,8 +158,9 @@ The complete example is available at ``/usr/share/ti/tidl/examples/two_eo_per_fr
 
 .. _use-case-3:
 
-Frame split across EOs with double buffering
-============================================
+Using EOPs for double buffering
+===============================
+
 The timeline shown in :numref:`frame-across-eos` indicates that EO-EVE1 waits for processing on E0-DSP1 to complete before it starts processing its next frame. It is possible to optimize the example further and overlap processing F :sub:`n-2` on EO-DSP1 and F :sub:`n` on E0-EVE1. This is illustrated in :numref:`frame-across-eos-opt`.
 
 .. _frame-across-eos-opt:

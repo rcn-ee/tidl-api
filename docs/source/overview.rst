@@ -49,7 +49,12 @@ Terminology
 
     ExecutionObjectPipeline
     EOP
-        A TIDL API class. Used to pipeline execution of a single input frame across multiple Execution Objects. Refer :ref:`api-ref-eop` for a description of the ExecutionObjectPipeline class and methods.
+        A TIDL API class. Two use cases:
+
+        * Pipeline execution of a single input frame across multiple Execution Objects (:ref:`use-case-2`).
+        * Double buffering using the input and output buffer associated with an instance of ExecutionObjectPipeline (:ref:`use-case-3`).
+
+        Refer :ref:`api-ref-eop` for a description of the ExecutionObjectPipeline class and methods.
 
     Configuration
         A TIDL API class. Used to specify a configuration for the Executor, including pointers to the network and parameter binary files. Refer :ref:`api-ref-configuration` for a description of the Configuration class and methods.
