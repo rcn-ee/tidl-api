@@ -1,4 +1,4 @@
-numFrames   = 9000
+numFrames   = 999900
 inData   = /usr/share/ti/tidl/examples/test/testvecs/input/preproc_0_224x224.y
 outData   = "/usr/share/ti/tidl/examples/classification/stats_tool_out.bin"
 netBinFile      = "/usr/share/ti/tidl/examples/test/testvecs/config/tidl_models/tidl_net_imagenet_jacintonet11v2.bin"

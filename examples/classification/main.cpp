@@ -69,14 +69,14 @@ char video_clip[320];
 #define Y_OFFSET 52
 #define Y_STEP   224
 #else
-#define RES_X 244
-#define RES_Y 244
+#define RES_X 480
+#define RES_Y 480
 #define NUM_ROI_X 1
 #define NUM_ROI_Y 1
 #define X_OFFSET 10
-#define X_STEP   224
+#define X_STEP   460
 #define Y_OFFSET 10
-#define Y_STEP   224
+#define Y_STEP   460
 #endif
 
 #define NUM_ROI (NUM_ROI_X * NUM_ROI_Y)
@@ -102,7 +102,7 @@ void imagenetCallBackFunc(int event, int x, int y, int flags, void* userdata)
 }
 #endif
 
-Mat in_image, image, r_image, show_image, bgr_frames[3];
+Mat in_image, image, r_image, cnn_image, show_image, bgr_frames[3];
 Mat to_stream;
 Rect rectCrop[NUM_ROI];
 double avg_fps;
@@ -230,7 +230,7 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
             for(int i = 0; i < 3; i ++)
                 selclass_history[k][i] = -1;
         avg_fps = 0.0;
-        int num_frames = 99999;
+        int num_frames = configuration.numFrames;
         std::cout << "About to start ProcessFrame loop!!" << std::endl;
  
         // Process frames with available EOPs in a pipelined manner
@@ -450,7 +450,7 @@ bool SetupInput(VideoCapture& cap, VideoWriter& writer)
    for (int y = 0; y < NUM_ROI_Y; y ++) {
       for (int x = 0; x < NUM_ROI_X; x ++) {
          rectCrop[y * NUM_ROI_X + x] = Rect(X_OFFSET + x * X_STEP,
-                                            Y_OFFSET + y * Y_STEP, 224, 224);
+                                            Y_OFFSET + y * Y_STEP, X_STEP, Y_STEP);
          std::cout << "Rect[" << X_OFFSET + x * X_STEP << ", "
                    << Y_OFFSET + y * Y_STEP << "]" << std::endl;
       }
@@ -467,7 +467,21 @@ bool ReadFrame(ExecutionObjectPipeline* eop,
     {
         if (cap.retrieve(in_image))
         {
-            cv::resize(in_image, image, Size(RES_X,RES_Y));
+            if(live_input >= 0)
+            { //Crop central square portion
+              int loc_xmin = (in_image.size().width - in_image.size().height) / 2; //Central position
+              int loc_ymin = 0;
+              int loc_w = in_image.size().height;
+              int loc_h = in_image.size().height;
+
+              cv::resize(in_image(Rect(loc_xmin, loc_ymin, loc_w, loc_h)), image, Size(RES_X, RES_Y));
+            } else {
+              if((in_image.size().width != RES_X) || (in_image.size().height != RES_Y)) 
+              {  
+                cv::resize(in_image, image, Size(RES_X,RES_Y));
+              }
+            }
+
             r_image = Mat(image, rectCrop[frame_idx % NUM_ROI]);
 
 #ifdef LIVE_DISPLAY
@@ -479,7 +493,8 @@ bool ReadFrame(ExecutionObjectPipeline* eop,
             }
 #endif
                 //Convert from BGR pixel interleaved to BGR plane interleaved!
-            cv::split(r_image, bgr_frames);
+            cv::resize(r_image, cnn_image, Size(224,224));
+            cv::split(cnn_image, bgr_frames);
             tf_preprocess((uchar*) eop->GetInputBufferPtr(),
                           bgr_frames[0].ptr(), 224*224);
             tf_preprocess((uchar*) eop->GetInputBufferPtr()+224*224,
