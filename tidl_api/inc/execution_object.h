@@ -31,17 +31,22 @@
 #pragma once
 
 #include <memory>
+#include "configuration.h"
+#include "execution_object_internal.h"
 
 namespace tidl {
 
 class Kernel;
 class Device;
+class LayerOutput;
+class IODeviceArgInfo;
+
 
 /*! @class ExecutionObject
     @brief Runs the TIDL network on an OpenCL device
 */
 
-class ExecutionObject
+class ExecutionObject : public ExecutionObjectInternalInterface
 {
     public:
 
@@ -50,55 +55,79 @@ class ExecutionObject
         ExecutionObject(Device* d, uint8_t device_index,
                         const  ArgInfo& create_arg,
                         const  ArgInfo& param_heap_arg,
-                        size_t extmem_heap_size,
-                        bool   internal_input);
+                        const  Configuration& configuration,
+                        int    layersGroupId);
         //! @private
         ~ExecutionObject();
 
         //! Specify the input and output buffers used by the EO
         //! @param in buffer used for input.
         //! @param out buffer used for output.
-        void SetInputOutputBuffer (const ArgInfo& in, const ArgInfo& out);
+        void SetInputOutputBuffer(const ArgInfo& in,
+                                  const ArgInfo& out) override;
 
         //! Returns a pointer to the input buffer set via SetInputOutputBuffer
-        char* GetInputBufferPtr() const;
+        char* GetInputBufferPtr() const override;
 
         //! Returns size of the input buffer
-        size_t GetInputBufferSizeInBytes() const;
+        size_t GetInputBufferSizeInBytes() const override;
+
+        //! Returns a pointer to the output buffer
+        char* GetOutputBufferPtr() const override;
+
+        //! Returns size of the output buffer
+        size_t GetOutputBufferSizeInBytes() const override;
 
         //! @brief Set the frame index of the frame currently processed by the
         //! ExecutionObject. Used for trace/debug messages
         //! @param idx index of the frame
-        void  SetFrameIndex(int idx);
+        void  SetFrameIndex(int idx) override;
 
         //! Returns the index of a frame being processed (set by SetFrameIndex)
-        int   GetFrameIndex() const;
+        int   GetFrameIndex() const override;
 
-        //! Returns a pointer to the output buffer
-        char* GetOutputBufferPtr() const;
-
-        //! Returns the number of bytes written to the output buffer
-        size_t GetOutputBufferSizeInBytes() const;
-
-        //! @brief Start processing a frame. The call is asynchronous and returns
-        //! immediately. Use ExecutionObject::ProcessFrameWait to wait
-        bool ProcessFrameStartAsync();
+        //! @brief Start processing a frame. The call is asynchronous and
+        //! returns immediately. Use ExecutionObject::ProcessFrameWait to wait
+        bool ProcessFrameStartAsync() override;
 
         //! Wait for the execution object to complete processing a frame
         //! @return false if ExecutionObject::ProcessFrameWait was called
         //! without a corresponding call to
         //! ExecutionObject::ProcessFrameStartAsync.
-        bool ProcessFrameWait();
-
-        //! @brief return the number of cycles taken *on the device* to
-        //! execute the process call
-        //! @return Number of cycles to process a frame on the device.
-        uint64_t GetProcessCycles() const;
+        bool ProcessFrameWait() override;
 
         //! @brief return the number of milliseconds taken *on the device* to
         //! execute the process call
         //! @return Number of milliseconds to process a frame on the device.
-        float    GetProcessTimeInMilliSeconds() const;
+        float GetProcessTimeInMilliSeconds() const override;
+
+        //! @brief return the number of milliseconds taken *on the host* to
+        //! execute the process call
+        //! @return Number of milliseconds to process a frame on the host.
+        float GetHostProcessTimeInMilliSeconds() const override;
+
+        //! Returns the device name that the ExecutionObject runs on
+        const std::string& GetDeviceName() const override;
+
+        //! Write the output buffer for each layer to a file
+        //! \<filename_prefix>_<ID>_HxW.bin
+        void WriteLayerOutputsToFile(const std::string& filename_prefix=
+                                     "trace_dump_") const override;
+
+        //! Returns a LayerOutput object corresponding to a layer.
+        //! Caller is responsible for deleting the LayerOutput object.
+        //! @see LayerOutput
+        //! @param layer_index The layer index of the layer
+        //! @param output_index The output index of the buffer for a given
+        //!                     layer. Defaults to 0.
+        const LayerOutput* GetOutputFromLayer(uint32_t layer_index,
+                                       uint32_t output_index=0) const override;
+
+        //! Get output buffers from all layers
+        const LayerOutputs* GetOutputsFromAllLayers() const override;
+
+        //! Returns the layersGrupId that the ExecutionObject is processing
+        int   GetLayersGroupId() const;
 
         //! @private
         // Used by the Executor
@@ -106,13 +135,76 @@ class ExecutionObject
         bool RunAsync(CallType ct);
         bool Wait    (CallType ct);
 
+        //! @private
+        // Used by the ExecutionObjectPipeline
+        bool AddCallback(CallType ct, void *user_data);
+        void AcquireLock();
+        void ReleaseLock();
+
         ExecutionObject()                                  = delete;
         ExecutionObject(const ExecutionObject&)            = delete;
         ExecutionObject& operator=(const ExecutionObject&) = delete;
+
+        //! @private
+        void SetInputOutputBuffer(const IODeviceArgInfo* in,
+                                  const IODeviceArgInfo* out);
 
     private:
         class Impl;
         std::unique_ptr<Impl> pimpl_m;
 };
+
+
+/*! @class LayerOutput
+    @brief Describes the output of a layer in terms of its shape. Also
+    includes a pointer to the data.
+*/
+class LayerOutput
+{
+    public:
+        //! @private
+        //! Constructor called within API, not by the user
+        LayerOutput(int layer_index, int output_index, int buffer_id,
+                    int num_roi_m, int num_channels, size_t height,
+                    size_t width, const char* data);
+
+        //! Must be called to delete the data pointer.
+        ~LayerOutput();
+
+        //! @return The index of a layer
+        int    LayerIndex()       const { return layer_index_m; }
+
+        //! @return The number of channels associated with an output
+        int    NumberOfChannels() const { return num_channels_m; }
+
+        //! @return The height of the output. Can be 1 for 1D outputs
+        size_t Height()           const { return height_m; }
+
+        //! @return The width of the output
+        size_t Width()            const { return width_m; }
+
+        //! @return Size of the output in bytes
+        size_t Size()             const { return height_m * width_m *
+                                                 num_channels_m; }
+        //! @return Pointer to output. Must call destructor to free the
+        //! memory used to hold the output.
+        const char* Data()        const { return data_m; }
+
+        //! @private Disable copy construction and assignment since
+        //! class holds a pointer to allocated data
+        LayerOutput(const LayerOutput&)             = delete;
+        LayerOutput& operator= (const LayerOutput&) = delete;
+
+    private:
+        int layer_index_m;
+        int output_index_m;
+        int buffer_id_m;
+        int num_roi_m;
+        int num_channels_m;
+        size_t height_m;
+        size_t width_m;
+        const char* data_m;
+};
+
 
 } // namespace tidl

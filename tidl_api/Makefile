@@ -39,7 +39,8 @@ AR = ar
 
 
 SRCS = ocl_device.cpp configuration_parser.cpp configuration.cpp\
-	   executor.cpp execution_object.cpp trace.cpp util.cpp
+	   executor.cpp execution_object.cpp trace.cpp util.cpp \
+           execution_object_pipeline.cpp
 SRCS_IMGUTIL = imgutil.cpp
 
 OBJS = $(SRCS:.cpp=.o)
@@ -53,8 +54,7 @@ HOST_OBJ_IMGUTIL_FILES = $(addprefix obj/,$(OBJS_IMGUTIL))
 HEADERS  = src/common_defines.h src/executor_impl.h src/ocl_device.h
 HEADERS += src/parameters.h src/tidl_create_params.h src/trace.h src/util.h
 HEADERS += inc/configuration.h inc/execution_object.h inc/executor.h
-HEADERS += inc/imgutil.h
-
+HEADERS += inc/imgutil.h src/device_arginfo.h inc/execution_object_pipeline.h
 
 ifeq ($(BUILD), debug)
 	CXXFLAGS += -Og -g -ggdb

@@ -1,29 +1,29 @@
 /******************************************************************************
  * Copyright (c) 2018, Texas Instruments Incorporated - http://www.ti.com/
- *   All rights reserved.
+ * All rights reserved.
  *
- *   Redistribution and use in source and binary forms, with or without
- *   modification, are permitted provided that the following conditions are met:
- *       * Redistributions of source code must retain the above copyright
- *         notice, this list of conditions and the following disclaimer.
- *       * Redistributions in binary form must reproduce the above copyright
- *         notice, this list of conditions and the following disclaimer in the
- *         documentation and/or other materials provided with the distribution.
- *       * Neither the name of Texas Instruments Incorporated nor the
- *         names of its contributors may be used to endorse or promote products
- *         derived from this software without specific prior written permission.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *     * Redistributions of source code must retain the above copyright
+ *       notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *     * Neither the name of Texas Instruments Incorporated nor the
+ *       names of its contributors may be used to endorse or promote products
+ *       derived from this software without specific prior written permission.
  *
- *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- *   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- *   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- *   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- *   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- *   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- *   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- *   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- *   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- *   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
- *   THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+ * THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
 //! @file multiple_executors.cpp
@@ -44,26 +44,26 @@
 #include "executor.h"
 #include "execution_object.h"
 #include "configuration.h"
+#include "utils.h"
 
 using namespace tidl;
 
-extern bool ReadFrame(ExecutionObject&     eo,
-               int                  frame_idx,
-               const Configuration& configuration,
-               std::istream&        input_file);
-
-extern bool WriteFrame(const ExecutionObject &eo,
-                std::ostream& output_file);
+extern
+bool RunNetwork(DeviceType           device_type,
+                const DeviceIds&     ids,
+                const Configuration& c,
+                std::istream&        input,
+                std::ostream&        output);
 
 void* run_network(void *data);
 
 struct ThreadArg
 {
-    std::string config_file;
-    DeviceIds ids;
-    ThreadArg(const DeviceIds& ids, const std::string& s):
-        ids(ids), config_file(s) {}
+    ThreadArg(const DeviceIds& device_ids, const std::string& s):
+        ids(device_ids), config_file(s) {}
 
+    DeviceIds   ids;
+    std::string config_file;
 };
 
 bool thread_status[2];
@@ -153,57 +153,8 @@ void* run_network(void *data)
     assert (input_data_file.good());
     assert (output_data_file.good());
 
-    // Determine input frame size from configuration
-    size_t frame_sz = configuration.inWidth * configuration.inHeight *
-                      configuration.inNumChannels;
-
-    try
-    {
-        // Create a executor with the approriate core type, number of cores
-        // and configuration specified
-        Executor executor(DeviceType::EVE, ids, configuration);
-
-        const ExecutionObjects& execution_objects =
-                                                executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
-
-        // Allocate input and output buffers for each execution object
-        std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
-        {
-            ArgInfo in  = { ArgInfo(malloc_ddr<char>(frame_sz), frame_sz)};
-            ArgInfo out = { ArgInfo(malloc_ddr<char>(frame_sz), frame_sz)};
-            eo->SetInputOutputBuffer(in, out);
-
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
-        }
-
-        // Process frames with available execution objects in a pipelined manner
-        // additional num_eos iterations to flush the pipeline (epilogue)
-        for (int frame_idx = 0;
-             frame_idx < configuration.numFrames + num_eos; frame_idx++)
-        {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
-
-            // Wait for previous frame on the same eo to finish processing
-            if (eo->ProcessFrameWait())
-                WriteFrame(*eo, output_data_file);
-
-            // Read a frame and start processing it with current eo
-            if (ReadFrame(*eo, frame_idx, configuration, input_data_file))
-                eo->ProcessFrameStartAsync();
-        }
-
-
-        for (auto b : buffers)
-            __free_ddr(b);
-    }
-    catch (tidl::Exception &e)
-    {
-        std::cerr << e.what() << std::endl;
-        status = false;
-    }
+    RunNetwork(DeviceType::EVE, ids, configuration,
+               input_data_file, output_data_file);
 
     input_data_file.close();
     output_data_file.close();

@@ -28,14 +28,20 @@
 
 /*! \file execution_object.cpp */
 
+#include <string.h>
+#include <fstream>
+#include <climits>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
 #include "executor.h"
 #include "execution_object.h"
 #include "trace.h"
 #include "ocl_device.h"
 #include "parameters.h"
-#include "configuration.h"
 #include "common_defines.h"
-#include <string.h>
+#include "tidl_create_params.h"
+#include "device_arginfo.h"
 
 using namespace tidl;
 
@@ -43,24 +49,25 @@ class ExecutionObject::Impl
 {
     public:
         Impl(Device* d, uint8_t device_index,
-             const ArgInfo& create_arg,
-             const ArgInfo& param_heap_arg,
-             size_t extmem_heap_size,
-             bool   internal_input);
+             const DeviceArgInfo& create_arg,
+             const DeviceArgInfo& param_heap_arg,
+             const Configuration& configuration,
+             int    layers_group_id);
         ~Impl() {}
 
         bool RunAsync(CallType ct);
         bool Wait    (CallType ct);
+        bool AddCallback(CallType ct, void *user_data);
 
-        bool SetupProcessKernel(const ArgInfo& in, const ArgInfo& out);
-        void HostWriteNetInput();
-        void HostReadNetOutput();
-        void ComputeInputOutputSizes();
+        uint64_t GetProcessCycles() const;
+        int  GetLayersGroupId() const;
+        void AcquireLock();
+        void ReleaseLock();
 
         Device*                         device_m;
-        std::unique_ptr<Kernel>         k_initialize_m;
-        std::unique_ptr<Kernel>         k_process_m;
-        std::unique_ptr<Kernel>         k_cleanup_m;
+        // Index of the OpenCL device/queue used by this EO
+        uint8_t                         device_index_m;
+        std::string                     device_name_m;
 
         up_malloc_ddr<char>             tidl_extmem_heap_m;
         up_malloc_ddr<OCL_TIDL_InitializeParams> shared_initialize_params_m;
@@ -68,86 +75,111 @@ class ExecutionObject::Impl
 
         size_t                          in_size_m;
         size_t                          out_size_m;
-        ArgInfo                         in_m;
-        ArgInfo                         out_m;
-
-        // Index of the OpenCL device/queue used by this EO
-        uint8_t                         device_index_m;
+        IODeviceArgInfo                 in_m;
+        IODeviceArgInfo                 out_m;
 
         // Frame being processed by the EO
         int                             current_frame_idx_m;
+
+        // LayersGroupId being processed by the EO
+        int                             layers_group_id_m;
+
+        // Trace related
+        void WriteLayerOutputsToFile (const std::string& filename_prefix) const;
+
+        const LayerOutput* GetOutputFromLayer (uint32_t layer_index,
+                                               uint32_t output_index) const;
+        const LayerOutputs* GetOutputsFromAllLayers() const;
+
+        uint32_t                          num_network_layers_m;
+        up_malloc_ddr<OCL_TIDL_BufParams> trace_buf_params_m;
+        size_t                            trace_buf_params_sz_m;
+
+        // host time tracking: eo start to finish
+        float host_time_m;
+
+    private:
+        void SetupInitializeKernel(const DeviceArgInfo& create_arg,
+                                   const DeviceArgInfo& param_heap_arg);
+        void EnableOutputBufferTrace();
+        void SetupProcessKernel();
+
+        void HostWriteNetInput();
+        void HostReadNetOutput();
+        void ComputeInputOutputSizes();
+
+        std::unique_ptr<Kernel>         k_initialize_m;
+        std::unique_ptr<Kernel>         k_process_m;
+        std::unique_ptr<Kernel>         k_cleanup_m;
+
+        // Guarding sole access to input/output for one frame during execution
+        bool                            is_idle_m;
+        std::mutex                      mutex_access_m;
+        std::condition_variable         cv_access_m;
+
+        const Configuration             configuration_m;
 };
 
 
 ExecutionObject::ExecutionObject(Device* d,
                                  uint8_t device_index,
-                                 const ArgInfo& create_arg,
-                                 const ArgInfo& param_heap_arg,
-                                 size_t extmem_heap_size,
-                                 bool   internal_input)
+                                 const   ArgInfo& create_arg,
+                                 const   ArgInfo& param_heap_arg,
+                                 const   Configuration& configuration,
+                                 int     layers_group_id)
 {
+    TRACE::print("-> ExecutionObject::ExecutionObject()\n");
+
+    DeviceArgInfo create_arg_d(create_arg, DeviceArgInfo::Kind::BUFFER);
+    DeviceArgInfo param_heap_arg_d(param_heap_arg, DeviceArgInfo::Kind::BUFFER);
+
     pimpl_m = std::unique_ptr<ExecutionObject::Impl>
               { new ExecutionObject::Impl(d, device_index,
-                                          create_arg,
-                                          param_heap_arg,
-                                          extmem_heap_size,
-                                          internal_input) };
+                                          create_arg_d,
+                                          param_heap_arg_d,
+                                          configuration,
+                                          layers_group_id) };
+    TRACE::print("<- ExecutionObject::ExecutionObject()\n");
 }
 
 
-ExecutionObject::Impl::Impl(Device* d,
-                                 uint8_t device_index,
-                                 const ArgInfo& create_arg,
-                                 const ArgInfo& param_heap_arg,
-                                 size_t extmem_heap_size,
-                                 bool   internal_input):
+ExecutionObject::Impl::Impl(Device* d, uint8_t device_index,
+                            const DeviceArgInfo& create_arg,
+                            const DeviceArgInfo& param_heap_arg,
+                            const Configuration& configuration,
+                            int    layers_group_id):
     device_m(d),
-    k_initialize_m(nullptr),
-    k_process_m(nullptr),
-    k_cleanup_m(nullptr),
+    device_index_m(device_index),
     tidl_extmem_heap_m (nullptr, &__free_ddr),
     shared_initialize_params_m(nullptr, &__free_ddr),
     shared_process_params_m(nullptr, &__free_ddr),
     in_size_m(0),
     out_size_m(0),
-    in_m(nullptr, 0),
-    out_m(nullptr, 0),
-    device_index_m(device_index),
-    current_frame_idx_m(0)
+    in_m(),
+    out_m(),
+    current_frame_idx_m(0),
+    layers_group_id_m(layers_group_id),
+    num_network_layers_m(0),
+    trace_buf_params_m(nullptr, &__free_ddr),
+    trace_buf_params_sz_m(0),
+    k_initialize_m(nullptr),
+    k_process_m(nullptr),
+    k_cleanup_m(nullptr),
+    is_idle_m(true),
+    configuration_m(configuration)
 {
-    // Allocate a heap for TI DL to use on the device
-    tidl_extmem_heap_m.reset(malloc_ddr<char>(extmem_heap_size));
+    device_name_m = device_m->GetDeviceName() + std::to_string(device_index_m);
+    // Save number of layers in the network
+    const TIDL_CreateParams* cp =
+                static_cast<const TIDL_CreateParams *>(create_arg.ptr());
+    num_network_layers_m = cp->net.numLayers;
 
-    // Create a kernel for cleanup
-    KernelArgs cleanup_args;
-    k_cleanup_m.reset(new Kernel(device_m,
-                                 STRING(CLEANUP_KERNEL),
-                                 cleanup_args, device_index_m));
+    SetupInitializeKernel(create_arg, param_heap_arg);
 
-    // Set up parameter struct for the initialize kernel
-    shared_initialize_params_m.reset(malloc_ddr<OCL_TIDL_InitializeParams>());
-    memset(shared_initialize_params_m.get(), 0,
-           sizeof(OCL_TIDL_InitializeParams));
+    if (configuration_m.enableOutputTrace)
+        EnableOutputBufferTrace();
 
-    shared_initialize_params_m->tidlHeapSize = extmem_heap_size;
-    shared_initialize_params_m->l2HeapSize   = tidl::internal::DMEM1_SIZE;
-    shared_initialize_params_m->l1HeapSize   = tidl::internal::DMEM0_SIZE;
-    shared_initialize_params_m->enableTrace  = OCL_TIDL_TRACE_OFF;
-    shared_initialize_params_m->enableInternalInput = internal_input ? 1 : 0;
-
-    // Setup kernel arguments for initialize
-    KernelArgs args = { create_arg,
-                        param_heap_arg,
-                        ArgInfo(tidl_extmem_heap_m.get(),
-                                extmem_heap_size),
-                        ArgInfo(shared_initialize_params_m.get(),
-                                sizeof(OCL_TIDL_InitializeParams)),
-                        device_m->type() == CL_DEVICE_TYPE_ACCELERATOR ?
-                            ArgInfo(nullptr, tidl::internal::DMEM1_SIZE):
-                            ArgInfo(nullptr, 4)                       };
-
-    k_initialize_m.reset(new Kernel(device_m,
-                                    STRING(INIT_KERNEL), args, device_index_m));
+    SetupProcessKernel();
 }
 
 // Pointer to implementation idiom: https://herbsutter.com/gotw/_100/:
@@ -157,24 +189,22 @@ ExecutionObject::~ExecutionObject() = default;
 
 char* ExecutionObject::GetInputBufferPtr() const
 {
-    return static_cast<char *>(pimpl_m->in_m.ptr());
+    return static_cast<char *>(pimpl_m->in_m.GetArg().ptr());
 }
 
 size_t ExecutionObject::GetInputBufferSizeInBytes() const
 {
-    if (pimpl_m->in_m.ptr() == nullptr)  return pimpl_m->in_size_m;
-    else                                 return pimpl_m->in_m.size();
+    return pimpl_m->in_size_m;
 }
 
 char* ExecutionObject::GetOutputBufferPtr() const
 {
-    return static_cast<char *>(pimpl_m->out_m.ptr());
+    return static_cast<char *>(pimpl_m->out_m.GetArg().ptr());
 }
 
 size_t ExecutionObject::GetOutputBufferSizeInBytes() const
 {
-    if (pimpl_m->out_m.ptr() == nullptr)  return pimpl_m->out_size_m;
-    else           return pimpl_m->shared_process_params_m.get()->bytesWritten;
+    return pimpl_m->out_size_m;
 }
 
 void  ExecutionObject::SetFrameIndex(int idx)
@@ -189,16 +219,30 @@ int ExecutionObject::GetFrameIndex() const
 
 void ExecutionObject::SetInputOutputBuffer(const ArgInfo& in, const ArgInfo& out)
 {
-    pimpl_m->SetupProcessKernel(in, out);
+    assert(in.ptr()  != nullptr && in.size()  >= pimpl_m->in_size_m);
+    assert(out.ptr() != nullptr && out.size() >= pimpl_m->out_size_m);
+
+    pimpl_m->in_m  = IODeviceArgInfo(in);
+    pimpl_m->out_m = IODeviceArgInfo(out);
+}
+
+void ExecutionObject::SetInputOutputBuffer(const IODeviceArgInfo* in,
+                                           const IODeviceArgInfo* out)
+{
+    pimpl_m->in_m  = *in;
+    pimpl_m->out_m = *out;
 }
 
 bool ExecutionObject::ProcessFrameStartAsync()
 {
+    TRACE::print("-> ExecutionObject::ProcessFrameStartAsync()\n");
+    assert(GetInputBufferPtr() != nullptr && GetOutputBufferPtr() != nullptr);
     return pimpl_m->RunAsync(ExecutionObject::CallType::PROCESS);
 }
 
 bool ExecutionObject::ProcessFrameWait()
 {
+    TRACE::print("-> ExecutionObject::ProcessFrameWait()\n");
     return pimpl_m->Wait(ExecutionObject::CallType::PROCESS);
 }
 
@@ -212,53 +256,167 @@ bool ExecutionObject::Wait (CallType ct)
     return pimpl_m->Wait(ct);
 }
 
-uint64_t ExecutionObject::GetProcessCycles() const
+bool ExecutionObject::AddCallback(CallType ct, void *user_data)
 {
-    uint8_t factor = 1;
-
-    // ARP32 running at half frequency of VCOP, multiply by 2 for VCOP cycles
-    if (pimpl_m->device_m->type() == CL_DEVICE_TYPE_CUSTOM)
-        factor = 2;
-
-    return pimpl_m->shared_process_params_m.get()->cycles * factor;
+    return pimpl_m->AddCallback(ct, user_data);
 }
 
 float ExecutionObject::GetProcessTimeInMilliSeconds() const
 {
     float frequency = pimpl_m->device_m->GetFrequencyInMhz() * 1000000;
-    return ((float)GetProcessCycles())/frequency * 1000;
+    return ((float)pimpl_m->GetProcessCycles()) / frequency * 1000;
+}
+
+float ExecutionObject::GetHostProcessTimeInMilliSeconds() const
+{
+    return pimpl_m->host_time_m;
+}
+
+void
+ExecutionObject::WriteLayerOutputsToFile(const std::string& filename_prefix) const
+{
+    pimpl_m->WriteLayerOutputsToFile(filename_prefix);
+}
+
+const LayerOutput* ExecutionObject::GetOutputFromLayer(
+                         uint32_t layer_index, uint32_t output_index) const
+{
+    return pimpl_m->GetOutputFromLayer(layer_index, output_index);
+}
+
+const LayerOutputs* ExecutionObject::GetOutputsFromAllLayers() const
+{
+    return pimpl_m->GetOutputsFromAllLayers();
+}
+
+int ExecutionObject::GetLayersGroupId() const
+{
+    return pimpl_m->layers_group_id_m;
+}
+
+const std::string& ExecutionObject::GetDeviceName() const
+{
+    return pimpl_m->device_name_m;
+}
+
+void ExecutionObject::AcquireLock()
+{
+    pimpl_m->AcquireLock();
+}
+
+void ExecutionObject::ReleaseLock()
+{
+    pimpl_m->ReleaseLock();
+}
+
+//
+// Create a kernel to call the "initialize" function
+//
+void
+ExecutionObject::Impl::SetupInitializeKernel(const DeviceArgInfo& create_arg,
+                                             const DeviceArgInfo& param_heap_arg)
+{
+    // Allocate a heap for TI DL to use on the device
+    tidl_extmem_heap_m.reset(
+                         malloc_ddr<char>(configuration_m.NETWORK_HEAP_SIZE));
+
+    // Create a kernel for cleanup
+    KernelArgs cleanup_args;
+    k_cleanup_m.reset(new Kernel(device_m,
+                                 STRING(CLEANUP_KERNEL),
+                                 cleanup_args, device_index_m));
+
+    // Set up parameter struct for the initialize kernel
+    shared_initialize_params_m.reset(malloc_ddr<OCL_TIDL_InitializeParams>());
+    memset(shared_initialize_params_m.get(), 0,
+           sizeof(OCL_TIDL_InitializeParams));
+
+    shared_initialize_params_m->tidlHeapSize =configuration_m.NETWORK_HEAP_SIZE;
+    shared_initialize_params_m->l2HeapSize   = tidl::internal::DMEM1_SIZE;
+    shared_initialize_params_m->l1HeapSize   = tidl::internal::DMEM0_SIZE;
+    shared_initialize_params_m->enableInternalInput =
+                   configuration_m.enableInternalInput ? 1 : 0;
+
+    // Set up execution trace specified in the configuration
+    EnableExecutionTrace(configuration_m,
+                         &shared_initialize_params_m->enableTrace);
+
+    // Setup kernel arguments for initialize
+    KernelArgs args = { create_arg,
+                        param_heap_arg,
+                        DeviceArgInfo(tidl_extmem_heap_m.get(),
+                                      configuration_m.NETWORK_HEAP_SIZE,
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(shared_initialize_params_m.get(),
+                                      sizeof(OCL_TIDL_InitializeParams),
+                                      DeviceArgInfo::Kind::BUFFER),
+                        device_m->type() == CL_DEVICE_TYPE_ACCELERATOR ?
+                            DeviceArgInfo(nullptr, tidl::internal::DMEM1_SIZE,
+                                          DeviceArgInfo::Kind::LOCAL):
+                            DeviceArgInfo(nullptr, 4,
+                                          DeviceArgInfo::Kind::LOCAL) };
+
+    k_initialize_m.reset(new Kernel(device_m,
+                                    STRING(INIT_KERNEL), args,
+                                    device_index_m));
+}
+
+//
+// Allocate an OpenCL buffer for TIDL layer output buffer metadata.
+// The device will populate metadata for every buffer that is used as an
+// output buffer by a layer.  This needs to be done before setting up
+// process kernel.
+//
+void ExecutionObject::Impl::EnableOutputBufferTrace()
+{
+    trace_buf_params_sz_m = (sizeof(OCL_TIDL_BufParams)*
+                             num_network_layers_m*
+                             TIDL_NUM_OUT_BUFS);
+
+    trace_buf_params_m.reset(malloc_ddr<OCL_TIDL_BufParams>
+                             (trace_buf_params_sz_m));
+
+    // Device will update bufferId if there is valid data for the entry
+    OCL_TIDL_BufParams* bufferParams = trace_buf_params_m.get();
+    for (uint32_t i = 0; i < num_network_layers_m; i++)
+        for (int j = 0; j < TIDL_NUM_OUT_BUFS; j++)
+        {
+            OCL_TIDL_BufParams *bufP =
+                                &bufferParams[i*TIDL_NUM_OUT_BUFS+j];
+            bufP->bufferId = UINT_MAX;
+        }
 }
 
 //
 // Create a kernel to call the "process" function
 //
-bool
-ExecutionObject::Impl::SetupProcessKernel(const ArgInfo& in, const ArgInfo& out)
+void
+ExecutionObject::Impl::SetupProcessKernel()
 {
-    in_m = in;
-    out_m = out;
-
     shared_process_params_m.reset(malloc_ddr<OCL_TIDL_ProcessParams>());
-    shared_process_params_m->enableTrace = OCL_TIDL_TRACE_OFF;
     shared_process_params_m->enableInternalInput =
                                shared_initialize_params_m->enableInternalInput;
     shared_process_params_m->cycles = 0;
 
-    if (shared_process_params_m->enableInternalInput == 0)
-        assert(in.ptr() != nullptr && in.size() > 0);
+    // Set up execution trace specified in the configuration
+    EnableExecutionTrace(configuration_m,
+                         &shared_process_params_m->enableTrace);
 
-    KernelArgs args = { ArgInfo(shared_process_params_m.get(),
-                                sizeof(OCL_TIDL_ProcessParams)),
-                        in,
-                        out,
-                        ArgInfo(tidl_extmem_heap_m.get(),
-                                shared_initialize_params_m->tidlHeapSize)
+    KernelArgs args = { DeviceArgInfo(shared_process_params_m.get(),
+                                      sizeof(OCL_TIDL_ProcessParams),
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(tidl_extmem_heap_m.get(),
+                                      shared_initialize_params_m->tidlHeapSize,
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(trace_buf_params_m.get(),
+                                      trace_buf_params_sz_m,
+                                      DeviceArgInfo::Kind::BUFFER)
+
                       };
 
     k_process_m.reset(new Kernel(device_m,
-                                 STRING(PROCESS_KERNEL), args, device_index_m));
-
-    return true;
+                                 STRING(PROCESS_KERNEL), args,
+                                 device_index_m));
 }
 
 
@@ -292,10 +450,13 @@ static size_t writeDataS8(char *writePtr, const char *ptr, int n, int width,
     return width*height*n;
 }
 
+//
+// Copy from host buffer to TIDL device buffer
+//
 void ExecutionObject::Impl::HostWriteNetInput()
 {
-    char* readPtr  = (char *) in_m.ptr();
-    PipeInfo *pipe = in_m.GetPipe();
+    const char*     readPtr  = (const char *) in_m.GetArg().ptr();
+    const PipeInfo& pipe     = in_m.GetPipe();
 
     for (unsigned int i = 0; i < shared_initialize_params_m->numInBufs; i++)
     {
@@ -318,17 +479,20 @@ void ExecutionObject::Impl::HostWriteNetInput()
         }
         else
         {
-            shared_process_params_m->inBufAddr[i] = pipe->bufAddr_m[i];
+            shared_process_params_m->inBufAddr[i] = pipe.bufAddr_m[i];
         }
 
-        shared_process_params_m->inDataQ[i]   = pipe->dataQ_m[i];
+        shared_process_params_m->inDataQ[i]   = pipe.dataQ_m[i];
     }
 }
 
+//
+// Copy from TIDL device buffer into host buffer
+//
 void ExecutionObject::Impl::HostReadNetOutput()
 {
-    char* writePtr = (char *) out_m.ptr();
-    PipeInfo *pipe = out_m.GetPipe();
+    char* writePtr = (char *) out_m.GetArg().ptr();
+    PipeInfo& pipe = out_m.GetPipe();
 
     for (unsigned int i = 0; i < shared_initialize_params_m->numOutBufs; i++)
     {
@@ -348,11 +512,12 @@ void ExecutionObject::Impl::HostReadNetOutput()
                  outBuf->numChannels));
         }
 
-        pipe->dataQ_m[i]   = shared_process_params_m->outDataQ[i];
-        pipe->bufAddr_m[i] = shared_initialize_params_m->bufAddrBase
+        pipe.dataQ_m[i]   = shared_process_params_m->outDataQ[i];
+        pipe.bufAddr_m[i] = shared_initialize_params_m->bufAddrBase
                            + outBuf->bufPlaneBufOffset;
     }
-    shared_process_params_m->bytesWritten = writePtr - (char *) out_m.ptr();
+    shared_process_params_m->bytesWritten = writePtr -
+                                            (char *) out_m.GetArg().ptr();
 }
 
 void ExecutionObject::Impl::ComputeInputOutputSizes()
@@ -397,10 +562,17 @@ bool ExecutionObject::Impl::RunAsync(CallType ct)
         }
         case CallType::PROCESS:
         {
+            std::chrono::time_point<std::chrono::steady_clock> t1, t2;
+            t1 = std::chrono::steady_clock::now();
+
             shared_process_params_m->frameIdx = current_frame_idx_m;
             shared_process_params_m->bytesWritten = 0;
             HostWriteNetInput();
             k_process_m->RunAsync();
+
+            t2 = std::chrono::steady_clock::now();
+            std::chrono::duration<float> elapsed = t2 - t1;
+            host_time_m = elapsed.count() * 1000;
             break;
         }
         case CallType::CLEANUP:
@@ -434,13 +606,20 @@ bool ExecutionObject::Impl::Wait(CallType ct)
         }
         case CallType::PROCESS:
         {
-            bool has_work = k_process_m->Wait();
+            float host_elapsed_ms = 0.0f;
+            bool has_work = k_process_m->Wait(&host_elapsed_ms);
             if (has_work)
             {
                 if (shared_process_params_m->errorCode != OCL_TIDL_SUCCESS)
                     throw Exception(shared_process_params_m->errorCode,
                                     __FILE__, __FUNCTION__, __LINE__);
+
+                std::chrono::time_point<std::chrono::steady_clock> t1, t2;
+                t1 = std::chrono::steady_clock::now();
                 HostReadNetOutput();
+                t2 = std::chrono::steady_clock::now();
+                std::chrono::duration<float> elapsed = t2 - t1;
+                host_time_m += elapsed.count() * 1000 + host_elapsed_ms;
             }
 
             return has_work;
@@ -455,4 +634,168 @@ bool ExecutionObject::Impl::Wait(CallType ct)
     }
 
     return false;
+}
+
+bool ExecutionObject::Impl::AddCallback(CallType ct, void *user_data)
+{
+    switch (ct)
+    {
+        case CallType::PROCESS:
+        {
+            return k_process_m->AddCallback(user_data);
+            break;
+        }
+        default:
+            return false;
+    }
+
+    return false;
+}
+
+uint64_t ExecutionObject::Impl::GetProcessCycles() const
+{
+    uint8_t factor = 1;
+
+    // ARP32 running at half frequency of VCOP, multiply by 2 for VCOP cycles
+    if (device_m->type() == CL_DEVICE_TYPE_CUSTOM)
+        factor = 2;
+
+    return shared_process_params_m.get()->cycles * factor;
+}
+
+//
+// Write the trace data to output files
+//
+void
+ExecutionObject::Impl::WriteLayerOutputsToFile(const std::string& filename_prefix) const
+{
+    if (trace_buf_params_sz_m == 0)
+        return;
+
+    OCL_TIDL_BufParams* bufferParams = trace_buf_params_m.get();
+
+    for (uint32_t i = 0; i < num_network_layers_m; i++)
+        for (int j = 0; j < TIDL_NUM_OUT_BUFS; j++)
+        {
+            OCL_TIDL_BufParams* buf = &bufferParams[i*TIDL_NUM_OUT_BUFS+j];
+
+            if (buf->bufferId == UINT_MAX)
+                continue;
+
+            size_t buffer_size = buf->numChannels * buf->ROIHeight *
+                                 buf->ROIWidth;
+
+            char *tmp = new char[buffer_size];
+
+            if (tmp == nullptr)
+                throw Exception("Out of memory, new failed",
+                        __FILE__, __FUNCTION__, __LINE__);
+
+            writeDataS8(
+                tmp,
+                (char *) tidl_extmem_heap_m.get() + buf->bufPlaneBufOffset
+                + buf->bufPlaneWidth * OCL_TIDL_MAX_PAD_SIZE
+                + OCL_TIDL_MAX_PAD_SIZE,
+                buf->numChannels,
+                buf->ROIWidth,
+                buf->ROIHeight,
+                buf->bufPlaneWidth,
+                ((buf->bufPlaneWidth * buf->bufPlaneHeight)/
+                 buf->numChannels));
+
+            std::string filename(filename_prefix);
+            filename += std::to_string(buf->bufferId) + "_";
+            filename += std::to_string(buf->ROIWidth) + "x";
+            filename += std::to_string(buf->ROIHeight) + ".bin";
+
+            std::ofstream ofs;
+            ofs.open(filename, std::ofstream::out);
+            ofs.write(tmp, buffer_size);
+            ofs.close();
+
+            delete[] tmp;
+        }
+}
+
+
+const LayerOutput* ExecutionObject::Impl::GetOutputFromLayer(
+                            uint32_t layer_index, uint32_t output_index) const
+{
+    if (trace_buf_params_sz_m == 0)
+        return nullptr;
+
+    if (layer_index > num_network_layers_m || output_index > TIDL_NUM_OUT_BUFS)
+        return nullptr;
+
+    OCL_TIDL_BufParams* bufferParams = trace_buf_params_m.get();
+    OCL_TIDL_BufParams* buf = &bufferParams[layer_index*TIDL_NUM_OUT_BUFS+
+                                            output_index];
+
+    if (buf->bufferId == UINT_MAX)
+        return nullptr;
+
+    size_t buffer_size = buf->numChannels * buf->ROIHeight *
+                         buf->ROIWidth;
+
+    char *data = new char[buffer_size];
+
+    if (data == nullptr)
+        throw Exception("Out of memory, new failed",
+                __FILE__, __FUNCTION__, __LINE__);
+
+    writeDataS8(data,
+                (char *) tidl_extmem_heap_m.get() + buf->bufPlaneBufOffset
+                + buf->bufPlaneWidth * OCL_TIDL_MAX_PAD_SIZE
+                + OCL_TIDL_MAX_PAD_SIZE,
+                buf->numChannels,
+                buf->ROIWidth,
+                buf->ROIHeight,
+                buf->bufPlaneWidth,
+                ((buf->bufPlaneWidth * buf->bufPlaneHeight)/
+                 buf->numChannels));
+
+    return new LayerOutput(layer_index, output_index, buf->bufferId,
+                           buf->numROIs, buf->numChannels, buf->ROIHeight,
+                           buf->ROIWidth, data);
+}
+
+const LayerOutputs* ExecutionObject::Impl::GetOutputsFromAllLayers() const
+{
+    LayerOutputs* result = new LayerOutputs;
+
+    for (uint32_t i=0; i < num_network_layers_m; i++)
+        for (int j=0; j < TIDL_NUM_OUT_BUFS; j++)
+        {
+            const LayerOutput* lo = GetOutputFromLayer(i, j);
+            if (lo)
+                result->push_back(std::unique_ptr<const LayerOutput>{ lo });
+        }
+
+    return result;
+}
+
+LayerOutput::LayerOutput(int layer_index, int output_index, int buffer_id,
+                         int num_roi, int num_channels, size_t height,
+                         size_t width, const char* data):
+                        layer_index_m(layer_index), buffer_id_m(buffer_id),
+                        num_roi_m(num_roi), num_channels_m(num_channels),
+                        height_m(height), width_m(width), data_m(data)
+{ }
+
+LayerOutput::~LayerOutput()
+{
+    delete[] data_m;
+}
+
+void ExecutionObject::Impl::AcquireLock()
+{
+    std::unique_lock<std::mutex> lock(mutex_access_m);
+    cv_access_m.wait(lock, [this]{ return this->is_idle_m; });
+    is_idle_m = false;
+}
+
+void ExecutionObject::Impl::ReleaseLock()
+{
+    is_idle_m = true;
+    cv_access_m.notify_all();
 }

@@ -28,6 +28,9 @@
 MFS  = $(wildcard */Makefile)
 DIRS = $(patsubst %/Makefile,%,$(MFS))
 
+# classification cannot be run from command line without attached display
+RUN_DIRS := $(filter-out classification, $(DIRS))
+
 define make_in_dirs
 	@for dir in $(1); do \
 	  echo "=============== " $$dir " =================" ; \
@@ -38,6 +41,10 @@ endef
 
 all:
 	$(call make_in_dirs, $(DIRS), )
+
+.PHONY: run
+run:
+	$(call make_in_dirs, $(RUN_DIRS), run)
 
 .PHONY: clean
 clean:

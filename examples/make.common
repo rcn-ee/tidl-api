@@ -39,7 +39,7 @@ include $(TIDL_API_DIR)/make.inc
 ifeq ($(BUILD), debug)
 	CXXFLAGS += -Og -g -ggdb
 else
-	CXXFLAGS += -O3
+	CXXFLAGS += -O3 -Wall -Werror -Wno-error=ignored-attributes
 endif
 
 CXXFLAGS += -I. -I$(TIDL_API_DIR)/inc -std=c++11
@@ -54,3 +54,5 @@ all: $(EXE)
 clean::
 	$(RM) -f $(EXE) stats_tool_out.* *.out
 
+run:
+	./$(EXE)

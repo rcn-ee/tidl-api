@@ -41,6 +41,7 @@
 
 #include "executor.h"
 #include "execution_object.h"
+#include "execution_object_pipeline.h"
 #include "configuration.h"
 
 #include "opencv2/core.hpp"
@@ -50,8 +51,7 @@
 
 //#define TWO_ROIs
 #define LIVE_DISPLAY
-//#define PERF_VERBOSE
-
+#define PERF_VERBOSE
 //#define RMT_GST_STREAMER
 
 #define MAX_NUM_ROI 4
@@ -60,34 +60,38 @@ int live_input = 1;
 char video_clip[320];
 
 #ifdef TWO_ROIs
-#define RES_X 400                                                              
-#define RES_Y 300                                                            
-#define NUM_ROI_X 2                                                     
-#define NUM_ROI_Y 1                                                      
-#define X_OFFSET 0                                                           
-#define X_STEP   176                                                        
-#define Y_OFFSET 52                                                         
+#define RES_X 400
+#define RES_Y 300
+#define NUM_ROI_X 2
+#define NUM_ROI_Y 1
+#define X_OFFSET 0
+#define X_STEP   176
+#define Y_OFFSET 52
 #define Y_STEP   224
 #else
-#define RES_X 244
-#define RES_Y 244                                                            
-#define NUM_ROI_X 1                                                     
-#define NUM_ROI_Y 1                                                      
-#define X_OFFSET 10                                                         
-#define X_STEP   224                                                     
-#define Y_OFFSET 10                                                    
-#define Y_STEP   224
+#define RES_X 480
+#define RES_Y 480
+#define NUM_ROI_X 1
+#define NUM_ROI_Y 1
+#define X_OFFSET 10
+#define X_STEP   460
+#define Y_OFFSET 10
+#define Y_STEP   460
 #endif
 
-int NUM_ROI = NUM_ROI_X * NUM_ROI_Y;
+#define NUM_ROI (NUM_ROI_X * NUM_ROI_Y)
 
 //Temporal averaging
-int TOP_CANDIDATES = 2;
+int TOP_CANDIDATES = 3;
 
 using namespace tidl;
 using namespace cv;
 
 #ifdef LIVE_DISPLAY
+char imagenet_win[160];
+char tmp_classwindow_string[160];
+Mat  classlist_image;
+
 void imagenetCallBackFunc(int event, int x, int y, int flags, void* userdata)
 {
     if  ( event == EVENT_RBUTTONDOWN )
@@ -98,33 +102,40 @@ void imagenetCallBackFunc(int event, int x, int y, int flags, void* userdata)
 }
 #endif
 
+Mat in_image, image, r_image, cnn_image, show_image, bgr_frames[3];
+Mat to_stream;
+Rect rectCrop[NUM_ROI];
+double avg_fps;
+
 static int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id);
 static void tf_preprocess(uchar *out, uchar *in, int size);
 static int ShowRegion(int roi_history[]);
-static int selclass_history[MAX_NUM_ROI][3];  // from most recent to oldest at top indices
+// from most recent to oldest at top indices
+static int selclass_history[MAX_NUM_ROI][3];
 
 bool __TI_show_debug_ = false;
 
-bool RunMultipleExecutors(const std::string& config_file_1,
-                          const std::string& config_file_2,
-                          uint32_t num_devices_available);
-
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type);
-bool RunAllConfigurations(int32_t num_devices, DeviceType device_type);
-
-bool ReadFrame(ExecutionObject&     eo,
-               int                  frame_idx,
-               const Configuration& configuration,
-               std::istream&        input_file);
-
-bool WriteFrame(const ExecutionObject &eo,
-                std::ostream& output_file);
-
+bool RunConfiguration(const std::string& config_file, int num_layers_groups,
+                      uint32_t num_dsps, uint32_t num_eves);
+bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
+                                    Configuration& configuration, 
+                                    uint32_t num_layers_groups,
+                                    Executor*& e_eve, Executor*& e_dsp,
+                                  std::vector<ExecutionObjectPipeline*>& eops);
+void AllocateMemory(const std::vector<ExecutionObjectPipeline*>& eops);
+void SetupLiveDisplay(uint32_t num_eves, uint32_t num_dsps);
+bool SetupInput(VideoCapture& cap, VideoWriter& writer);
+bool ReadFrame(ExecutionObjectPipeline* eop,
+               uint32_t frame_idx, uint32_t num_frames,
+               VideoCapture &cap, VideoWriter& writer);
+void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
+                  uint32_t frame_idx, uint32_t num_eops,
+                  uint32_t num_eves, uint32_t num_dsps);
 static void ProcessArgs(int argc, char *argv[],
                         std::string& config_file,
-                        int& num_devices,
-                        DeviceType& device_type);
+                        uint32_t & num_dsps, uint32_t &num_eves,
+                        int & num_layers_groups);
+void ReportTime(const ExecutionObjectPipeline* eop);
 
 static void DisplayHelp();
 extern std::string labels_classes[];
@@ -134,9 +145,6 @@ extern int selected_items[];
 extern int populate_selected_items (char *filename);
 extern void populate_labels (char *filename);
 
-static double ms_diff(struct timespec &t0, struct timespec &t1)
-{ return (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6; }
-
 
 int main(int argc, char *argv[])
 {
@@ -145,11 +153,11 @@ int main(int argc, char *argv[])
     signal(SIGTERM, exit);
 
     // If there are no devices capable of offloading TIDL on the SoC, exit
-    uint32_t num_dla =
-                Executor::GetNumDevices(DeviceType::EVE);
-    uint32_t num_dsp =
-                Executor::GetNumDevices(DeviceType::DSP);
-    if (num_dla == 0 && num_dsp == 0)
+    uint32_t num_eves = Executor::GetNumDevices(DeviceType::EVE);
+    uint32_t num_dsps = Executor::GetNumDevices(DeviceType::DSP);
+    int num_layers_groups = 1;
+
+    if (num_eves == 0 && num_dsps == 0)
     {
         std::cout << "TI DL not supported on this SoC." << std::endl;
         return EXIT_SUCCESS;
@@ -157,17 +165,12 @@ int main(int argc, char *argv[])
 
     // Process arguments
     std::string config_file;
-    int         num_devices = 1;
-    DeviceType  device_type = DeviceType::EVE;
-    ProcessArgs(argc, argv, config_file, num_devices, device_type);
+    ProcessArgs(argc, argv, config_file, num_dsps, num_eves, num_layers_groups);
 
-    bool status = true;
+    bool status = false;
     if (!config_file.empty()) {
         std::cout << "Run single configuration: " << config_file << std::endl;
-        status = RunConfiguration(config_file, num_devices, device_type);
-    } else
-    {
-        status = false;
+        status = RunConfiguration(config_file, num_layers_groups, num_dsps, num_eves);
     }
 
     if (!status)
@@ -180,13 +183,8 @@ int main(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-bool RunConfiguration(const std::string& config_file, int num_devices,
-                      DeviceType device_type)
+bool RunConfiguration(const std::string& config_file, int num_layers_groups, uint32_t num_dsps, uint32_t num_eves)
 {
-    DeviceIds ids;
-    char imagenet_win[160];
-    for (int i = 0; i < num_devices; i++)
-        ids.insert(static_cast<DeviceId>(i));
 
     // Read the TI DL configuration file
     Configuration configuration;
@@ -203,282 +201,68 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     assert (input_data_file.good());
     assert (output_data_file.good());
 
-    sprintf(imagenet_win, "Imagenet_%sx%d", (device_type == DeviceType::EVE) ? "EVE" : "DSP", num_devices);
-
-    // Determine input frame size from configuration
-    size_t frame_sz_in = configuration.inWidth * configuration.inHeight *
-                         configuration.inNumChannels * (configuration.inNumChannels == 1 ? 1 : 1);
-    size_t frame_sz_out = configuration.inWidth * configuration.inHeight * 3;
 
     try
     {
-        // Create a executor with the approriate core type, number of cores
-        // and configuration specified
-        Executor executor(device_type, ids, configuration);
+        // Create ExecutionObjectPipelines
+        Executor *e_eve = NULL;
+        Executor *e_dsp = NULL;
+        std::vector<ExecutionObjectPipeline *> eops;
+        if (! CreateExecutionObjectPipelines(num_eves, num_dsps, configuration,
+                                        num_layers_groups, e_eve, e_dsp, eops))
+            return false;
+        uint32_t num_eops = eops.size();
+
+        // Allocate input/output memory for each EOP
+        AllocateMemory(eops);
+
+        // Setup Live Display
+        SetupLiveDisplay(num_eves, num_dsps);
+
+        // Setup Input
+        VideoCapture cap;
+        VideoWriter writer;  // gstreamer
+        if (! SetupInput(cap, writer))  return false;
 
 
-        // Query Executor for set of ExecutionObjects created
-        const ExecutionObjects& execution_objects =
-                                                executor.GetExecutionObjects();
-        int num_eos = execution_objects.size();
-
-        // Allocate input and output buffers for each execution object
-        std::vector<void *> buffers;
-        for (auto &eo : execution_objects)
+        // More initialization
+        for (int k = 0; k < NUM_ROI; k++)
+            for(int i = 0; i < 3; i ++)
+                selclass_history[k][i] = -1;
+        avg_fps = 0.0;
+        int num_frames = configuration.numFrames;
+        std::cout << "About to start ProcessFrame loop!!" << std::endl;
+ 
+        // Process frames with available EOPs in a pipelined manner
+        // additional num_eops iterations to flush the pipeline (epilogue)
+        for (uint32_t frame_idx = 0;
+             frame_idx < configuration.numFrames + num_eops; frame_idx++)
         {
-            ArgInfo in  = { ArgInfo(malloc_ddr<char>(frame_sz_in),  frame_sz_in)};
-            ArgInfo out = { ArgInfo(malloc_ddr<char>(frame_sz_out), frame_sz_out)};
-            eo->SetInputOutputBuffer(in, out);
-
-            buffers.push_back(in.ptr());
-            buffers.push_back(out.ptr());
-        }
-
-#ifdef LIVE_DISPLAY
-    if(NUM_ROI > 1) 
-    {
-      for(int i = 0; i < NUM_ROI; i ++) {
-        char tmp_string[80];
-        sprintf(tmp_string, "ROI[%02d]", i);
-        namedWindow(tmp_string, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
-      }
-    }
-    Mat sw_stack_image = imread("/usr/share/ti/tidl/examples/classification/tidl-sw-stack-small.png", IMREAD_COLOR); // Read the file
-    if( sw_stack_image.empty() )                      // Check for invalid input
-    {
-      std::cout <<  "Could not open or find the tidl-sw-stack-small image" << std::endl ;
-    } else {
-      namedWindow( "TIDL SW Stack", WINDOW_AUTOSIZE | CV_GUI_NORMAL ); // Create a window for display.
-      cv::imshow( "TIDL SW Stack", sw_stack_image );                // Show our image inside it.
-    }
-
-    namedWindow("ClassList", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
-    namedWindow(imagenet_win, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
-    //set the callback function for any mouse event
-    setMouseCallback(imagenet_win, imagenetCallBackFunc, NULL);
-
-    Mat classlist_image = cv::Mat::zeros(40 + selected_items_size * 20, 220, CV_8UC3);
-    char tmp_classwindow_string[160];
-    //Erase window
-    classlist_image.setTo(Scalar::all(0));
-
-    for (int i = 0; i < selected_items_size; i ++)
-    {
-      sprintf(tmp_classwindow_string, "%2d) %12s", 1+i, labels_classes[selected_items[i]].c_str());
-      cv::putText(classlist_image, tmp_classwindow_string,
-                  cv::Point(5, 40 + i * 20),
-                  cv::FONT_HERSHEY_COMPLEX_SMALL,
-                  0.75,
-                  cv::Scalar(255,255,255), 1, 8);
-    }
-    cv::imshow("ClassList", classlist_image);
-
-#endif
-    Mat r_frame, r_mframe, r_blend;
-    Mat to_stream;
-    VideoCapture cap;
-
-   if(live_input >= 0)
-   {
-      cap.open(live_input);
-      VideoWriter writer;  // gstreamer
-
-      const double fps = cap.get(CAP_PROP_FPS);
-      const int width  = cap.get(CAP_PROP_FRAME_WIDTH);
-      const int height = cap.get(CAP_PROP_FRAME_HEIGHT);
-      std::cout << "Capture camera with " << fps << " fps, " << width << "x" << height << " px" << std::endl;
-
-#ifdef RMT_GST_STREAMER
-      writer.open(" appsrc ! videoconvert ! video/x-raw, format=(string)NV12, width=(int)640, height=(int)480, framerate=(fraction)30/1 ! \
-                ducatih264enc bitrate=2000 ! queue ! h264parse config-interval=1 ! \
-                mpegtsmux ! udpsink host=158.218.102.235 sync=false port=5000",
-                0,fps,Size(640,480),true);
-
-      if (!writer.isOpened()) {
-        cap.release();
-        std::cerr << "Can't create gstreamer writer. Do you have the correct version installed?" << std::endl;
-        std::cerr << "Print out OpenCV build information" << std::endl;
-        std::cout << getBuildInformation() << std::endl;
-        return false;
-      }
-#endif
-   } else {
-     std::cout << "Video input clip: " << video_clip << std::endl;
-     cap.open(std::string(video_clip));
-      const double fps = cap.get(CAP_PROP_FPS);
-      const int width  = cap.get(CAP_PROP_FRAME_WIDTH);
-      const int height = cap.get(CAP_PROP_FRAME_HEIGHT);
-      std::cout << "Clip with " << fps << " fps, " << width << "x" << height << " px" << std::endl;
-
-   }
-   std::cout << "About to start ProcessFrame loop!!" << std::endl;
-
-
-    Rect rectCrop[NUM_ROI];
-    for (int y = 0; y < NUM_ROI_Y; y ++) {
-      for (int x = 0; x < NUM_ROI_X; x ++) {
-         rectCrop[y * NUM_ROI_X + x] = Rect(X_OFFSET + x * X_STEP, Y_OFFSET + y * Y_STEP, 224, 224);
-         std::cout << "Rect[" << X_OFFSET + x * X_STEP << ", " << Y_OFFSET + y * Y_STEP << "]" << std::endl;
-      }
-    }
-    int num_frames = 99999;
-
-    if (!cap.isOpened()) {
-      std::cout << "Video input not opened!" << std::endl;
-      return false;
-    }
-    Mat in_image, image, r_image, show_image, bgr_frames[3];
-    int is_object;
-    for(int k = 0; k < NUM_ROI; k++) {
-      for(int i = 0; i < 3; i ++) selclass_history[k][i] = -1;
-    }
-
-        #define MAX_NUM_EOS  4
-        struct timespec t0[MAX_NUM_EOS], t1;
-
-        // Process frames with available execution objects in a pipelined manner
-        // additional num_eos iterations to flush the pipeline (epilogue)
-        for (int frame_idx = 0;
-             frame_idx < configuration.numFrames + num_eos; frame_idx++)
-        {
-            ExecutionObject* eo = execution_objects[frame_idx % num_eos].get();
+            ExecutionObjectPipeline* eop = eops[frame_idx % num_eops];
 
             // Wait for previous frame on the same eo to finish processing
-            if (eo->ProcessFrameWait())
+            if (eop->ProcessFrameWait())
             {
-                clock_gettime(CLOCK_MONOTONIC, &t1);
-                double elapsed_host =
-                                ms_diff(t0[eo->GetFrameIndex() % num_eos], t1);
-                double elapsed_device = eo->GetProcessTimeInMilliSeconds();
-                double overhead = 100 - (elapsed_device/elapsed_host*100);
-#ifdef PERF_VERBOSE
-                std::cout << "frame[" << eo->GetFrameIndex() << "]: "
-                          << "Time on device: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_device << "ms, "
-                          << "host: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_host << "ms ";
-                std::cout << "API overhead: "
-                          << std::setw(6) << std::setprecision(3)
-                          << overhead << " %" << std::endl;
-#endif
-
-             int f_id = eo->GetFrameIndex();
-             int curr_roi = f_id % NUM_ROI;
-             is_object = tf_postprocess((uchar*) eo->GetOutputBufferPtr(), IMAGE_CLASSES_NUM, curr_roi, frame_idx, f_id);
-             selclass_history[curr_roi][2] = selclass_history[curr_roi][1];
-             selclass_history[curr_roi][1] = selclass_history[curr_roi][0];
-             selclass_history[curr_roi][0] = is_object;
-
-             if(is_object >= 0) {
-                  std::cout << "frame[" << eo->GetFrameIndex() << "]: "
-                          << "Time on device: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_device << "ms, "
-                          << "host: "
-                          << std::setw(6) << std::setprecision(4)
-                          << elapsed_host << "ms ";
-             }
-
-             for (int r = 0; r < NUM_ROI; r ++) 
-             {
-	        int rpt_id =  ShowRegion(selclass_history[r]);
-                if(rpt_id >= 0)
-                {
-                  // overlay the display window, if ball seen during last two times
-                  cv::putText(show_image, labels_classes[rpt_id].c_str(),
-                    cv::Point(rectCrop[r].x + 5,rectCrop[r].y + 20), // Coordinates
-                    cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
-                    1.0, // Scale. 2.0 = 2x bigger
-                    cv::Scalar(0,0,255), // Color
-                    1, // Thickness
-                    8); // Line type
-                  cv::rectangle(show_image, rectCrop[r], Scalar(255,0,0), 3);
-                  std::cout << "ROI(" << r << ")(" << rpt_id << ")=" << labels_classes[rpt_id].c_str() << std::endl;
-
-                  classlist_image.setTo(Scalar::all(0));
-                  for (int k = 0; k < selected_items_size; k ++)
-                  {
-                     sprintf(tmp_classwindow_string, "%2d) %12s", 1+k, labels_classes[selected_items[k]].c_str());
-                     cv::putText(classlist_image, tmp_classwindow_string,
-                                 cv::Point(5, 40 + k * 20),
-                                 cv::FONT_HERSHEY_COMPLEX_SMALL,
-                                 0.75,
-                                 selected_items[k] == rpt_id ? cv::Scalar(0,0,255) : cv::Scalar(255,255,255), 1, 8);
-                  }
-                  sprintf(tmp_classwindow_string, "FPS:%5.2lf", (double)num_devices * 1000.0 / elapsed_host );
-                  cv::putText(classlist_image, tmp_classwindow_string,
-                              cv::Point(5, 20),
-                              cv::FONT_HERSHEY_COMPLEX_SMALL,
-                              0.75,
-                              cv::Scalar(0,255,0), 1, 8);
-                  cv::imshow("ClassList", classlist_image);
-               }
-             }
-#ifdef LIVE_DISPLAY
-             cv::imshow(imagenet_win, show_image);
-#endif
-
-#ifdef RMT_GST_STREAMER
-             cv::resize(show_image, to_stream, cv::Size(640,480));
-             writer << to_stream;
-#endif
-
-#ifdef LIVE_DISPLAY
-             waitKey(2);
-#endif
-
+                 #ifdef PERF_VERBOSE
+                 ReportTime(eop);
+                 #endif
+                 DisplayFrame(eop, writer, frame_idx, num_eops,
+                              num_eves, num_dsps);
             }
 
+            if (ReadFrame(eop, frame_idx, num_frames, cap, writer))
+                eop->ProcessFrameStartAsync();
+        }
 
-        if (cap.grab() && frame_idx < num_frames)
+        // Cleanup
+        for (auto eop : eops)
         {
-            if (cap.retrieve(in_image))
-            {
-                cv::resize(in_image, image, Size(RES_X,RES_Y));
-                r_image = Mat(image, rectCrop[frame_idx % NUM_ROI]);
-
-#ifdef LIVE_DISPLAY
-                if(NUM_ROI > 1)
-                {
-                   char tmp_string[80];
-                   sprintf(tmp_string, "ROI[%02d]", frame_idx % NUM_ROI);
-                   cv::imshow(tmp_string, r_image);
-                }
-#endif
-                //Convert from BGR pixel interleaved to BGR plane interleaved!
-                cv::split(r_image, bgr_frames);
-                tf_preprocess((uchar*) eo->GetInputBufferPtr(), bgr_frames[0].ptr(), 224*224);
-                tf_preprocess((uchar*) eo->GetInputBufferPtr()+224*224, bgr_frames[1].ptr(), 224*224);
-                tf_preprocess((uchar*) eo->GetInputBufferPtr()+2*224*224, bgr_frames[2].ptr(), 224*224);
-                eo->SetFrameIndex(frame_idx);
-                clock_gettime(CLOCK_MONOTONIC, &t0[frame_idx % num_eos]);
-                eo->ProcessFrameStartAsync();
-
-#ifdef RMT_GST_STREAMER
-                cv::resize(Mat(image, Rect(0,32,640,448)), to_stream, Size(640,480));
-                writer << to_stream;
-#endif
-
-#ifdef LIVE_DISPLAY
-                //waitKey(2);
-                image.copyTo(show_image);
-#endif
-            }
-        } else {
-          if(live_input == -1) {
-            //Rewind!
-            cap.release();
-            cap.open(std::string(video_clip)); 
-          }
+            free(eop->GetInputBufferPtr());
+            free(eop->GetOutputBufferPtr());
+            delete eop;
         }
- 
-        }
-
-        for (auto b : buffers)
-            __free_ddr(b);
-
+        if(num_dsps) delete e_dsp;
+        if(num_eves) delete e_eve;
     }
     catch (tidl::Exception &e)
     {
@@ -493,56 +277,360 @@ bool RunConfiguration(const std::string& config_file, int num_devices,
     return status;
 }
 
-bool ReadFrame(ExecutionObject &eo, int frame_idx,
-               const Configuration& configuration,
-               std::istream& input_file)
+
+bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
+                                    Configuration& configuration, 
+                                    uint32_t num_layers_groups,
+                                    Executor*& e_eve, Executor*& e_dsp,
+                                    std::vector<ExecutionObjectPipeline*>& eops)
 {
-    if (frame_idx >= configuration.numFrames)
+    DeviceIds ids_eve, ids_dsp;
+    for (uint32_t i = 0; i < num_eves; i++)
+        ids_eve.insert(static_cast<DeviceId>(i));
+    for (uint32_t i = 0; i < num_dsps; i++)
+        ids_dsp.insert(static_cast<DeviceId>(i));
+
+    switch(num_layers_groups)
+    {
+    case 1: // Single layers group
+        e_eve = num_eves == 0 ? nullptr :
+                new Executor(DeviceType::EVE, ids_eve, configuration);
+        e_dsp = num_dsps == 0 ? nullptr :
+                new Executor(DeviceType::DSP, ids_dsp, configuration);
+
+        // Construct ExecutionObjectPipeline with single Execution Object to
+        // process each frame. This is parallel processing of frames with
+        // as many DSP and EVE cores that we have on hand.
+        for (uint32_t i = 0; i < num_eves; i++)
+            eops.push_back(new ExecutionObjectPipeline({(*e_eve)[i]}));
+        for (uint32_t i = 0; i < num_dsps; i++)
+            eops.push_back(new ExecutionObjectPipeline({(*e_dsp)[i]}));
+        break;
+
+    case 2: // Two layers group
+        // JacintoNet11 specific : specify only layers that will be in
+        // layers group 2 ... by default all other layers are in group 1.
+        configuration.layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} };
+
+        // Create Executors with the approriate core type, number of cores
+        // and configuration specified
+        // EVE will run layersGroupId 1 in the network, while
+        // DSP will run layersGroupId 2 in the network
+        e_eve = num_eves == 0 ? nullptr :
+                new Executor(DeviceType::EVE, ids_eve, configuration, 1);
+        e_dsp = num_dsps == 0 ? nullptr :
+                new Executor(DeviceType::DSP, ids_dsp, configuration, 2);
+
+        // Construct ExecutionObjectPipeline that utilizes multiple
+        // ExecutionObjects to process a single frame, each ExecutionObject
+        // processes one layerGroup of the network
+        for (uint32_t i = 0; i < std::max(num_eves, num_dsps); i++)
+            eops.push_back(new ExecutionObjectPipeline({(*e_eve)[i%num_eves],
+                                                        (*e_dsp)[i%num_dsps]}));
+        break;
+
+    default:
+        std::cout << "Layers groups can be either 1 or 2!" << std::endl;
         return false;
+        break;
+    }
 
-    char*  frame_buffer = eo.GetInputBufferPtr();
-    assert (frame_buffer != nullptr);
+    return true;
+}
 
-    memset (frame_buffer, 0,  eo.GetInputBufferSizeInBytes());
-    input_file.read(frame_buffer, eo.GetInputBufferSizeInBytes() / (configuration.inNumChannels == 1 ? 2 : 1));
+void AllocateMemory(const std::vector<ExecutionObjectPipeline*>& eops)
+{
+    for (auto eop : eops)
+    {
+       size_t in_size  = eop->GetInputBufferSizeInBytes();
+       size_t out_size = eop->GetOutputBufferSizeInBytes();
+       void*  in_ptr   = malloc(in_size);
+       void*  out_ptr  = malloc(out_size);
+       assert(in_ptr != nullptr && out_ptr != nullptr);
 
-    if (input_file.eof())
+       ArgInfo in(in_ptr,   in_size);
+       ArgInfo out(out_ptr, out_size);
+       eop->SetInputOutputBuffer(in, out);
+    }
+}
+
+void SetupLiveDisplay(uint32_t num_eves, uint32_t num_dsps)
+{
+#ifdef LIVE_DISPLAY
+    sprintf(imagenet_win, "Imagenet_EVEx%d_DSPx%d", num_eves, num_dsps);
+
+    if(NUM_ROI > 1)
+    {
+      for(int i = 0; i < NUM_ROI; i ++) {
+        char tmp_string[80];
+        sprintf(tmp_string, "ROI[%02d]", i);
+        namedWindow(tmp_string, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
+      }
+    }
+    Mat sw_stack_image = imread(
+          "/usr/share/ti/tidl/examples/classification/tidl-sw-stack-small.png",
+          IMREAD_COLOR); // Read the file
+    if( sw_stack_image.empty() )                      // Check for invalid input
+    {
+      std::cout <<  "Could not open or find the tidl-sw-stack-small image"
+                << std::endl ;
+    } else {
+      // Create a window for display.
+      namedWindow( "TIDL SW Stack", WINDOW_AUTOSIZE | CV_GUI_NORMAL );
+      // Show our image inside it.
+      cv::imshow( "TIDL SW Stack", sw_stack_image );
+    }
+
+    namedWindow("ClassList", WINDOW_AUTOSIZE | CV_GUI_NORMAL);
+    namedWindow(imagenet_win, WINDOW_AUTOSIZE | CV_GUI_NORMAL);
+    //set the callback function for any mouse event
+    setMouseCallback(imagenet_win, imagenetCallBackFunc, NULL);
+
+    classlist_image = cv::Mat::zeros(40 + selected_items_size * 20, 220,
+                                     CV_8UC3);
+    //Erase window
+    classlist_image.setTo(Scalar::all(0));
+
+    for (int i = 0; i < selected_items_size; i ++)
+    {
+      sprintf(tmp_classwindow_string, "%2d) %12s", 1+i,
+              labels_classes[selected_items[i]].c_str());
+      cv::putText(classlist_image, tmp_classwindow_string,
+                  cv::Point(5, 40 + i * 20),
+                  cv::FONT_HERSHEY_COMPLEX_SMALL,
+                  0.75,
+                  cv::Scalar(255,255,255), 1, 8);
+    }
+    cv::imshow("ClassList", classlist_image);
+#endif
+}
+
+bool SetupInput(VideoCapture& cap, VideoWriter& writer)
+{
+   if(live_input >= 0)
+   {
+      cap.open(live_input);
+
+      const double fps = cap.get(CAP_PROP_FPS);
+      const int width  = cap.get(CAP_PROP_FRAME_WIDTH);
+      const int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+      std::cout << "Capture camera with " << fps << " fps, " << width << "x"
+                << height << " px" << std::endl;
+
+#ifdef RMT_GST_STREAMER
+      writer.open(" appsrc ! videoconvert ! video/x-raw, format=(string)NV12, width=(int)640, height=(int)480, framerate=(fraction)30/1 ! \
+                ducatih264enc bitrate=2000 ! queue ! h264parse config-interval=1 ! \
+                mpegtsmux ! udpsink host=192.168.1.2 sync=false port=5000",
+                0,fps,Size(640,480),true);
+
+      if (!writer.isOpened()) {
+        cap.release();
+        std::cerr << "Can't create gstreamer writer. "
+                  << "Do you have the correct version installed?" << std::endl;
+        std::cerr << "Print out OpenCV build information" << std::endl;
+        std::cout << getBuildInformation() << std::endl;
         return false;
+      }
+#endif
+   } else {
+     std::cout << "Video input clip: " << video_clip << std::endl;
+     cap.open(std::string(video_clip));
+      const double fps = cap.get(CAP_PROP_FPS);
+      const int width  = cap.get(CAP_PROP_FRAME_WIDTH);
+      const int height = cap.get(CAP_PROP_FRAME_HEIGHT);
+      std::cout << "Clip with " << fps << " fps, " << width << "x"
+                << height << " px" << std::endl;
+   }
 
-    assert (input_file.good());
+   if (!cap.isOpened()) {
+      std::cout << "Video input not opened!" << std::endl;
+      return false;
+   }
 
-    // Set the frame index  being processed by the EO. This is used to
-    // sort the frames before they are output
-    eo.SetFrameIndex(frame_idx);
+   for (int y = 0; y < NUM_ROI_Y; y ++) {
+      for (int x = 0; x < NUM_ROI_X; x ++) {
+         rectCrop[y * NUM_ROI_X + x] = Rect(X_OFFSET + x * X_STEP,
+                                            Y_OFFSET + y * Y_STEP, X_STEP, Y_STEP);
+         std::cout << "Rect[" << X_OFFSET + x * X_STEP << ", "
+                   << Y_OFFSET + y * Y_STEP << "]" << std::endl;
+      }
+   }
 
-    if (input_file.good())
-        return true;
+   return true;
+}
+
+bool ReadFrame(ExecutionObjectPipeline* eop,
+               uint32_t frame_idx, uint32_t num_frames,
+               VideoCapture &cap, VideoWriter& writer)
+{
+    if (cap.grab() && frame_idx < num_frames)
+    {
+        if (cap.retrieve(in_image))
+        {
+            if(live_input >= 0)
+            { //Crop central square portion
+              int loc_xmin = (in_image.size().width - in_image.size().height) / 2; //Central position
+              int loc_ymin = 0;
+              int loc_w = in_image.size().height;
+              int loc_h = in_image.size().height;
+
+              cv::resize(in_image(Rect(loc_xmin, loc_ymin, loc_w, loc_h)), image, Size(RES_X, RES_Y));
+            } else {
+              if((in_image.size().width != RES_X) || (in_image.size().height != RES_Y)) 
+              {  
+                cv::resize(in_image, image, Size(RES_X,RES_Y));
+              }
+            }
+
+            r_image = Mat(image, rectCrop[frame_idx % NUM_ROI]);
+
+#ifdef LIVE_DISPLAY
+            if(NUM_ROI > 1)
+            {
+               char tmp_string[80];
+               sprintf(tmp_string, "ROI[%02d]", frame_idx % NUM_ROI);
+               cv::imshow(tmp_string, r_image);
+            }
+#endif
+                //Convert from BGR pixel interleaved to BGR plane interleaved!
+            cv::resize(r_image, cnn_image, Size(224,224));
+            cv::split(cnn_image, bgr_frames);
+            tf_preprocess((uchar*) eop->GetInputBufferPtr(),
+                          bgr_frames[0].ptr(), 224*224);
+            tf_preprocess((uchar*) eop->GetInputBufferPtr()+224*224,
+                          bgr_frames[1].ptr(), 224*224);
+            tf_preprocess((uchar*) eop->GetInputBufferPtr()+2*224*224,
+                          bgr_frames[2].ptr(), 224*224);
+            eop->SetFrameIndex(frame_idx);
+
+#ifdef RMT_GST_STREAMER
+            cv::resize(Mat(image, Rect(0,32,640,448)), to_stream,
+                       Size(640,480));
+            writer << to_stream;
+#endif
+
+#ifdef LIVE_DISPLAY
+                //waitKey(2);
+            image.copyTo(show_image);
+#endif
+            return true;
+        }
+    } else {
+        if(live_input == -1) {
+            //Rewind!
+            cap.release();
+            cap.open(std::string(video_clip));
+        }
+    }
 
     return false;
 }
 
-bool WriteFrame(const ExecutionObject &eo, std::ostream& output_file)
+void ReportTime(const ExecutionObjectPipeline* eop)
 {
-    output_file.write(
-            eo.GetOutputBufferPtr(), eo.GetOutputBufferSizeInBytes());
-    assert(output_file.good() == true);
-
-    if (output_file.good())
-        return true;
-
-    return false;
+    uint32_t frame_index    = eop->GetFrameIndex();
+    std::string device_name = eop->GetDeviceName();
+    float elapsed_host      = eop->GetHostProcessTimeInMilliSeconds();
+    float elapsed_device    = eop->GetProcessTimeInMilliSeconds();
+    double overhead         = 100 - (elapsed_device/elapsed_host*100);
+    std::cout << "frame[" << frame_index << "]: "
+              << "Time on " << device_name << ": "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_device << "ms, "
+              << "host: "
+              << std::setw(6) << std::setprecision(4)
+              << elapsed_host << "ms ";
+    std::cout << "API overhead: "
+              << std::setw(6) << std::setprecision(3)
+              << overhead << " %" << std::endl;
 }
 
+void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
+                  uint32_t frame_idx, uint32_t num_eops,
+                  uint32_t num_eves, uint32_t num_dsps)
+{
+    int f_id = eop->GetFrameIndex();
+    int curr_roi = f_id % NUM_ROI;
+    int is_object = tf_postprocess((uchar*) eop->GetOutputBufferPtr(),
+                                 IMAGE_CLASSES_NUM, curr_roi, frame_idx, f_id);
+    selclass_history[curr_roi][2] = selclass_history[curr_roi][1];
+    selclass_history[curr_roi][1] = selclass_history[curr_roi][0];
+    selclass_history[curr_roi][0] = is_object;
+    for (int r = 0; r < NUM_ROI; r ++)
+    {
+        int rpt_id =  ShowRegion(selclass_history[r]);
+        if(rpt_id >= 0)
+        {
+            // overlay the display window, if ball seen during last two times
+            cv::putText(show_image, labels_classes[rpt_id].c_str(),
+                cv::Point(rectCrop[r].x + 5,rectCrop[r].y + 20), // Coordinates
+                cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
+                1.0, // Scale. 2.0 = 2x bigger
+                cv::Scalar(0,0,255), // Color
+                1, // Thickness
+                8); // Line type
+            cv::rectangle(show_image, rectCrop[r], Scalar(255,0,0), 3);
+            std::cout << "ROI(" << r << ")(" << rpt_id << ")="
+                      << labels_classes[rpt_id].c_str() << std::endl;
+
+            classlist_image.setTo(Scalar::all(0));
+            for (int k = 0; k < selected_items_size; k ++)
+            {
+               sprintf(tmp_classwindow_string, "%2d) %12s", 1+k,
+                       labels_classes[selected_items[k]].c_str());
+               cv::putText(classlist_image, tmp_classwindow_string,
+                           cv::Point(5, 40 + k * 20),
+                           cv::FONT_HERSHEY_COMPLEX_SMALL,
+                           0.75,
+                           selected_items[k] == rpt_id ? cv::Scalar(0,0,255) :
+                                                cv::Scalar(255,255,255), 1, 8);
+            }
+            double elapsed_host = eop->GetHostProcessTimeInMilliSeconds();
+            /* Exponential averaging */
+            avg_fps = 0.1 * ((double)num_eops * 1000.0 /
+                             ((double)NUM_ROI * elapsed_host)) + 0.9 * avg_fps;
+            sprintf(tmp_classwindow_string, "FPS:%5.2lf", avg_fps );
+
+#ifdef PERF_VERBOSE
+            std::cout << "Device:" << eop->GetDeviceName() << " eops("
+                      << num_eops << "), EVES(" << num_eves << ") DSPS("
+                      << num_dsps << ") FPS:" << avg_fps << std::endl;
+#endif
+            cv::putText(classlist_image, tmp_classwindow_string,
+                       cv::Point(5, 20),
+                       cv::FONT_HERSHEY_COMPLEX_SMALL,
+                       0.75,
+                       cv::Scalar(0,255,0), 1, 8);
+            cv::imshow("ClassList", classlist_image);
+        }
+    }
+
+#ifdef LIVE_DISPLAY
+    cv::imshow(imagenet_win, show_image);
+#endif
+
+#ifdef RMT_GST_STREAMER
+    cv::resize(show_image, to_stream, cv::Size(640,480));
+    writer << to_stream;
+#endif
+
+#ifdef LIVE_DISPLAY
+    waitKey(2);
+#endif
+}
+
+// Function to process all command line arguments
 void ProcessArgs(int argc, char *argv[], std::string& config_file,
-                 int& num_devices, DeviceType& device_type)
+                 uint32_t & num_dsps, uint32_t & num_eves, int & num_layers_groups )
 {
     const struct option long_options[] =
     {
         {"labels_classes_file", required_argument, 0, 'l'},
         {"selected_classes_file", required_argument, 0, 's'},
         {"config_file", required_argument, 0, 'c'},
-        {"num_devices", required_argument, 0, 'n'},
-        {"device_type", required_argument, 0, 't'},
+        {"num_dsps", required_argument, 0, 'd'},
+        {"num_eves", required_argument, 0, 'e'},
+        {"num_layers_groups", required_argument, 0, 'g'},
         {"help",        no_argument,       0, 'h'},
         {"verbose",     no_argument,       0, 'v'},
         {0, 0, 0, 0}
@@ -552,7 +640,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
 
     while (true)
     {
-        int c = getopt_long(argc, argv, "l:c:s:i:n:t:hv", long_options, &option_index);
+        int c = getopt_long(argc, argv, "l:c:s:i:d:e:g:hv", long_options, &option_index);
 
         if (c == -1)
             break;
@@ -577,20 +665,16 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
             case 'c': config_file = optarg;
                       break;
 
-            case 'n': num_devices = atoi(optarg);
-                      assert (num_devices > 0 && num_devices <= 4);
+            case 'g': num_layers_groups = atoi(optarg);
+                      assert(num_layers_groups >= 1 && num_layers_groups <= 2);
                       break;
 
-            case 't': if (*optarg == 'e')
-                          device_type = DeviceType::EVE;
-                      else if (*optarg == 'd')
-                          device_type = DeviceType::DSP;
-                      else
-                      {
-                          std::cerr << "Invalid argument to -t, only e or d"
-                                       " allowed" << std::endl;
-                          exit(EXIT_FAILURE);
-                      }
+            case 'd': num_dsps = atoi(optarg);
+                      assert (num_dsps >= 0 && num_dsps <= 2);
+                      break;
+
+            case 'e': num_eves = atoi(optarg);
+                      assert (num_eves >= 0 && num_eves <= 2);
                       break;
 
             case 'v': __TI_show_debug_ = true;
@@ -609,26 +693,29 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
                       break;
         }
     }
+
+    // if no eves available, we can only run full net as one layer group
+    if (num_eves == 0)  num_layers_groups = 1;
 }
 
 void DisplayHelp()
 {
-    std::cout << "Usage: tidl\n"
+    std::cout << "Usage: tidl_classification\n"
                  "  Will run all available networks if tidl is invoked without"
                  " any arguments.\n  Use -c to run a single network.\n"
                  "Optional arguments:\n"
                  " -c                   Path to the configuration file\n"
-                 " -n <number of cores> Number of cores to use (1 - 4)\n"
-                 " -t <d|e>             Type of core. d -> DSP, e -> EVE\n"
+                 " -d <number of DSP cores> Number of DSP cores to use (0 - 2)\n"
+                 " -e <number of EVE cores> Number of EVE cores to use (0 - 2)\n"
+                 " -g <1|2>             Number of layer groups\n"
                  " -l                   List of label strings (of all classes in model)\n"
                  " -s                   List of strings with selected classes\n"
                  " -i                   Video input (for camera:0,1 or video clip)\n"
                  " -v                   Verbose output during execution\n"
                  " -h                   Help\n";
-
 }
 
-
+// Function to filter all the reported decisions
 bool tf_expected_id(int id)
 {
    // Filter out unexpected IDs
@@ -641,9 +728,9 @@ bool tf_expected_id(int id)
 
 int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
 {
+  //prob_i = exp(TIDL_Lib_output_i) / sum(exp(TIDL_Lib_output))
   // sort and get k largest values and corresponding indices
   const int k = TOP_CANDIDATES;
-  int accum_in = 0;
   int rpt_id = -1;
 
   typedef std::pair<uchar, int> val_index;
@@ -652,7 +739,6 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
   // initialize priority queue with smallest value on top
   for (int i = 0; i < k; i++) {
     queue.push(val_index(in[i], i));
-    accum_in += (int)in[i];
   }
   // for rest input, if larger than current minimum, pop mininum, push new val
   for (int i = k; i < size; i++)
@@ -662,7 +748,6 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
       queue.pop();
       queue.push(val_index(in[i], i));
     }
-    accum_in += (int)in[i];
   }
 
   // output top k values in reverse order: largest val first
@@ -676,16 +761,13 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
   for (int i = k-1; i >= 0; i--)
   {
       int id = sorted[i].second;
-      char res2show[320];
-      bool found = false;
 
       if (tf_expected_id(id))
       {
         std::cout << "Frame:" << frame_idx << "," << f_id << " ROI[" << roi_idx << "]: rank="
-                  << k-i << ", prob=" << (float) sorted[i].first / 255 << ", "
-                  << labels_classes[sorted[i].second] << " accum_in=" << accum_in << std::endl;
+                  << k-i << ", outval=" << (float)sorted[i].first / 255 << ", "
+                  << labels_classes[sorted[i].second] << std::endl;
         rpt_id = id;
-        found  = true;
       }
   }
   return rpt_id;
@@ -701,9 +783,9 @@ void tf_preprocess(uchar *out, uchar *in, int size)
 
 int ShowRegion(int roi_history[])
 {
-  if((roi_history[0] >= 0) && (roi_history[0] == roi_history[1])) return roi_history[0];    
-  if((roi_history[0] >= 0) && (roi_history[0] == roi_history[2])) return roi_history[0];    
-  if((roi_history[1] >= 0) && (roi_history[1] == roi_history[2])) return roi_history[1];    
+  if((roi_history[0] >= 0) && (roi_history[0] == roi_history[1])) return roi_history[0];
+  if((roi_history[0] >= 0) && (roi_history[0] == roi_history[2])) return roi_history[0];
+  if((roi_history[1] >= 0) && (roi_history[1] == roi_history[2])) return roi_history[1];
   return -1;
 }
 

@@ -91,7 +91,7 @@ DspDevice::DspDevice(const DeviceIds& ids, const std::string &binary_filename):
         // Queue 0 on device 0
         queue_m[0] = clCreateCommandQueue(context_m,
                                           device_ids[0],
-                                          0,
+                                          CL_QUEUE_PROFILING_ENABLE,
                                           &errcode);
         errorCheck(errcode, __LINE__);
         BuildProgramFromBinary(binary_filename, device_ids, 1);
@@ -139,7 +139,7 @@ DspDevice::DspDevice(const DeviceIds& ids, const std::string &binary_filename):
             int index = static_cast<int>(id);
             queue_m[index] = clCreateCommandQueue(context_m,
                                           sub_devices[index],
-                                          0,
+                                          CL_QUEUE_PROFILING_ENABLE,
                                           &errcode);
             errorCheck(errcode, __LINE__);
         }
@@ -187,7 +187,7 @@ EveDevice::EveDevice(const DeviceIds& ids, const std::string &kernel_names):
         int index = static_cast<int>(id);
         queue_m[index] = clCreateCommandQueue(context_m,
                                       all_device_ids[index],
-                                      0,
+                                      CL_QUEUE_PROFILING_ENABLE,
                                       &errcode);
         errorCheck(errcode, __LINE__);
     }
@@ -270,34 +270,36 @@ Kernel::Kernel(Device* device, const std::string& name,
     errorCheck(err, __LINE__);
 
     int arg_index = 0;
-    for (auto arg : args)
+    for (const auto& arg : args)
     {
         if (!arg.isLocal())
         {
-            if (arg.kind() == ArgInfo::Kind::BUFFER)
+            if (arg.kind() == DeviceArgInfo::Kind::BUFFER)
             {
                 cl_mem buffer = device_m->CreateBuffer(arg);
 
-                clSetKernelArg(kernel_m, arg_index++, sizeof(cl_mem), &buffer);
-                TRACE::print("  Arg[%d]: %p\n", arg_index-1, buffer);
+                clSetKernelArg(kernel_m, arg_index, sizeof(cl_mem), &buffer);
+                TRACE::print("  Arg[%d]: %p\n", arg_index, buffer);
 
-                if (buffer != nullptr)  buffers_m.push_back(buffer);
+                if (buffer)
+                    buffers_m.push_back(buffer);
             }
-            else if (arg.kind() == ArgInfo::Kind::SCALAR)
+            else if (arg.kind() == DeviceArgInfo::Kind::SCALAR)
             {
-                clSetKernelArg(kernel_m, arg_index++, arg.size(), arg.ptr());
-                TRACE::print("  Arg[%d]: %p\n", arg_index-1, arg.ptr());
+                clSetKernelArg(kernel_m, arg_index, arg.size(), arg.ptr());
+                TRACE::print("  Arg[%d]: %p\n", arg_index, arg.ptr());
             }
             else
             {
-                assert ("ArgInfo kind not supported");
+                assert ("DeviceArgInfo kind not supported");
             }
         }
         else
         {
-            clSetKernelArg(kernel_m, arg_index++, arg.size(), NULL);
-            TRACE::print("  Arg[%d]: local, %d\n", arg_index-1, arg.size());
+            clSetKernelArg(kernel_m, arg_index, arg.size(), NULL);
+            TRACE::print("  Arg[%d]: local, %d\n", arg_index, arg.size());
         }
+        arg_index++;
 
     }
 }
@@ -316,7 +318,7 @@ Kernel& Kernel::RunAsync()
 }
 
 
-bool Kernel::Wait()
+bool Kernel::Wait(float *host_elapsed_ms)
 {
     // Wait called without a corresponding RunAsync
     if (!is_running_m)
@@ -325,12 +327,39 @@ bool Kernel::Wait()
     TRACE::print("\tKernel: waiting...\n");
     cl_int ret = clWaitForEvents(1, &event_m);
     errorCheck(ret, __LINE__);
+
+    if (host_elapsed_ms != nullptr)
+    {
+        cl_ulong t_que, t_end;
+        clGetEventProfilingInfo(event_m, CL_PROFILING_COMMAND_QUEUED,
+                                sizeof(cl_ulong), &t_que, nullptr);
+        clGetEventProfilingInfo(event_m, CL_PROFILING_COMMAND_END,
+                                sizeof(cl_ulong), &t_end, nullptr);
+        *host_elapsed_ms = (t_end - t_que) / 1.0e6;  // nano to milli seconds
+    }
+
     ret = clReleaseEvent(event_m);
     errorCheck(ret, __LINE__);
     TRACE::print("\tKernel: finished execution\n");
 
     is_running_m = false;
     return true;
+}
+
+extern void CallbackWrapper(void *user_data) __attribute__((weak));
+
+static
+void EventCallback(cl_event event, cl_int exec_status, void *user_data)
+{
+    if (exec_status != CL_SUCCESS || user_data == nullptr)  return;
+    if (CallbackWrapper)  CallbackWrapper(user_data);
+}
+
+bool Kernel::AddCallback(void *user_data)
+{
+    if (! is_running_m)  return false;
+    return clSetEventCallback(event_m, CL_COMPLETE, EventCallback, user_data)
+           == CL_SUCCESS;
 }
 
 Kernel::~Kernel()
@@ -341,7 +370,7 @@ Kernel::~Kernel()
     clReleaseKernel(kernel_m);
 }
 
-cl_mem Device::CreateBuffer(const ArgInfo &Arg)
+cl_mem Device::CreateBuffer(const DeviceArgInfo &Arg)
 {
     size_t  size     = Arg.size();
     void   *host_ptr = Arg.ptr();
@@ -471,6 +500,31 @@ Device::Ptr Device::Create(DeviceType core_type, const DeviceIds& ids,
     return p;
 }
 
+// Minimum version of OpenCL required for this version of TIDL API
+#define MIN_OCL_VERSION "01.01.16.00"
+static bool CheckOpenCLVersion(cl_platform_id id)
+{
+    cl_int err;
+    size_t length;
+    err = clGetPlatformInfo(id, CL_PLATFORM_VERSION, 0, nullptr, &length);
+    if (err != CL_SUCCESS) return false;
+
+    std::unique_ptr<char> version(new char[length]);
+    err = clGetPlatformInfo(id, CL_PLATFORM_VERSION, length, version.get(),
+                            nullptr);
+    if (err != CL_SUCCESS) return false;
+
+    std::string v(version.get());
+
+    if (v.substr(v.find("01."), sizeof(MIN_OCL_VERSION)) >= MIN_OCL_VERSION)
+        return true;
+
+    std::cerr << "TIDL API Error: OpenCL " << MIN_OCL_VERSION
+              << " or higher required." << std::endl;
+
+    return false;
+}
+
 static bool PlatformIsAM57()
 {
     cl_platform_id id;
@@ -478,6 +532,9 @@ static bool PlatformIsAM57()
 
     err = clGetPlatformIDs(1, &id, nullptr);
     if (err != CL_SUCCESS) return false;
+
+    if (!CheckOpenCLVersion(id))
+       return false;
 
     // Check if the device name is AM57
     size_t length;

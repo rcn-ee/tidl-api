@@ -26,7 +26,7 @@ One possible reason is that previous runs of the application were aborted (e.g. 
 
 Insufficient OpenCL global memory
 +++++++++++++++++++++++++++++++++
-Another possible reason is that total memory requirement specified in the ``Configuration`` using EXTMEM_HEAP_SIZE and PARAM_HEAP_SIZE exceeds default memory available for OpenCL.  Follow the instructions below to increase the amount of CMEM (contiguous memory available for OpenCL)
+Another possible reason is that total memory requirement specified in the ``Configuration`` using NETWORK_HEAP_SIZE and PARAM_HEAP_SIZE exceeds default memory available for OpenCL.  Follow the instructions below to increase the amount of CMEM (contiguous memory available for OpenCL) from 192MB (0xc000000) to 384MB (0x18000000):
 
 .. code:: bash
 

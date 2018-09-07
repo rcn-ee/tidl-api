@@ -64,7 +64,7 @@ class ExecutionObject;
 typedef std::vector<std::unique_ptr<ExecutionObject>> ExecutionObjects;
 
 /*! @class Executor
-    @brief Manages the overall execution of a network using the
+    @brief Manages the overall execution of a layersGroup in a network using the
     specified configuration and the set of devices available to the
     executor.
 */
@@ -78,7 +78,7 @@ class Executor
         //! @code
         //!   Configuration configuration;
         //!   configuration.ReadFromFile("path to configuration file");
-        //!   DeviceIds ids1 = {DeviceId::ID2, DeviceId::ID3};
+        //!   DeviceIds ids = {DeviceId::ID2, DeviceId::ID3};
         //!   Executor executor(DeviceType::EVE, ids, configuration);
         //! @endcode
         //!
@@ -98,6 +98,13 @@ class Executor
         //! available on this instance of the Executor
         const ExecutionObjects& GetExecutionObjects() const;
 
+        //! Returns a single execution object at index
+        ExecutionObject* operator[](uint32_t index) const;
+
+        //! Returns the number of ExecutionObjects associated with the
+        //! Executor
+        uint32_t GetNumExecutionObjects() const;
+
         //! @brief Returns the number of devices of the specified type
         //! available for TI DL.
         //! @param  device_type DSP or EVE/EVE device
@@ -106,7 +113,7 @@ class Executor
 
         //! @brief Returns a string corresponding to the API version
         //!
-        //! @return <major_ver>.<minor_ver>.<patch_ver>.<git_sha>
+        //! @return \<major_ver>.\<minor_ver>.\<patch_ver>.\<git_sha>
         static std::string GetAPIVersion();
 
         Executor(const Executor&) = delete;
@@ -117,17 +124,6 @@ class Executor
         std::unique_ptr<ExecutorImpl> pimpl_m;
 };
 
-/*! @class PipeInfo
- *  @brief Describe input and output required by piping output and input
- *         between Execution Objects
- */
-class PipeInfo
-{
-    public:
-        uint32_t dataQ_m[OCL_TIDL_MAX_IN_BUFS];
-        uint32_t bufAddr_m[OCL_TIDL_MAX_IN_BUFS];
-};
-
 /*! @class ArgInfo
  *  @brief Describe input and output buffers required by ExecutionObjects
  */
@@ -136,20 +132,13 @@ class ArgInfo
     public:
         enum class DeviceAccess { R_ONLY=0, W_ONLY, RW };
 
-        //! Enumerates the types of arguments represented by ArgInfo
-        enum class Kind { BUFFER=0, SCALAR };
-
         //! Construct an ArgInfo object from a pointer to a chunk of memory
         //! and its size.
         ArgInfo(void *p, size_t size) :
-            ptr_m(p), size_m(size),
-            access_m(DeviceAccess::RW), kind_m(Kind::BUFFER)
-        { pipe_m = std::make_shared<PipeInfo>(); }
+            ptr_m(p), size_m(size), access_m(DeviceAccess::RW) {}
 
-        //! Construct an ArgInfo object from a pointer to a chunk of memory
-        //! its size and kind
-        ArgInfo(void *p, size_t size, Kind kind) :
-            ptr_m(p), size_m(size), access_m(DeviceAccess::RW), kind_m(kind) {}
+        ArgInfo(const ArgInfo& arg) = default;
+        ArgInfo& operator=(const ArgInfo& arg) = default;
 
         //! @return Pointer to the buffer or scalar represented by ArgInfo
         void  *ptr()  const { return ptr_m; }
@@ -157,19 +146,10 @@ class ArgInfo
         //! @return The size of the buffer or scalar represented by ArgInfo
         size_t size() const { return size_m; }
 
-        // Only used by tidl::Device
-        Kind   kind() const { return kind_m; }
-        bool   isLocal() const { return (ptr_m == nullptr) && (size_m > 0); }
-
-        // Only used by tidl::ExecutionObject::Impl
-        PipeInfo *GetPipe() const { return pipe_m.get(); }
-
-    private:
+    protected:
         void*        ptr_m;
         size_t       size_m;
         DeviceAccess access_m;
-        Kind         kind_m;
-        std::shared_ptr<PipeInfo> pipe_m;
 };
 
 

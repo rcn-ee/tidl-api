@@ -28,10 +28,15 @@
 
 #include <boost/spirit/include/qi.hpp>
 #include <boost/spirit/include/phoenix_operator.hpp>
+#include <boost/fusion/include/std_pair.hpp>
 
 #include <string>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
+#include <cctype>
+#include <utility>
+#include <map>
 
 #include "configuration.h"
 
@@ -47,35 +52,44 @@ struct ConfigParser : qi::grammar<Iterator, ascii::space_type>
     ConfigParser(Configuration &x) : ConfigParser::base_type(entry)
     {
         using qi::int_;
+        using qi::bool_;
         using qi::lit;
         using qi::lexeme;
         using ascii::char_;
         using qi::_1;
 
-        //TODO: Ignore blank lines and comments
-        path %= lexeme[+(char_ - '"')];
+        // Rules for parsing layer id assignments: { {int, int}, ... }
+        id2group  = '{' >> int_ >> ',' >> int_ >> '}';
+        id2groups = '{' >> id2group >> *(qi::lit(',') >> id2group) >> '}';
 
-        // Discard '"'
+        // Rules for parsing paths. Discard '"'
+        path %= lexeme[+(char_ - '"')];
         q_path = qi::omit[*char_('"')] >> path >> qi::omit[*char_('"')];
 
+        // Grammar for parsing configuration file
         entry %=
-          lit("numFrames")   >> '=' >> int_[ph::ref(x.numFrames) = _1]    |
-          lit("preProcType") >> '=' >> int_[ph::ref(x.preProcType) = _1]    |
-          lit("inWidth")     >> '=' >> int_[ph::ref(x.inWidth) = _1]   |
-          lit("inHeight")    >> '=' >> int_[ph::ref(x.inHeight) = _1]  |
-          lit("inNumChannels") >> '=' >> int_[ph::ref(x.inNumChannels) = _1]  |
-
-          lit("inData")     >> "=" >>  q_path[ph::ref(x.inData) = _1]     |
-          lit("outData")    >> "=" >> q_path[ph::ref(x.outData) = _1]     |
-          lit("netBinFile") >> "=" >> q_path[ph::ref(x.netBinFile) = _1]  |
-
-          lit("paramsBinFile") >> "=" >> q_path[ph::ref(x.paramsBinFile) = _1]
-          ;
+         lit("layerIndex2LayerGroupId") >> '=' >>
+                        id2groups[ph::ref(x.layerIndex2LayerGroupId) = _1]    |
+         lit("#")             >>  *(char_) /* discard comments */             |
+         lit("numFrames")     >> '=' >> int_[ph::ref(x.numFrames) = _1]       |
+         lit("preProcType")   >> '=' >> int_[ph::ref(x.preProcType) = _1]     |
+         lit("inWidth")       >> '=' >> int_[ph::ref(x.inWidth) = _1]         |
+         lit("inHeight")      >> '=' >> int_[ph::ref(x.inHeight) = _1]        |
+         lit("inNumChannels") >> '=' >> int_[ph::ref(x.inNumChannels) = _1]   |
+         lit("inData")        >> '=' >> q_path[ph::ref(x.inData) = _1]        |
+         lit("outData")       >> '=' >> q_path[ph::ref(x.outData) = _1]       |
+         lit("netBinFile")    >> '=' >> q_path[ph::ref(x.netBinFile) = _1]    |
+         lit("paramsBinFile") >> '=' >> q_path[ph::ref(x.paramsBinFile) = _1] |
+         lit("enableTrace")   >> '=' >> bool_[ph::ref(x.enableOutputTrace)= _1]
+         ;
     }
 
     qi::rule<Iterator, std::string(), ascii::space_type> path;
     qi::rule<Iterator, std::string(), ascii::space_type> q_path;
     qi::rule<Iterator, ascii::space_type> entry;
+
+    qi::rule<Iterator, std::pair<int, int>(), ascii::space_type> id2group;
+    qi::rule<Iterator, std::map<int, int>(), ascii::space_type> id2groups;
 };
 
 bool Configuration::ReadFromFile(const std::string &file_name)
@@ -92,13 +106,22 @@ bool Configuration::ReadFromFile(const std::string &file_name)
 
     bool result = true;
 
+    int line_num = 0;
     while (getline(IFS, str))
     {
+        line_num++;
+
+        // Skip lines with whitespace
+        auto f = [](unsigned char const c) { return std::isspace(c); };
+        if (std::all_of(str.begin(),str.end(), f))
+            continue;
+
         result = phrase_parse(str.cbegin(), str.cend(), G, ascii::space);
 
         if (!result)
         {
-            std::cout << "Parsing failed at: " << str << std::endl;
+            std::cout << "Parsing failed on line " << line_num
+                      << ": " << str << std::endl;
             break;
         }
     }
@@ -115,3 +138,33 @@ bool Configuration::ReadFromFile(const std::string &file_name)
 
     return true;
 }
+
+#if 0
+--- test.cfg ---
+numFrames     = 1
+preProcType   = 0
+inData        = ../test/testvecs/input/preproc_0_224x224.y
+outData       = stats_tool_out.bin
+netBinFile    = ../test/testvecs/config/tidl_models/tidl_net_imagenet_jacintonet11v2.bin
+paramsBinFile = ../test/testvecs/config/tidl_models/tidl_param_imagenet_jacintonet11v2.bin
+inWidth       = 224
+inHeight      = 224
+inNumChannels = 3
+
+# Enable tracing of output buffers
+enableTrace = true
+
+# Override layer group id assignments in the network
+layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} }
+----------------
+#endif
+
+#if TEST_PARSING
+int main()
+{
+    Configuration c;
+    c.ReadFromFile("test.cfg");
+
+    return 0;
+}
+#endif

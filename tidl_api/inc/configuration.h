@@ -31,13 +31,20 @@
 //! @file configuration.h
 
 #include <string>
+#include <map>
 #include <iostream>
 
 namespace tidl {
 
 /*! @class Configuration
     @brief Specifies the configuration required for a network
+
+    The Configuration object is used to specify various parameters required
+    for network execution. Applications can directly initialize fields in an
+    instance of Configuration or use the ReadFromFile method to read the
+    configuration from a file.
 */
+
 class Configuration
 {
   public:
@@ -45,14 +52,17 @@ class Configuration
     //! Number of frames of input data (can be 0 if data is not read from file)
     int     numFrames;
 
-    //! Height of the input frame
+    //! Height of the input image. Used by the API, must be specified.
     int     inHeight;
 
-    //! Width of the input frame
+    //! Width of the input image. Used by the API, must be specified.
     int     inWidth;
 
     //! Number of channels in the input frame (e.g. 3 for BGR)
+    //! Used by the API, must be specified.
     int     inNumChannels;
+
+    //! @private
     int     noZeroCoeffsPercentage;
 
     //! Pre-processing type applied to the input frame
@@ -60,31 +70,60 @@ class Configuration
     int     preProcType;
 
     //! Force to run all layers, regardless of layersGroupId partitioning
-    int     runFullNet;
+    bool    runFullNet;
 
     //! When set, inputs are taken from TIDL internal buffers that contain
     //! outputs of previous layersGroupId, instead of from user application
-    int     enableInternalInput;
+    bool     enableInternalInput;
 
-    //! Size of the TI DL per Execution Object heap
-    size_t EXTMEM_HEAP_SIZE;
+    //! @brief Size of the device side network heap
+    //! This heap is used for allocating memory required to
+    //! run the network on the device. One per Execution Object.
+    size_t NETWORK_HEAP_SIZE;
 
-    //! Size of the heap used for paramter data
+    //! @brief Size of the device side heap used for parameter data.
+    //! The size depends on the size of the parameter binary file. The
+    //! constructor for ``Configuration`` sets PARAM_HEAP_SIZE to 9MB.
+    //! There is one parameter heap for each instance of ``Executor`` .
     size_t PARAM_HEAP_SIZE;
 
-    //! @brief Location of the input file
-    //! Can be empty if input data is provided by frameworks such as OpenCV.
+    //! @brief Path to the input image file.
+    //! This field is not used by the TIDL API itself. It can be used by
+    //! applications to load an input image into a buffer. Can be empty if
+    //! the application uses frameworks such as OpenCV to read images. Refer
+    //! examples/test/main.cpp for usage.
     std::string inData;
 
-    //! Location of the output file
-    //! Can be empty if output data is consumed by frameworks such as OpenCV.
+    //! @brief Path to the output image file.
+    //! This field is not used by the TIDL API itself. It can be used by
+    //! applications to specify a name for the output file. Can be empty
+    //! if the application uses frameworks such as OpenCV to read images.
+    //! Refer examples/test/main.cpp for usage.
     std::string outData;
 
-    //! Path to the TIDL network binary file
+    //! Path to the TIDL network binary file.
+    //! Used by the API, must be specified.
     std::string netBinFile;
 
     //! Path to the TIDL parameter binary file
+    //! Used by the API, must be specified.
     std::string paramsBinFile;
+
+    //! Map of layer index to layer group id. Used to override layer group
+    //! assigment for layers. Any layer not specified in this map will
+    //! retain its existing mapping.
+    std::map<int, int> layerIndex2LayerGroupId;
+
+    //! Enable tracing of output buffers associated with each layer
+    bool enableOutputTrace;
+
+    //! Debug - Generates a trace of host and device function calls
+    bool enableApiTrace;
+
+    //! Debug - Shows total size of PARAM and NETWORK heaps. Also shows bytes
+    //! available after all allocations. Can be used to adjust the heap
+    //! size.
+    bool showHeapStats;
 
     //! Default constructor.
     Configuration();
@@ -92,11 +131,12 @@ class Configuration
     //! Validate the fields in the configuration object
     bool Validate() const;
 
-    //! Print the configuration
+    //! Debug - Print the configuration.
     void Print(std::ostream& os = std::cout) const;
 
     //! Read a configuration from the specified file and validate
     bool ReadFromFile(const std::string& file_name);
+
 };
 
 }

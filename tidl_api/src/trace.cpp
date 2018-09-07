@@ -28,16 +28,14 @@
 
 
 #include "trace.h"
+#include "custom.h"
 
 using namespace tidl;
 
-
-#if defined(OA_ENABLE_TRACE)
-extern bool __attribute__((weak)) __TI_show_debug_;
+bool TRACE::enabled = false;
 
 void TRACE::print(const char *fmt, ...)
 {
-    bool enabled = (&__TI_show_debug_ ? __TI_show_debug_ : false);
     if (!enabled)
         return;
 
@@ -47,5 +45,11 @@ void TRACE::print(const char *fmt, ...)
     va_end(ap);
     std::fflush(stdout);
 }
-#endif
 
+void tidl::EnableExecutionTrace(const Configuration& config,
+                                uint32_t* enableDeviceTrace)
+{
+    if (config.showHeapStats)       *enableDeviceTrace = OCL_TIDL_TRACE_HEAP;
+    else if (config.enableApiTrace) *enableDeviceTrace = OCL_TIDL_TRACE_API;
+    else                            *enableDeviceTrace = OCL_TIDL_TRACE_OFF;
+}

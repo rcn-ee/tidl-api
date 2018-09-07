@@ -41,9 +41,15 @@ using std::unique_ptr;
 Executor::Executor(DeviceType core_type, const DeviceIds& ids,
                    const Configuration& configuration, int layers_group_id)
 {
+    TRACE::enabled = configuration.enableApiTrace;
+
+    TRACE::print("-> Executor::Executor()\n");
+
     pimpl_m = unique_ptr<ExecutorImpl>
               { new ExecutorImpl(core_type, ids, layers_group_id) };
     pimpl_m->Initialize(configuration);
+
+    TRACE::print("<- Executor::Executor()\n");
 }
 
 
@@ -96,6 +102,17 @@ const ExecutionObjects& Executor::GetExecutionObjects() const
     return pimpl_m->execution_objects_m;
 }
 
+ExecutionObject* Executor::operator[](uint32_t index) const
+{
+    assert(index < pimpl_m->execution_objects_m.size());
+    return pimpl_m->execution_objects_m[index].get();
+}
+
+uint32_t Executor::GetNumExecutionObjects() const
+{
+    return pimpl_m->execution_objects_m.size();
+}
+
 bool ExecutorImpl::Initialize(const Configuration& configuration)
 {
     configuration_m = configuration;
@@ -104,7 +121,7 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
     up_malloc_ddr<TIDL_CreateParams> shared_createparam(
                                             malloc_ddr<TIDL_CreateParams>(),
                                             &__free_ddr);
-    InitializeNetworkCreateParam(shared_createparam.get(), configuration);
+    InitializeNetworkCreateParam(shared_createparam.get());
 
     // Read network from file into network struct in TIDL_CreateParams
     sTIDL_Network_t *net = &(shared_createparam.get())->net;
@@ -114,15 +131,20 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
                              sizeof(sTIDL_Network_t));
     assert(status != false);
 
-    //TODO: Why is this set here?
-    net->interElementSize = 4;
-
     // Force to run full network if runFullNet is set
     if (configuration.runFullNet)
     {
         for (int i = 0; i < net->numLayers; i++)
             if (net->TIDLLayers[i].layerType != TIDL_DataLayer)
                 net->TIDLLayers[i].layersGroupId = layers_group_id_m;
+    }
+
+    // If the user has specified an override mapping, apply it
+    else if (!configuration.layerIndex2LayerGroupId.empty())
+    {
+        for (const auto &item : configuration.layerIndex2LayerGroupId)
+            if (item.first < net->numLayers)
+                net->TIDLLayers[item.first].layersGroupId = item.second;
     }
 
     // Call a setup kernel to allocate and fill network parameters
@@ -139,8 +161,8 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
              unique_ptr<ExecutionObject>
              {new ExecutionObject(device_m.get(), index,
                                   create_arg, param_heap_arg,
-                                  configuration_m.EXTMEM_HEAP_SIZE,
-                                  configuration_m.enableInternalInput)} );
+                                  configuration_m,
+                                  layers_group_id_m)} );
     }
 
     for (auto &eo : execution_objects_m)
@@ -173,7 +195,9 @@ bool ExecutorImpl::InitializeNetworkParams(TIDL_CreateParams *cp)
                                             malloc_ddr<OCL_TIDL_SetupParams>(),
                                             &__free_ddr);
 
-    setupParams->enableTrace = OCL_TIDL_TRACE_OFF;
+    // Set up execution trace specified in the configuration
+    EnableExecutionTrace(configuration_m, &setupParams->enableTrace);
+
     setupParams->networkParamHeapSize = configuration_m.PARAM_HEAP_SIZE;
     setupParams->noZeroCoeffsPercentage = configuration_m.noZeroCoeffsPercentage;
     setupParams->sizeofTIDL_CreateParams = sizeof(TIDL_CreateParams);
@@ -183,12 +207,16 @@ bool ExecutorImpl::InitializeNetworkParams(TIDL_CreateParams *cp)
     // kernel to allocate and initialize network parameters for the layers
     shared_networkparam_heap_m.reset(malloc_ddr<char>(setupParams->networkParamHeapSize));
 
-    KernelArgs args = { ArgInfo(cp, sizeof(TIDL_CreateParams)),
-                        ArgInfo(networkparam.get(), networkparam_size),
-                        ArgInfo(shared_networkparam_heap_m.get(),
-                                setupParams->networkParamHeapSize),
-                        ArgInfo(setupParams.get(),
-                                sizeof(OCL_TIDL_SetupParams)) };
+    KernelArgs args = { DeviceArgInfo(cp, sizeof(TIDL_CreateParams),
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(networkparam.get(), networkparam_size,
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(shared_networkparam_heap_m.get(),
+                                      setupParams->networkParamHeapSize,
+                                      DeviceArgInfo::Kind::BUFFER),
+                        DeviceArgInfo(setupParams.get(),
+                                      sizeof(OCL_TIDL_SetupParams),
+                                      DeviceArgInfo::Kind::BUFFER) };
 
     // Execute kernel on first available device in the Executor
     uint8_t id = static_cast<uint8_t>(*(device_ids_m.cbegin()));
@@ -215,8 +243,7 @@ void ExecutorImpl::Cleanup()
 }
 
 
-void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
-                                          const Configuration& configuration)
+void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP)
 {
     CP->currCoreId           = layers_group_id_m;
     CP->currLayersGroupId    = layers_group_id_m;
@@ -227,7 +254,14 @@ void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
     CP->quantHistoryParam1   = tidl::internal::QUANT_HISTORY_PARAM1;
     CP->quantHistoryParam2   = tidl::internal::QUANT_HISTORY_PARAM2;
     CP->quantMargin          = tidl::internal::QUANT_MARGIN;
-    CP->optimiseExtMem       = TIDL_optimiseExtMemL1;
+
+    // If trace is enabled, setup the device TIDL library to allocate separate
+    // output buffers for each layer. This makes it possible for the host
+    // to access the output of each layer after a frame is processed.
+    if (configuration_m.enableOutputTrace)
+        CP->optimiseExtMem       = TIDL_optimiseExtMemL0;
+    else
+        CP->optimiseExtMem       = TIDL_optimiseExtMemL1;
 }
 
 Exception::Exception(const std::string& error, const std::string& file,
@@ -244,6 +278,7 @@ Exception::Exception(const std::string& error, const std::string& file,
     message_m += error;
 }
 
+// Refer ti-opencl/builtins/include/custom.h for error codes
 Exception::Exception(int32_t errorCode, const std::string& file,
                      const std::string& func, uint32_t line_no)
 {
@@ -255,24 +290,31 @@ Exception::Exception(int32_t errorCode, const std::string& file,
     message_m += std::to_string(line_no);
     message_m += "]: ";
 
-    if (errorCode == OCL_TIDL_ERROR)
+    switch (errorCode)
+    {
+        case OCL_TIDL_ERROR:
         message_m += "";
-    else if (errorCode == OCL_TIDL_ALLOC_FAIL)
-        message_m += "Allocation failed on device";
-    else if (errorCode == OCL_TIDL_MEMREC_ALLOC_FAIL)
-        message_m += "Memrec allocation failed on device";
-    else if (errorCode == OCL_TIDL_PROCESS_FAIL)
+            break;
+        case OCL_TIDL_ALLOC_FAIL:
+        case OCL_TIDL_MEMREC_ALLOC_FAIL:
+            message_m += "Memory allocation failed on device";
+            break;
+        case OCL_TIDL_PROCESS_FAIL:
         message_m += "Process call failed on device";
-    else if (errorCode == OCL_TIDL_CREATE_PARAMS_MISMATCH)
-        message_m += "TIDL_CreateParams definition inconsistent across host"
-                     "and device.";
-    else
+            break;
+        case OCL_TIDL_CREATE_PARAMS_MISMATCH:
+            message_m += "TIDL API headers inconsistent with OpenCL";
+            break;
+        case OCL_TIDL_INIT_FAIL:
+            message_m += "Initialization failed on device";
+            break;
+        default:
         message_m += std::to_string(errorCode);
-
+            break;
+    }
 }
 
 const char* Exception::what() const noexcept
 {
     return message_m.c_str();
 }
-

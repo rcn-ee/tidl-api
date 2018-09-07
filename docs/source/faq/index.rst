@@ -6,3 +6,4 @@ Frequently Asked Questions
    :maxdepth: 2
 
    out_of_memory
+   building
