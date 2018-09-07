@@ -230,7 +230,7 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
             for(int i = 0; i < 3; i ++)
                 selclass_history[k][i] = -1;
         avg_fps = 0.0;
-        int num_frames = 999999;
+        int num_frames = configuration.numFrames;
         std::cout << "About to start ProcessFrame loop!!" << std::endl;
  
         // Process frames with available EOPs in a pipelined manner
@@ -607,8 +607,6 @@ void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
 
 #ifdef LIVE_DISPLAY
     cv::imshow(imagenet_win, show_image);
-#endif
-
 #endif
 
 #ifdef RMT_GST_STREAMER
