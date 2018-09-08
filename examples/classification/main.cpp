@@ -43,11 +43,13 @@
 #include "execution_object.h"
 #include "execution_object_pipeline.h"
 #include "configuration.h"
+#include "avg_fps_window.h"
 
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
 #include "opencv2/highgui.hpp"
 #include "opencv2/videoio.hpp"
+
 
 //#define TWO_ROIs
 #define LIVE_DISPLAY
@@ -105,7 +107,8 @@ void imagenetCallBackFunc(int event, int x, int y, int flags, void* userdata)
 Mat in_image, image, r_image, cnn_image, show_image, bgr_frames[3];
 Mat to_stream;
 Rect rectCrop[NUM_ROI];
-double avg_fps;
+// Report average FPS across a sliding window of 16 frames
+AvgFPSWindow fps_window(16);
 
 static int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id);
 static void tf_preprocess(uchar *out, uchar *in, int size);
@@ -229,7 +232,6 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
         for (int k = 0; k < NUM_ROI; k++)
             for(int i = 0; i < 3; i ++)
                 selclass_history[k][i] = -1;
-        avg_fps = 0.0;
         int num_frames = configuration.numFrames;
         std::cout << "About to start ProcessFrame loop!!" << std::endl;
  
@@ -249,6 +251,7 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
                  DisplayFrame(eop, writer, frame_idx, num_eops,
                               num_eves, num_dsps);
             }
+            fps_window.Tick();
 
             if (ReadFrame(eop, frame_idx, num_frames, cap, writer))
                 eop->ProcessFrameStartAsync();
@@ -289,6 +292,7 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
         ids_eve.insert(static_cast<DeviceId>(i));
     for (uint32_t i = 0; i < num_dsps; i++)
         ids_dsp.insert(static_cast<DeviceId>(i));
+    const uint32_t buffer_factor = 2;
 
     switch(num_layers_groups)
     {
@@ -301,10 +305,15 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
         // Construct ExecutionObjectPipeline with single Execution Object to
         // process each frame. This is parallel processing of frames with
         // as many DSP and EVE cores that we have on hand.
-        for (uint32_t i = 0; i < num_eves; i++)
-            eops.push_back(new ExecutionObjectPipeline({(*e_eve)[i]}));
-        for (uint32_t i = 0; i < num_dsps; i++)
-            eops.push_back(new ExecutionObjectPipeline({(*e_dsp)[i]}));
+        // If buffer_factor == 2, duplicating EOPs for double buffering
+        // and overlapping host pre/post-processing with device processing
+        for (uint32_t j = 0; j < buffer_factor; j++)
+        {
+            for (uint32_t i = 0; i < num_eves; i++)
+                eops.push_back(new ExecutionObjectPipeline({(*e_eve)[i]}));
+            for (uint32_t i = 0; i < num_dsps; i++)
+                eops.push_back(new ExecutionObjectPipeline({(*e_dsp)[i]}));
+        }
         break;
 
     case 2: // Two layers group
@@ -324,9 +333,15 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
         // Construct ExecutionObjectPipeline that utilizes multiple
         // ExecutionObjects to process a single frame, each ExecutionObject
         // processes one layerGroup of the network
-        for (uint32_t i = 0; i < std::max(num_eves, num_dsps); i++)
-            eops.push_back(new ExecutionObjectPipeline({(*e_eve)[i%num_eves],
-                                                        (*e_dsp)[i%num_dsps]}));
+        // If buffer_factor == 2, duplicating EOPs for pipelining at
+        // EO level rather than at EOP level, in addition to double buffering
+        // and overlapping host pre/post-processing with device processing
+        for (uint32_t j = 0; j < buffer_factor; j++)
+        {
+            for (uint32_t i = 0; i < std::max(num_eves, num_dsps); i++)
+                eops.push_back(new ExecutionObjectPipeline(
+                                {(*e_eve)[i%num_eves], (*e_dsp)[i%num_dsps]}));
+        }
         break;
 
     default:
@@ -585,10 +600,8 @@ void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
                            selected_items[k] == rpt_id ? cv::Scalar(0,0,255) :
                                                 cv::Scalar(255,255,255), 1, 8);
             }
-            double elapsed_host = eop->GetHostProcessTimeInMilliSeconds();
-            /* Exponential averaging */
-            avg_fps = 0.1 * ((double)num_eops * 1000.0 /
-                             ((double)NUM_ROI * elapsed_host)) + 0.9 * avg_fps;
+
+            double avg_fps = fps_window.UpdateAvgFPS();
             sprintf(tmp_classwindow_string, "FPS:%5.2lf", avg_fps );
 
 #ifdef PERF_VERBOSE
