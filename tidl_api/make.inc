@@ -54,6 +54,13 @@
 # - TI_OCL_CGT_INSTALL : TI C6x CGT installation directory if not system package
 #
 # ------------------------------------------------------------------------------
+#
+# PYBIND11_INC_DIR : Path to pybind11 include files used to generate Python
+#                    bindings for TIDL API. E.g. pybind11.git/include
+#
+# ------------------------------------------------------------------------------
+
+PYBIND11_INC_DIR ?= pybind11/include
 
 ifeq ($(MAKECMDGOALS),clean)
     # config not required for clean

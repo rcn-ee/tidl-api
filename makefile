@@ -71,6 +71,9 @@ install-examples: build-examples
 build-viewer:
 	$(MAKE) TARGET=$(VIEWER_TARGET) -C viewer
 
+build-python-so:
+	$(MAKE) -C tidl_api tidl.so
+
 clean:
 	$(MAKE) -C tidl_api	clean
 	$(MAKE) -C examples	clean

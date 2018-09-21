@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 # Copyright (c) 2018 Texas Instruments Incorporated - http://www.ti.com/
 # All rights reserved.
 #
@@ -24,16 +26,53 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-MAJOR_VER=1
-MINOR_VER=2
-PATCH_VER=0
 
-ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
-BUILD_SHA?=$(shell git rev-parse --short HEAD)
-endif
+from tidl import DeviceId
+from tidl import DeviceType
+from tidl import Configuration
+from tidl import Executor
+from tidl import TidlError
 
-.PHONY: $(BUILD_ID)
-BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
-                awk '{ printf ("%02d.%02d.%02d", $(MAJOR_VER), \
-                $(MINOR_VER), $(PATCH_VER)); }') \
-			-D_BUILD_SHA=$(BUILD_SHA)
+import tidl
+
+def read_frame(eo, frame_index, c, f):
+    """Read a frame into the ExecutionObject input buffer"""
+
+    if (frame_index >= c.num_frames):
+        return False
+
+    # Read into the EO's input buffer
+    arg_info = eo.get_input_buffer()
+    bytes_read = f.readinto(arg_info)
+
+    if (bytes_read != arg_info.size()):
+        print("Expected {} bytes, read {}".format(size, bytes_read))
+        return False
+
+    if (len(f.peek(1)) == 0):
+        f.seek(0)
+
+    eo.set_frame_index(frame_index)
+
+    return True
+
+def write_output(eo, f):
+    """Write the output buffer to file"""
+
+    arg_info = eo.get_output_buffer()
+    f.write(arg_info)
+
+def report_time(eo):
+    """Report execution time on host and device"""
+
+    elapsed_host   = eo.get_host_process_time_in_ms()
+    elapsed_device = eo.get_process_time_in_ms()
+    overhead = elapsed_host - elapsed_device
+
+    # https://pyformat.info/
+    print('frame{:3d}: Time on {}: {:4.2f} ms, host: {:4.2f} ms '
+          'API overhead: {:2.2f} ms'.format(eo.get_frame_index(),
+                                           eo.get_device_name(),
+                                           elapsed_device,
+                                           elapsed_host,
+                                           overhead))

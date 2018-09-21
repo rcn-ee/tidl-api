@@ -28,6 +28,7 @@ LIB_NAME = tidl_api.a
 DSP_SRCFILE = dsp/ocl_wrapper.cl
 DSP_OUTFILE = dsp/ocl_wrapper.dsp_h
 LIB_IMGUTIL_NAME = tidl_imgutil.a
+PY_LIB_NAME = tidl.so
 
 all: $(LIB_NAME) $(LIB_IMGUTIL_NAME)
 
@@ -40,16 +41,18 @@ AR = ar
 
 SRCS = ocl_device.cpp configuration_parser.cpp configuration.cpp\
 	   executor.cpp execution_object.cpp trace.cpp util.cpp \
-           execution_object_pipeline.cpp
+       execution_object_pipeline.cpp
 SRCS_IMGUTIL = imgutil.cpp
+SRCS_PYBIND  = pybind_eo.cpp pybind_eop.cpp pybind_executor.cpp \
+			   pybind_configuration.cpp pybind_helpers.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 OBJS_IMGUTIL = $(SRCS_IMGUTIL:.cpp=.o)
+OBJS_PYBIND  = $(SRCS_PYBIND:.cpp=.o)
 
-HOST_SRC_FILES = $(addprefix src/,$(SRCS))
-HOST_OBJ_FILES = $(addprefix obj/,$(OBJS))
-HOST_SRC_IMGUTIL_FILES = $(addprefix src/,$(SRCS_IMGUTIL))
+HOST_OBJ_FILES         = $(addprefix obj/,$(OBJS))
 HOST_OBJ_IMGUTIL_FILES = $(addprefix obj/,$(OBJS_IMGUTIL))
+HOST_OBJ_PYBIND_FILES  = $(addprefix obj/,$(OBJS_PYBIND))
 
 HEADERS  = src/common_defines.h src/executor_impl.h src/ocl_device.h
 HEADERS += src/parameters.h src/tidl_create_params.h src/trace.h src/util.h
@@ -63,16 +66,24 @@ else
 endif
 
 CXXFLAGS += -std=c++11 -Wall -Werror -Wno-error=ignored-attributes
+CXXFLAGS += -fPIC
 CXXFLAGS += -I$(TI_OCL_INSTALL)/usr/share/ti/opencl
 CXXFLAGS += -I$(TARGET_ROOTDIR)/usr/share/ti/opencl
 CXXFLAGS += -Isrc -Iinc
 CXXFLAGS += $(BUILD_ID)
+PY_INCLUDE = -I$(TARGET_ROOTDIR)/usr/include/python3.5m -I$(PYBIND11_INC_DIR)
 
 $(DSP_OUTFILE): $(DSP_SRCFILE)
 	$(MAKE) -C dsp
 
 src/ocl_device.cpp: $(DSP_OUTFILE)
 	touch $@
+
+$(HOST_OBJ_PYBIND_FILES): obj/%.o: src/%.cpp $(HEADERS) src/pybind_common.h
+	@mkdir -p obj
+	@echo Compiling pybind $< ...
+	$(CXX) -c $(PY_INCLUDE) $(CXXFLAGS) $< -o $@
+
 
 obj/%.o: src/%.cpp $(HEADERS)
 	@mkdir -p obj
@@ -82,13 +93,15 @@ obj/%.o: src/%.cpp $(HEADERS)
 $(LIB_NAME): $(HOST_OBJ_FILES)
 	$(AR) cr $@ $(HOST_OBJ_FILES)
 
+$(PY_LIB_NAME): $(HOST_OBJ_PYBIND_FILES) $(LIB_NAME)
+	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lOpenCL -locl_util $^ -o $@
 
 $(LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
 	$(AR) cr $@ $(HOST_OBJ_IMGUTIL_FILES)
 
 clean::
 	$(MAKE) -C dsp clean
-	$(RM) -f $(LIB_NAME) $(HOST_OBJ_FILES)
+	$(RM) -f $(LIB_NAME) $(PY_LIB_NAME) $(HOST_OBJ_FILES)
 	$(RM) -f $(LIB_IMGUTIL_NAME) $(HOST_OBJ_IMGUTIL_FILES)
 	$(RM) -rf obj
 
