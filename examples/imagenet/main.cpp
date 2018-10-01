@@ -55,7 +55,6 @@
 
 using namespace std;
 using namespace tidl;
-using namespace tidl::imgutil;
 using namespace cv;
 
 #define NUM_VIDEO_FRAMES  300
@@ -282,8 +281,7 @@ bool ReadFrame(ExecutionObjectPipeline &eop,
     }
 
     // TI DL image preprocessing, into frame_buffer
-    return PreProcImage(image, frame_buffer, 1, 3, c.inWidth, c.inHeight,
-                        c.inWidth, c.inWidth * c.inHeight, 1, c.preProcType);
+    return imgutil::PreprocessImage(image, frame_buffer, c);
 }
 
 // Display top 5 classified imagenet classes with probabilities
