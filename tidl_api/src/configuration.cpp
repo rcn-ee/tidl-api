@@ -39,7 +39,6 @@ Configuration::Configuration(): numFrames(0), inHeight(0), inWidth(0),
                      noZeroCoeffsPercentage(100),
                      preProcType(0),
                      runFullNet(false),
-                     enableInternalInput(false),
                      NETWORK_HEAP_SIZE(64 << 20),  // 64MB for inceptionNetv1
                      PARAM_HEAP_SIZE(9 << 20),    // 9MB for mobileNet1
                      enableOutputTrace(false),
@@ -55,7 +54,6 @@ void Configuration::Print(std::ostream &os) const
                            << inHeight << "x" << inNumChannels
        << "\nPreProcType              " << preProcType
        << "\nRunFullNet               " << runFullNet
-       << "\nEnableInternalInput      " << enableInternalInput
        << "\nInputFile                " << inData
        << "\nOutputFile               " << outData
        << "\nNetwork                  " << netBinFile

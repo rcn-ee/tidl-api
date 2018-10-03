@@ -96,12 +96,6 @@ ExecutorImpl::ExecutorImpl(DeviceType core_type, const DeviceIds& ids,
     device_m = Device::Create(core_type_m, ids, name);
 }
 
-
-const ExecutionObjects& Executor::GetExecutionObjects() const
-{
-    return pimpl_m->execution_objects_m;
-}
-
 ExecutionObject* Executor::operator[](uint32_t index) const
 {
     assert(index < pimpl_m->execution_objects_m.size());

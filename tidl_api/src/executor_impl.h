@@ -44,6 +44,7 @@
 
 namespace tidl {
 
+typedef std::vector<std::unique_ptr<ExecutionObject>> ExecutionObjects;
 
 // One instance across all devices available in the context
 // Also need this to work in host emulation mode
@@ -55,9 +56,6 @@ class ExecutorImpl
         ~ExecutorImpl() { Cleanup(); }
 
         bool Initialize(const Configuration& configuration);
-
-        ExecutionObjects& GetExecutionObjects()
-        { return execution_objects_m; }
 
         ExecutorImpl(const ExecutorImpl&)            = delete;
         ExecutorImpl& operator=(const ExecutorImpl&) = delete;

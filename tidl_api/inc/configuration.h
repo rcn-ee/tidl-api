@@ -72,11 +72,6 @@ class Configuration
     //! Force to run all layers, regardless of layersGroupId partitioning
     bool    runFullNet;
 
-    //! Deprecated, do not use.
-    //! When set, inputs are taken from TIDL internal buffers that contain
-    //! outputs of previous layersGroupId, instead of from user application
-    bool     enableInternalInput;
-
     //! @brief Size of the device side network heap
     //! This heap is used for allocating memory required to
     //! run the network on the device. One per Execution Object.

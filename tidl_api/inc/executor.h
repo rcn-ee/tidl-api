@@ -60,9 +60,6 @@ typedef std::set<DeviceId> DeviceIds;
 class ExecutorImpl;
 class ExecutionObject;
 
-//! Defines the return type for Executor::GetExecutionObjects
-typedef std::vector<std::unique_ptr<ExecutionObject>> ExecutionObjects;
-
 /*! @class Executor
     @brief Manages the overall execution of a layersGroup in a network using the
     specified configuration and the set of devices available to the
@@ -93,10 +90,6 @@ class Executor
         //! @brief Tear down an Executor and free resources used by the
         //! Executor object
         ~Executor();
-
-        //! Returns a vector of unique_ptr's to execution objects
-        //! available on this instance of the Executor
-        const ExecutionObjects& GetExecutionObjects() const;
 
         //! Returns a single execution object at index
         ExecutionObject* operator[](uint32_t index) const;

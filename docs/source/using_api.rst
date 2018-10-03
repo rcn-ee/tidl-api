@@ -189,6 +189,8 @@ The only change in the code compared to :ref:`use-case-2` is to create an additi
 
 The complete example is available at ``/usr/share/ti/tidl/examples/two_eo_per_frame_opt/main.cpp``.
 
+.. _sizing_device_heaps:
+
 Sizing device side heaps
 ++++++++++++++++++++++++
 
@@ -254,6 +256,9 @@ and the ``configuration.showHeapStats = true`` line can be removed.
 
     The memory for parameter and network heaps is itself allocated from OpenCL global memory (CMEM). Refer :ref:`opencl-global-memory` for details.
 
+
+
+.. _network_layer_output:
 
 Accessing outputs of network layers
 +++++++++++++++++++++++++++++++++++

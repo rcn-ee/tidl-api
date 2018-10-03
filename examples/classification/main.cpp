@@ -111,26 +111,22 @@ Rect rectCrop[NUM_ROI];
 AvgFPSWindow fps_window(16);
 
 static int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id);
-static void tf_preprocess(uchar *out, uchar *in, int size);
 static int ShowRegion(int roi_history[]);
 // from most recent to oldest at top indices
 static int selclass_history[MAX_NUM_ROI][3];
 
-bool __TI_show_debug_ = false;
-
 bool RunConfiguration(const std::string& config_file, int num_layers_groups,
                       uint32_t num_dsps, uint32_t num_eves);
 bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
-                                    Configuration& configuration, 
+                                    Configuration& configuration,
                                     uint32_t num_layers_groups,
                                     Executor*& e_eve, Executor*& e_dsp,
                                   std::vector<ExecutionObjectPipeline*>& eops);
 void AllocateMemory(const std::vector<ExecutionObjectPipeline*>& eops);
 void SetupLiveDisplay(uint32_t num_eves, uint32_t num_dsps);
 bool SetupInput(VideoCapture& cap, VideoWriter& writer);
-bool ReadFrame(ExecutionObjectPipeline* eop,
-               uint32_t frame_idx, uint32_t num_frames,
-               VideoCapture &cap, VideoWriter& writer);
+bool ReadFrame(ExecutionObjectPipeline* eop, const Configuration& c,
+               int frame_idx, VideoCapture &cap, VideoWriter& writer);
 void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
                   uint32_t frame_idx, uint32_t num_eops,
                   uint32_t num_eves, uint32_t num_dsps);
@@ -148,6 +144,7 @@ extern int selected_items[];
 extern int populate_selected_items (char *filename);
 extern void populate_labels (char *filename);
 
+bool verbose = false;
 
 int main(int argc, char *argv[])
 {
@@ -191,30 +188,21 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
 
     // Read the TI DL configuration file
     Configuration configuration;
-    bool status = configuration.ReadFromFile(config_file);
-    if (!status)
-    {
-        std::cerr << "Error in configuration file: " << config_file
-                  << std::endl;
+    if (!configuration.ReadFromFile(config_file))
         return false;
-    }
 
-    std::ifstream input_data_file(configuration.inData, std::ios::binary);
-    std::ofstream output_data_file(configuration.outData, std::ios::binary);
-    assert (input_data_file.good());
-    assert (output_data_file.good());
-
+    if (verbose)
+        configuration.enableApiTrace = true;
 
     try
     {
         // Create ExecutionObjectPipelines
-        Executor *e_eve = NULL;
-        Executor *e_dsp = NULL;
+        Executor *e_eve = nullptr;
+        Executor *e_dsp = nullptr;
         std::vector<ExecutionObjectPipeline *> eops;
         if (! CreateExecutionObjectPipelines(num_eves, num_dsps, configuration,
                                         num_layers_groups, e_eve, e_dsp, eops))
             return false;
-        uint32_t num_eops = eops.size();
 
         // Allocate input/output memory for each EOP
         AllocateMemory(eops);
@@ -227,17 +215,16 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
         VideoWriter writer;  // gstreamer
         if (! SetupInput(cap, writer))  return false;
 
-
         // More initialization
         for (int k = 0; k < NUM_ROI; k++)
             for(int i = 0; i < 3; i ++)
                 selclass_history[k][i] = -1;
-        int num_frames = configuration.numFrames;
         std::cout << "About to start ProcessFrame loop!!" << std::endl;
- 
+
         // Process frames with available EOPs in a pipelined manner
         // additional num_eops iterations to flush the pipeline (epilogue)
-        for (uint32_t frame_idx = 0;
+        int num_eops = eops.size();
+        for (int frame_idx = 0;
              frame_idx < configuration.numFrames + num_eops; frame_idx++)
         {
             ExecutionObjectPipeline* eop = eops[frame_idx % num_eops];
@@ -253,7 +240,7 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
             }
             fps_window.Tick();
 
-            if (ReadFrame(eop, frame_idx, num_frames, cap, writer))
+            if (ReadFrame(eop, configuration, frame_idx, cap, writer))
                 eop->ProcessFrameStartAsync();
         }
 
@@ -264,25 +251,21 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
             free(eop->GetOutputBufferPtr());
             delete eop;
         }
-        if(num_dsps) delete e_dsp;
-        if(num_eves) delete e_eve;
+        if (e_dsp) delete e_dsp;
+        if (e_eve) delete e_eve;
     }
     catch (tidl::Exception &e)
     {
         std::cerr << e.what() << std::endl;
-        status = false;
+        return false;
     }
 
-
-    input_data_file.close();
-    output_data_file.close();
-
-    return status;
+    return true;
 }
 
 
 bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
-                                    Configuration& configuration, 
+                                    Configuration& configuration,
                                     uint32_t num_layers_groups,
                                     Executor*& e_eve, Executor*& e_dsp,
                                     std::vector<ExecutionObjectPipeline*>& eops)
@@ -474,11 +457,11 @@ bool SetupInput(VideoCapture& cap, VideoWriter& writer)
    return true;
 }
 
-bool ReadFrame(ExecutionObjectPipeline* eop,
-               uint32_t frame_idx, uint32_t num_frames,
-               VideoCapture &cap, VideoWriter& writer)
+bool ReadFrame(ExecutionObjectPipeline* eop, const Configuration& c,
+               int frame_idx, VideoCapture &cap, VideoWriter& writer)
 {
-    if (cap.grab() && frame_idx < num_frames)
+
+    if (cap.grab() && frame_idx < c.numFrames)
     {
         if (cap.retrieve(in_image))
         {
@@ -491,8 +474,8 @@ bool ReadFrame(ExecutionObjectPipeline* eop,
 
               cv::resize(in_image(Rect(loc_xmin, loc_ymin, loc_w, loc_h)), image, Size(RES_X, RES_Y));
             } else {
-              if((in_image.size().width != RES_X) || (in_image.size().height != RES_Y)) 
-              {  
+              if((in_image.size().width != RES_X) || (in_image.size().height != RES_Y))
+              {
                 cv::resize(in_image, image, Size(RES_X,RES_Y));
               }
             }
@@ -508,14 +491,15 @@ bool ReadFrame(ExecutionObjectPipeline* eop,
             }
 #endif
                 //Convert from BGR pixel interleaved to BGR plane interleaved!
-            cv::resize(r_image, cnn_image, Size(224,224));
+            cv::resize(r_image, cnn_image, Size(c.inWidth,c.inHeight));
             cv::split(cnn_image, bgr_frames);
-            tf_preprocess((uchar*) eop->GetInputBufferPtr(),
-                          bgr_frames[0].ptr(), 224*224);
-            tf_preprocess((uchar*) eop->GetInputBufferPtr()+224*224,
-                          bgr_frames[1].ptr(), 224*224);
-            tf_preprocess((uchar*) eop->GetInputBufferPtr()+2*224*224,
-                          bgr_frames[2].ptr(), 224*224);
+            int channel_size = c.inWidth * c.inHeight;
+
+            char* ptr = eop->GetInputBufferPtr();
+            memcpy(ptr,                bgr_frames[0].ptr(), channel_size);
+            memcpy(ptr+1*channel_size, bgr_frames[1].ptr(), channel_size);
+            memcpy(ptr+2*channel_size, bgr_frames[2].ptr(), channel_size);
+
             eop->SetFrameIndex(frame_idx);
 
 #ifdef RMT_GST_STREAMER
@@ -690,7 +674,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
                       assert (num_eves >= 0 && num_eves <= 2);
                       break;
 
-            case 'v': __TI_show_debug_ = true;
+            case 'v': verbose = true;
                       break;
 
             case 'h': DisplayHelp();
@@ -784,14 +768,6 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
       }
   }
   return rpt_id;
-}
-
-void tf_preprocess(uchar *out, uchar *in, int size)
-{
-  for (int i = 0; i < size; i++)
-  {
-    out[i] = (uchar) (in[i] /*- 128*/);
-  }
 }
 
 int ShowRegion(int roi_history[])

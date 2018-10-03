@@ -334,8 +334,7 @@ ExecutionObject::Impl::SetupInitializeKernel(const DeviceArgInfo& create_arg,
     shared_initialize_params_m->tidlHeapSize =configuration_m.NETWORK_HEAP_SIZE;
     shared_initialize_params_m->l2HeapSize   = tidl::internal::DMEM1_SIZE;
     shared_initialize_params_m->l1HeapSize   = tidl::internal::DMEM0_SIZE;
-    shared_initialize_params_m->enableInternalInput =
-                   configuration_m.enableInternalInput ? 1 : 0;
+    shared_initialize_params_m->enableInternalInput = 0;
 
     // Set up execution trace specified in the configuration
     EnableExecutionTrace(configuration_m,
