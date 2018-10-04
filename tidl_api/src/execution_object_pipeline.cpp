@@ -32,6 +32,7 @@
 #include <chrono>
 #include "device_arginfo.h"
 #include "execution_object_pipeline.h"
+#include "parameters.h"
 
 using namespace tidl;
 
@@ -63,8 +64,9 @@ class ExecutionObjectPipeline::Impl
         //! current frame index
         int frame_idx_m;
 
-        //! current execution object index
+        //! current execution object index, and it context index
         uint32_t curr_eo_idx_m;
+        uint32_t curr_eo_context_idx_m;
 
         // device and host time tracking: pipeline start to finish
         float device_time_m;
@@ -150,7 +152,7 @@ bool ExecutionObjectPipeline::ProcessFrameStartAsync()
     bool st = pimpl_m->RunAsyncStart();
     if (st)
         st = pimpl_m->eos_m[0]->AddCallback(ExecutionObject::CallType::PROCESS,
-                                            this);
+                                         this, pimpl_m->curr_eo_context_idx_m);
     return st;
 }
 
@@ -169,7 +171,8 @@ void ExecutionObjectPipeline::RunAsyncNext()
     bool has_next = pimpl_m->RunAsyncNext();
     if (has_next)
         pimpl_m->eos_m[pimpl_m->curr_eo_idx_m]->AddCallback(
-                                     ExecutionObject::CallType::PROCESS, this);
+                                     ExecutionObject::CallType::PROCESS, this,
+                                     pimpl_m->curr_eo_context_idx_m);
 }
 
 float ExecutionObjectPipeline::GetProcessTimeInMilliSeconds() const
@@ -306,37 +309,46 @@ bool ExecutionObjectPipeline::Impl::RunAsyncStart()
     device_time_m = 0.0f;
     host_time_m = 0.0f;
     curr_eo_idx_m = 0;
-    eos_m[0]->AcquireLock();
-    start_m = std::chrono::steady_clock::now();
-    eos_m[0]->SetInputOutputBuffer(iobufs_m[0], iobufs_m[1]);
-    return eos_m[0]->ProcessFrameStartAsync();
+    eos_m[0]->AcquireContext(curr_eo_context_idx_m);
+    if (tidl::internal::NUM_CONTEXTS == 1)
+        start_m = std::chrono::steady_clock::now();
+    eos_m[0]->SetFrameIndex(frame_idx_m);
+    eos_m[0]->SetInputOutputBuffer(iobufs_m[0], iobufs_m[1],
+                                   curr_eo_context_idx_m);
+    return eos_m[0]->ProcessFrameStartAsync(curr_eo_context_idx_m);
 }
 
 // returns true if we have more EOs to execute
 bool ExecutionObjectPipeline::Impl::RunAsyncNext()
 {
-    eos_m[curr_eo_idx_m]->ProcessFrameWait();
+    eos_m[curr_eo_idx_m]->ProcessFrameWait(curr_eo_context_idx_m);
     // need to capture EO's device/host time before we release its lock
     eo_device_time_m[curr_eo_idx_m] = eos_m[curr_eo_idx_m]->
-                                                GetProcessTimeInMilliSeconds();
+                           GetProcessTimeInMilliSeconds(curr_eo_context_idx_m);
     eo_host_time_m[curr_eo_idx_m]   = eos_m[curr_eo_idx_m]->
-                                            GetHostProcessTimeInMilliSeconds();
+                       GetHostProcessTimeInMilliSeconds(curr_eo_context_idx_m);
     device_time_m += eo_device_time_m[curr_eo_idx_m];
-    eos_m[curr_eo_idx_m]->ReleaseLock();
+    if (tidl::internal::NUM_CONTEXTS > 1)
+        host_time_m += eo_host_time_m[curr_eo_idx_m];
+    eos_m[curr_eo_idx_m]->ReleaseContext(curr_eo_context_idx_m);
     curr_eo_idx_m += 1;
     if (curr_eo_idx_m < eos_m.size())
     {
-        eos_m[curr_eo_idx_m]->AcquireLock();
+        eos_m[curr_eo_idx_m]->AcquireContext(curr_eo_context_idx_m);
+        eos_m[curr_eo_idx_m]->SetFrameIndex(frame_idx_m);
         eos_m[curr_eo_idx_m]->SetInputOutputBuffer(iobufs_m[curr_eo_idx_m],
-                                                   iobufs_m[curr_eo_idx_m+1]);
-        eos_m[curr_eo_idx_m]->ProcessFrameStartAsync();
+                          iobufs_m[curr_eo_idx_m+1], curr_eo_context_idx_m);
+        eos_m[curr_eo_idx_m]->ProcessFrameStartAsync(curr_eo_context_idx_m);
         return true;
     }
     else
     {
-        std::chrono::duration<float> elapsed = std::chrono::steady_clock::now()
-                                               - start_m;
-        host_time_m = elapsed.count() * 1000;  // seconds to milliseconds
+        if (tidl::internal::NUM_CONTEXTS == 1)
+        {
+            std::chrono::duration<float> elapsed =
+                                    std::chrono::steady_clock::now() - start_m;
+            host_time_m = elapsed.count() * 1000;  // seconds to milliseconds
+        }
         is_processed_m = true;
         cv_m.notify_all();
         return false;

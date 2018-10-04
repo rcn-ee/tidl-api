@@ -36,6 +36,7 @@ const size_t DMEM1_SIZE             = 128*1024;
 const size_t OCMC_SIZE              = 320*1024;
 const int    CURR_LAYERS_GROUP_ID   = 1;
 const int    CURR_CORE_ID           = 1;
+const int    NUM_CONTEXTS           = 2;
 
 }
 }

@@ -66,6 +66,13 @@ class ExecutionObject : public ExecutionObjectInternalInterface
         void SetInputOutputBuffer(const ArgInfo& in,
                                   const ArgInfo& out) override;
 
+        //! Specify the input and output buffers used by the EO in a context
+        //! @param in buffer used for input.
+        //! @param out buffer used for output.
+        //! @param context_idx the index of the context
+        void SetInputOutputBuffer(const ArgInfo& in,
+                                  const ArgInfo& out, uint32_t context_idx);
+
         //! Returns a pointer to the input buffer set via SetInputOutputBuffer
         char* GetInputBufferPtr() const override;
 
@@ -90,21 +97,45 @@ class ExecutionObject : public ExecutionObjectInternalInterface
         //! returns immediately. Use ExecutionObject::ProcessFrameWait to wait
         bool ProcessFrameStartAsync() override;
 
+        //! @brief Start processing with a context. The call is asynchronous and
+        //! returns immediately. Use ExecutionObject::ProcessFrameWait to wait
+        //! @param context_idx the index of the context
+        bool ProcessFrameStartAsync(uint32_t context_idx);
+
         //! Wait for the execution object to complete processing a frame
         //! @return false if ExecutionObject::ProcessFrameWait was called
         //! without a corresponding call to
         //! ExecutionObject::ProcessFrameStartAsync.
         bool ProcessFrameWait() override;
 
+        //! Wait for the execution object to complete processing with a context
+        //! @param context_idx the index of the context
+        //! @return false if ExecutionObject::ProcessFrameWait was called
+        //! without a corresponding call to
+        //! ExecutionObject::ProcessFrameStartAsync.
+        bool ProcessFrameWait(uint32_t context_idx);
+
         //! @brief return the number of milliseconds taken *on the device* to
         //! execute the process call
         //! @return Number of milliseconds to process a frame on the device.
         float GetProcessTimeInMilliSeconds() const override;
 
+        //! @brief return the number of milliseconds taken *on the device* to
+        //! execute the process call with a contex
+        //! @param context_idx the index of the context
+        //! @return Number of milliseconds to process a frame on the device.
+        float GetProcessTimeInMilliSeconds(uint32_t context_idx) const;
+
         //! @brief return the number of milliseconds taken *on the host* to
         //! execute the process call
         //! @return Number of milliseconds to process a frame on the host.
         float GetHostProcessTimeInMilliSeconds() const override;
+
+        //! @brief return the number of milliseconds taken *on the host* to
+        //! execute the process call with a contex
+        //! @param context_idx the index of the context
+        //! @return Number of milliseconds to process a frame on the host.
+        float GetHostProcessTimeInMilliSeconds(uint32_t context_idx) const;
 
         //! Returns the device name that the ExecutionObject runs on
         const std::string& GetDeviceName() const override;
@@ -137,9 +168,9 @@ class ExecutionObject : public ExecutionObjectInternalInterface
 
         //! @private
         // Used by the ExecutionObjectPipeline
-        bool AddCallback(CallType ct, void *user_data);
-        void AcquireLock();
-        void ReleaseLock();
+        bool AddCallback(CallType ct, void *user_data, uint32_t context_idx);
+        void AcquireContext(uint32_t& context_idx);
+        void ReleaseContext(uint32_t  context_idx);
 
         ExecutionObject()                                  = delete;
         ExecutionObject(const ExecutionObject&)            = delete;
@@ -147,7 +178,7 @@ class ExecutionObject : public ExecutionObjectInternalInterface
 
         //! @private
         void SetInputOutputBuffer(const IODeviceArgInfo* in,
-                                  const IODeviceArgInfo* out);
+                             const IODeviceArgInfo* out, uint32_t context_idx);
 
     private:
         class Impl;
