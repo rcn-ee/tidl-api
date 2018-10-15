@@ -42,6 +42,7 @@
 #include "common_defines.h"
 #include "tidl_create_params.h"
 #include "device_arginfo.h"
+#include "util.h"
 
 using namespace tidl;
 
@@ -79,10 +80,10 @@ class ExecutionObject::Impl
         IODeviceArgInfo                 out_m[tidl::internal::NUM_CONTEXTS];
 
         // Frame being processed by the EO
-        int                             current_frame_idx_m;
+        int current_frame_idx_m[tidl::internal::NUM_CONTEXTS];
 
         // LayersGroupId being processed by the EO
-        int                             layers_group_id_m;
+        int layers_group_id_m;
 
         // Trace related
         void WriteLayerOutputsToFile (const std::string& filename_prefix) const;
@@ -94,9 +95,6 @@ class ExecutionObject::Impl
         uint32_t                          num_network_layers_m;
         up_malloc_ddr<OCL_TIDL_BufParams> trace_buf_params_m;
         size_t                            trace_buf_params_sz_m;
-
-        // host time tracking: eo start to finish
-        float host_time_m[tidl::internal::NUM_CONTEXTS];
 
     private:
         void SetupInitializeKernel(const DeviceArgInfo& create_arg,
@@ -156,7 +154,6 @@ ExecutionObject::Impl::Impl(Device* d, uint8_t device_index,
     shared_process_params_m(nullptr, &__free_ddr),
     in_size_m(0),
     out_size_m(0),
-    current_frame_idx_m(0),
     layers_group_id_m(layers_group_id),
     num_network_layers_m(0),
     trace_buf_params_m(nullptr, &__free_ddr),
@@ -208,60 +205,29 @@ size_t ExecutionObject::GetOutputBufferSizeInBytes() const
 
 void  ExecutionObject::SetFrameIndex(int idx)
 {
-    pimpl_m->current_frame_idx_m = idx;
+    pimpl_m->current_frame_idx_m[0] = idx;
 }
 
 int ExecutionObject::GetFrameIndex() const
 {
-    return pimpl_m->current_frame_idx_m;
+    return pimpl_m->current_frame_idx_m[0];
 }
 
 void ExecutionObject::SetInputOutputBuffer(const ArgInfo& in,
                                            const ArgInfo& out)
 {
-    SetInputOutputBuffer(in, out, 0);
-}
-
-void ExecutionObject::SetInputOutputBuffer(const ArgInfo& in,
-                                      const ArgInfo& out, uint32_t context_idx)
-{
-    assert(in.ptr()  != nullptr && in.size()  >= pimpl_m->in_size_m);
-    assert(out.ptr() != nullptr && out.size() >= pimpl_m->out_size_m);
-
-    pimpl_m->in_m[context_idx]  = IODeviceArgInfo(in);
-    pimpl_m->out_m[context_idx] = IODeviceArgInfo(out);
-}
-
-void ExecutionObject::SetInputOutputBuffer(const IODeviceArgInfo* in,
-                                           const IODeviceArgInfo* out,
-                                           uint32_t context_idx)
-{
-    pimpl_m->in_m[context_idx]  = *in;
-    pimpl_m->out_m[context_idx] = *out;
+    pimpl_m->in_m[0]  = IODeviceArgInfo(in);
+    pimpl_m->out_m[0] = IODeviceArgInfo(out);
 }
 
 bool ExecutionObject::ProcessFrameStartAsync()
 {
-    return ProcessFrameStartAsync(0);
-}
-
-bool ExecutionObject::ProcessFrameStartAsync(uint32_t context_idx)
-{
-    TRACE::print("-> ExecutionObject::ProcessFrameStartAsync(%d)\n",
-                 context_idx);
-    assert(GetInputBufferPtr() != nullptr && GetOutputBufferPtr() != nullptr);
-    return pimpl_m->RunAsync(ExecutionObject::CallType::PROCESS, context_idx);
+    return pimpl_m->RunAsync(ExecutionObject::CallType::PROCESS, 0);
 }
 
 bool ExecutionObject::ProcessFrameWait()
 {
-    return ProcessFrameWait(0);
-}
-
-bool ExecutionObject::ProcessFrameWait(uint32_t context_idx)
-{
-    TRACE::print("-> ExecutionObject::ProcessFrameWait(%d)\n", context_idx);
-    return pimpl_m->Wait(ExecutionObject::CallType::PROCESS, context_idx);
+    return pimpl_m->Wait(ExecutionObject::CallType::PROCESS, 0);
 }
 
 bool ExecutionObject::RunAsync (CallType ct)
@@ -274,6 +240,34 @@ bool ExecutionObject::Wait (CallType ct)
     return pimpl_m->Wait(ct, 0);
 }
 
+
+bool ExecutionObject::AcquireAndRunContext(uint32_t& context_idx,
+                                          int frame_idx,
+                                          const IODeviceArgInfo& in,
+                                          const IODeviceArgInfo& out)
+{
+    pimpl_m->AcquireContext(context_idx);
+
+    pimpl_m->current_frame_idx_m[context_idx] = frame_idx;
+    pimpl_m->in_m[context_idx]  = in;
+    pimpl_m->out_m[context_idx] = out;
+
+    return pimpl_m->RunAsync(ExecutionObject::CallType::PROCESS,
+                                    context_idx);
+}
+
+bool ExecutionObject::WaitAndReleaseContext(uint32_t context_idx)
+{
+    TRACE::print("-> ExecutionObject::WaitAndReleaseContext(%d)\n",
+                 context_idx);
+
+    bool status = pimpl_m->Wait(ExecutionObject::CallType::PROCESS,
+                                context_idx);
+    pimpl_m->ReleaseContext(context_idx);
+
+    return status;
+}
+
 bool ExecutionObject::AddCallback(CallType ct, void *user_data,
                                   uint32_t context_idx)
 {
@@ -282,23 +276,8 @@ bool ExecutionObject::AddCallback(CallType ct, void *user_data,
 
 float ExecutionObject::GetProcessTimeInMilliSeconds() const
 {
-    return GetProcessTimeInMilliSeconds(0);
-}
-
-float ExecutionObject::GetProcessTimeInMilliSeconds(uint32_t context_idx) const
-{
     float frequency = pimpl_m->device_m->GetFrequencyInMhz() * 1000000;
-    return ((float)pimpl_m->GetProcessCycles(context_idx)) / frequency * 1000;
-}
-
-float ExecutionObject::GetHostProcessTimeInMilliSeconds() const
-{
-    return GetHostProcessTimeInMilliSeconds(0);
-}
-
-float ExecutionObject::GetHostProcessTimeInMilliSeconds(uint32_t context_idx) const
-{
-    return pimpl_m->host_time_m[context_idx];
+    return ((float)pimpl_m->GetProcessCycles(0)) / frequency * 1000;
 }
 
 void
@@ -328,15 +307,6 @@ const std::string& ExecutionObject::GetDeviceName() const
     return pimpl_m->device_name_m;
 }
 
-void ExecutionObject::AcquireContext(uint32_t& context_idx)
-{
-    pimpl_m->AcquireContext(context_idx);
-}
-
-void ExecutionObject::ReleaseContext(uint32_t context_idx)
-{
-    pimpl_m->ReleaseContext(context_idx);
-}
 
 //
 // Create a kernel to call the "initialize" function
@@ -586,7 +556,6 @@ void ExecutionObject::Impl::ComputeInputOutputSizes()
     }
 }
 
-
 bool ExecutionObject::Impl::RunAsync(CallType ct, uint32_t context_idx)
 {
     switch (ct)
@@ -598,12 +567,13 @@ bool ExecutionObject::Impl::RunAsync(CallType ct, uint32_t context_idx)
         }
         case CallType::PROCESS:
         {
-            std::chrono::time_point<std::chrono::steady_clock> t1, t2;
-            t1 = std::chrono::steady_clock::now();
+            RecordEvent(current_frame_idx_m[context_idx],
+                        (layers_group_id_m == 1) ? TimeStamp::EO1_PFSA_START:
+                                                   TimeStamp::EO2_PFSA_START);
 
             OCL_TIDL_ProcessParams *p_params = shared_process_params_m.get()
                                                + context_idx;
-            p_params->frameIdx = current_frame_idx_m;
+            p_params->frameIdx = current_frame_idx_m[context_idx];
             HostWriteNetInput(context_idx);
             {
                 std::unique_lock<std::mutex> lock(mutex_access_m);
@@ -611,9 +581,9 @@ bool ExecutionObject::Impl::RunAsync(CallType ct, uint32_t context_idx)
                 k_process_m->RunAsync(context_idx);
             }
 
-            t2 = std::chrono::steady_clock::now();
-            std::chrono::duration<float> elapsed = t2 - t1;
-            host_time_m[context_idx] = elapsed.count() * 1000;
+            RecordEvent(current_frame_idx_m[context_idx],
+                        (layers_group_id_m == 1) ?  TimeStamp::EO1_PFSA_END:
+                                                    TimeStamp::EO2_PFSA_END);
             break;
         }
         case CallType::CLEANUP:
@@ -648,7 +618,14 @@ bool ExecutionObject::Impl::Wait(CallType ct, uint32_t context_idx)
         case CallType::PROCESS:
         {
             float host_elapsed_ms = 0.0f;
-            bool has_work = k_process_m->Wait(&host_elapsed_ms);
+            float *p_host_elapsed_ms = tidl::internal::NUM_CONTEXTS == 1 ?
+                                       &host_elapsed_ms : nullptr;
+
+            RecordEvent(current_frame_idx_m[context_idx],
+                        (layers_group_id_m == 1) ? TimeStamp::EO1_PFW_START:
+                                                   TimeStamp::EO2_PFW_START);
+
+            bool has_work = k_process_m->Wait(p_host_elapsed_ms, context_idx);
             if (has_work)
             {
                 OCL_TIDL_ProcessParams *p_params = shared_process_params_m.get()
@@ -657,13 +634,12 @@ bool ExecutionObject::Impl::Wait(CallType ct, uint32_t context_idx)
                     throw Exception(p_params->errorCode,
                                     __FILE__, __FUNCTION__, __LINE__);
 
-                std::chrono::time_point<std::chrono::steady_clock> t1, t2;
-                t1 = std::chrono::steady_clock::now();
                 HostReadNetOutput(context_idx);
-                t2 = std::chrono::steady_clock::now();
-                std::chrono::duration<float> elapsed = t2 - t1;
-                host_time_m += elapsed.count() * 1000 + host_elapsed_ms;
             }
+
+            RecordEvent(current_frame_idx_m[context_idx],
+                        (layers_group_id_m == 1) ? TimeStamp::EO1_PFW_END:
+                                                   TimeStamp::EO2_PFW_END);
 
             return has_work;
         }

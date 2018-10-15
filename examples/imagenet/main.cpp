@@ -194,7 +194,6 @@ bool RunConfiguration(cmdline_opts_t& opts)
             // Wait for previous frame on the same eop to finish processing
             if (eop->ProcessFrameWait())
             {
-                ReportTime(eop);
                 WriteFrameOutput(*eop);
             }
 

@@ -173,6 +173,10 @@ inline T* malloc_ddr(size_t size)
     return val;
 }
 
+//! Enable time stamp generation for TIDL API events
+bool EnableTimeStamps(const std::string& file = "timestamp.log",
+                      size_t num_frames=32);
+
 /*! @class Exception
  *  @brief Used to error reporting
  */

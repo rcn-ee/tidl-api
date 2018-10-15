@@ -134,7 +134,6 @@ static void ProcessArgs(int argc, char *argv[],
                         std::string& config_file,
                         uint32_t & num_dsps, uint32_t &num_eves,
                         int & num_layers_groups);
-void ReportTime(const ExecutionObjectPipeline* eop);
 
 static void DisplayHelp();
 extern std::string labels_classes[];
@@ -232,9 +231,6 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
             // Wait for previous frame on the same eo to finish processing
             if (eop->ProcessFrameWait())
             {
-                 #ifdef PERF_VERBOSE
-                 ReportTime(eop);
-                 #endif
                  DisplayFrame(eop, writer, frame_idx, num_eops,
                               num_eves, num_dsps);
             }
@@ -525,24 +521,6 @@ bool ReadFrame(ExecutionObjectPipeline* eop, const Configuration& c,
     return false;
 }
 
-void ReportTime(const ExecutionObjectPipeline* eop)
-{
-    uint32_t frame_index    = eop->GetFrameIndex();
-    std::string device_name = eop->GetDeviceName();
-    float elapsed_host      = eop->GetHostProcessTimeInMilliSeconds();
-    float elapsed_device    = eop->GetProcessTimeInMilliSeconds();
-    double overhead         = 100 - (elapsed_device/elapsed_host*100);
-    std::cout << "frame[" << frame_index << "]: "
-              << "Time on " << device_name << ": "
-              << std::setw(6) << std::setprecision(4)
-              << elapsed_device << "ms, "
-              << "host: "
-              << std::setw(6) << std::setprecision(4)
-              << elapsed_host << "ms ";
-    std::cout << "API overhead: "
-              << std::setw(6) << std::setprecision(3)
-              << overhead << " %" << std::endl;
-}
 
 void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
                   uint32_t frame_idx, uint32_t num_eops,

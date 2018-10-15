@@ -58,7 +58,6 @@ bool ReadFrame(ExecutionObjectPipeline* eop,
 bool WriteFrame(const ExecutionObject* eo, std::ostream& output_file);
 
 void ReportTime(const ExecutionObject* eo);
-void ReportTime(const ExecutionObjectPipeline* eop);
 
 bool CheckFrame(const ExecutionObject* eo, const char *ref_output);
 bool CheckFrame(const ExecutionObjectPipeline *eop, const char *ref_output);

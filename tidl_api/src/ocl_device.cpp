@@ -187,7 +187,8 @@ EveDevice::EveDevice(const DeviceIds& ids, const std::string &kernel_names):
         int index = static_cast<int>(id);
         queue_m[index] = clCreateCommandQueue(context_m,
                                       all_device_ids[index],
-                                      CL_QUEUE_PROFILING_ENABLE,
+                                      CL_QUEUE_PROFILING_ENABLE|
+                                      CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE,
                                       &errcode);
         errorCheck(errcode, __LINE__);
     }

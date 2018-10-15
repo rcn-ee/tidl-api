@@ -122,26 +122,11 @@ bool WriteFrame(const ExecutionObject* eo, ostream& output_file)
 
 void ReportTime(const ExecutionObject* eo)
 {
-    double elapsed_host   = eo->GetHostProcessTimeInMilliSeconds();
     double elapsed_device = eo->GetProcessTimeInMilliSeconds();
-    double overhead = 100 - (elapsed_device/elapsed_host*100);
 
-    std::cout << format("frame[%3d]: Time on %s: %4.2f ms, host: %4.2f ms"
-                        " API overhead: %2.2f %%\n")
+    std::cout << format("frame[%3d]: Time on %s: %4.2f ms\n")
                         % eo->GetFrameIndex() % eo->GetDeviceName()
-                        % elapsed_device % elapsed_host % overhead;
-}
-
-void ReportTime(const ExecutionObjectPipeline* eop)
-{
-    double elapsed_host   = eop->GetHostProcessTimeInMilliSeconds();
-    double elapsed_device = eop->GetProcessTimeInMilliSeconds();
-    double overhead = 100 - (elapsed_device/elapsed_host*100);
-
-    std::cout << format("frame[%3d]: Time on %s: %4.2f ms, host: %4.2f ms"
-                        " API overhead: %2.2f %%\n")
-                        % eop->GetFrameIndex() % eop->GetDeviceName()
-                        % elapsed_device % elapsed_host % overhead;
+                        % elapsed_device;
 }
 
 // Compare output against reference output
