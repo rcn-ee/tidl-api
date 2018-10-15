@@ -34,9 +34,6 @@ namespace internal {
 const size_t DMEM0_SIZE             = 8*1024;
 const size_t DMEM1_SIZE             = 128*1024;
 const size_t OCMC_SIZE              = 320*1024;
-const int    QUANT_HISTORY_PARAM1   = 20;
-const int    QUANT_HISTORY_PARAM2   = 5;
-const int    QUANT_MARGIN           = 0;
 const int    CURR_LAYERS_GROUP_ID   = 1;
 const int    CURR_CORE_ID           = 1;
 

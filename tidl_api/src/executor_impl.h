@@ -63,7 +63,8 @@ class ExecutorImpl
         ExecutionObjects execution_objects_m;
 
     private:
-        void InitializeNetworkCreateParam(TIDL_CreateParams *cp);
+        void InitializeNetworkCreateParam(TIDL_CreateParams *cp,
+                                          const Configuration& c);
         bool InitializeNetworkParams(TIDL_CreateParams *cp);
         void Cleanup();
 

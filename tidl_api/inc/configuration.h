@@ -121,6 +121,10 @@ class Configuration
     //! size.
     bool showHeapStats;
 
+    int    quantHistoryParam1;
+    int    quantHistoryParam2;
+    int    quantMargin;
+
     //! Default constructor.
     Configuration();
 

@@ -115,7 +115,7 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
     up_malloc_ddr<TIDL_CreateParams> shared_createparam(
                                             malloc_ddr<TIDL_CreateParams>(),
                                             &__free_ddr);
-    InitializeNetworkCreateParam(shared_createparam.get());
+    InitializeNetworkCreateParam(shared_createparam.get(), configuration);
 
     // Read network from file into network struct in TIDL_CreateParams
     sTIDL_Network_t *net = &(shared_createparam.get())->net;
@@ -237,7 +237,8 @@ void ExecutorImpl::Cleanup()
 }
 
 
-void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP)
+void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
+                                                const Configuration& c)
 {
     CP->currCoreId           = layers_group_id_m;
     CP->currLayersGroupId    = layers_group_id_m;
@@ -245,9 +246,9 @@ void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP)
     CP->l2MemSize            = tidl::internal::DMEM1_SIZE;
     CP->l3MemSize            = tidl::internal::OCMC_SIZE;
 
-    CP->quantHistoryParam1   = tidl::internal::QUANT_HISTORY_PARAM1;
-    CP->quantHistoryParam2   = tidl::internal::QUANT_HISTORY_PARAM2;
-    CP->quantMargin          = tidl::internal::QUANT_MARGIN;
+    CP->quantHistoryParam1   = c.quantHistoryParam1;
+    CP->quantHistoryParam2   = c.quantHistoryParam2;
+    CP->quantMargin          = c.quantMargin;
 
     // If trace is enabled, setup the device TIDL library to allocate separate
     // output buffers for each layer. This makes it possible for the host

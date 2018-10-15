@@ -43,7 +43,10 @@ Configuration::Configuration(): numFrames(0), inHeight(0), inWidth(0),
                      PARAM_HEAP_SIZE(9 << 20),    // 9MB for mobileNet1
                      enableOutputTrace(false),
                      enableApiTrace(false),
-                     showHeapStats(false)
+                     showHeapStats(false),
+                     quantHistoryParam1(20),
+                     quantHistoryParam2(5),
+                     quantMargin(0)
 {
 }
 
