@@ -37,6 +37,7 @@ using namespace tidl;
 bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
 {
     opts.num_frames      = 0;
+    opts.num_layers_groups = 1;
     opts.output_width    = 0;
     opts.verbose         = false;
     opts.is_camera_input = false;
@@ -82,7 +83,7 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
                       break;
 
             case 'g': opts.num_layers_groups = atoi(optarg);
-                      assert((opts.num_layers_groups == 1) || (opts.num_layers_groups == 2) || (opts.num_layers_groups == 22));
+                      assert((opts.num_layers_groups == 1) || (opts.num_layers_groups == 2));
                       break;
 
             case 'f': opts.num_frames = atoi(optarg);

@@ -55,6 +55,11 @@ bool ReadFrame(ExecutionObjectPipeline* eop,
                const Configuration&     configuration,
                std::istream&            input_file);
 
+namespace tidl {
+  std::size_t GetBinaryFileSize (const std::string &F);
+  bool        ReadBinary        (const std::string &F, char* buffer, int size);
+};
+
 bool WriteFrame(const ExecutionObject* eo, std::ostream& output_file);
 
 void ReportTime(const ExecutionObject* eo);

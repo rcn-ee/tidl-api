@@ -39,8 +39,8 @@ typedef struct cmdline_opts_t_ {
   std::string config;
   uint32_t    num_dsps;
   uint32_t    num_eves;
-  uint32_t    num_frames;
   uint32_t    num_layers_groups;
+  uint32_t    num_frames;
   std::string input_file;
   uint32_t    output_width;
   bool        verbose;

@@ -150,12 +150,6 @@ bool CheckFrame(const ExecutionObjectPipeline *eop, const char *ref_output)
     return false;
 }
 
-
-namespace tidl {
-std::size_t GetBinaryFileSize (const std::string &F);
-bool        ReadBinary        (const std::string &F, char* buffer, int size);
-}
-
 // Read file into a buffer.
 const char* ReadReferenceOutput(const string& name)
 {
