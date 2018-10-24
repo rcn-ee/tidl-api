@@ -47,6 +47,7 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
         {"config",       required_argument, 0, 'c'},
         {"num_dsps",     required_argument, 0, 'd'},
         {"num_eves",     required_argument, 0, 'e'},
+        {"num_layers_groups", required_argument, 0, 'g'},
         {"num_frames",   required_argument, 0, 'f'},
         {"input_file",   required_argument, 0, 'i'},
         {"output_width", required_argument, 0, 'w'},
@@ -59,7 +60,7 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
 
     while (true)
     {
-        int c = getopt_long(argc, argv, "c:d:e:f:i:w:hv", long_options,
+        int c = getopt_long(argc, argv, "c:d:e:g:f:i:w:hv", long_options,
                             &option_index);
 
         if (c == -1)
@@ -78,6 +79,10 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
             case 'e': opts.num_eves = atoi(optarg);
                       assert(opts.num_eves >= 0 && opts.num_eves <=
                                      Executor::GetNumDevices(DeviceType::EVE));
+                      break;
+
+            case 'g': opts.num_layers_groups = atoi(optarg);
+                      assert((opts.num_layers_groups == 1) || (opts.num_layers_groups == 2) || (opts.num_layers_groups == 22));
                       break;
 
             case 'f': opts.num_frames = atoi(optarg);
