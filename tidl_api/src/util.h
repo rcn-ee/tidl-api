@@ -53,6 +53,10 @@ class TimeStamp
                          NUM_EVENTS };
         struct Entry
         {
+            unsigned int       eo1_type;
+            unsigned int       eo1_id;
+            unsigned int       eo2_type;
+            unsigned int       eo2_id;
             unsigned long long frame_idx;
             unsigned long long timestamp[EventKind::NUM_EVENTS];
         };
@@ -60,7 +64,7 @@ class TimeStamp
 
         TimeStamp(const std::string& file, int num_entries);
         ~TimeStamp();
-        void Update(int frame_idx, EventKind k);
+        void Update(int frame_idx, EventKind k, int type=0, int id=0);
 
     private:
         Entry*            entries_m;
@@ -69,6 +73,7 @@ class TimeStamp
 };
 
 
-void RecordEvent(int frame_idx, TimeStamp::EventKind k);
+void RecordEvent(int frame_idx, TimeStamp::EventKind k,
+                 int eo_type=0, int eo_id=0);
 
 } // namespace tidl

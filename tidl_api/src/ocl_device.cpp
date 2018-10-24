@@ -262,13 +262,15 @@ bool EveDevice::BuildProgramFromBinary(const std::string& kernel_names,
 
 Kernel::Kernel(Device* device, const std::string& name,
                const KernelArgs& args, uint8_t device_index):
-           name_m(name), device_m(device), device_index_m(device_index),
-           num_running_contexts_m(0)
+           name_m(name), device_m(device), device_index_m(device_index)
 {
     TRACE::print("Creating kernel %s\n", name.c_str());
     cl_int err;
     kernel_m = clCreateKernel(device_m->program_m, name_m.c_str(), &err);
     errorCheck(err, __LINE__);
+
+    for (int i=0; i < tidl::internal::NUM_CONTEXTS; i++)
+        event_m[i] = nullptr;
 
     int arg_index = 0;
     for (const auto& arg : args)
@@ -319,38 +321,26 @@ Kernel& Kernel::RunAsync(uint32_t context_idx)
     cl_int ret = clEnqueueTask(device_m->queue_m[device_index_m],
                                kernel_m, 0, 0, &event_m[context_idx]);
     errorCheck(ret, __LINE__);
-    __sync_fetch_and_add(&num_running_contexts_m, 1);
 
     return *this;
 }
 
-
-bool Kernel::Wait(float *host_elapsed_ms, uint32_t context_idx)
+bool Kernel::Wait(uint32_t context_idx)
 {
     // Wait called without a corresponding RunAsync
-    if (num_running_contexts_m == 0)
+    if (event_m[context_idx] == nullptr)
         return false;
 
     TRACE::print("\tKernel: waiting context %d...\n", context_idx);
     cl_int ret = clWaitForEvents(1, &event_m[context_idx]);
     errorCheck(ret, __LINE__);
 
-    if (host_elapsed_ms != nullptr)
-    {
-        cl_ulong t_que, t_end;
-        clGetEventProfilingInfo(event_m[context_idx],
-                                CL_PROFILING_COMMAND_QUEUED,
-                                sizeof(cl_ulong), &t_que, nullptr);
-        clGetEventProfilingInfo(event_m[context_idx], CL_PROFILING_COMMAND_END,
-                                sizeof(cl_ulong), &t_end, nullptr);
-        *host_elapsed_ms = (t_end - t_que) / 1.0e6;  // nano to milli seconds
-    }
-
     ret = clReleaseEvent(event_m[context_idx]);
     errorCheck(ret, __LINE__);
+    event_m[context_idx] = nullptr;
+
     TRACE::print("\tKernel: finished execution\n");
 
-    __sync_fetch_and_sub(&num_running_contexts_m, 1);
     return true;
 }
 
@@ -365,7 +355,9 @@ void EventCallback(cl_event event, cl_int exec_status, void *user_data)
 
 bool Kernel::AddCallback(void *user_data, uint32_t context_idx)
 {
-    if (num_running_contexts_m == 0)  return false;
+    if (event_m[context_idx] == nullptr)
+        return false;
+
     return clSetEventCallback(event_m[context_idx], CL_COMPLETE, EventCallback,
                               user_data) == CL_SUCCESS;
 }

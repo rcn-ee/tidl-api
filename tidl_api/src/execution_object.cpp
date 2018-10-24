@@ -49,7 +49,7 @@ using namespace tidl;
 class ExecutionObject::Impl
 {
     public:
-        Impl(Device* d, uint8_t device_index,
+        Impl(Device* d, DeviceType t, uint8_t device_index,
              const DeviceArgInfo& create_arg,
              const DeviceArgInfo& param_heap_arg,
              const Configuration& configuration,
@@ -65,12 +65,21 @@ class ExecutionObject::Impl
         void AcquireContext(uint32_t& context_idx);
         void ReleaseContext(uint32_t  context_idx);
 
+        // Trace related
+        void WriteLayerOutputsToFile (const std::string& filename_prefix) const;
+        const LayerOutput* GetOutputFromLayer (uint32_t layer_index,
+                                               uint32_t output_index) const;
+        const LayerOutputs* GetOutputsFromAllLayers() const;
+
+
         Device*                         device_m;
+        DeviceType                      device_type_m;
+
         // Index of the OpenCL device/queue used by this EO
         uint8_t                         device_index_m;
         std::string                     device_name_m;
 
-        up_malloc_ddr<char>             tidl_extmem_heap_m;
+        up_malloc_ddr<char>                      tidl_extmem_heap_m;
         up_malloc_ddr<OCL_TIDL_InitializeParams> shared_initialize_params_m;
         up_malloc_ddr<OCL_TIDL_ProcessParams>    shared_process_params_m;
 
@@ -84,13 +93,6 @@ class ExecutionObject::Impl
 
         // LayersGroupId being processed by the EO
         int layers_group_id_m;
-
-        // Trace related
-        void WriteLayerOutputsToFile (const std::string& filename_prefix) const;
-
-        const LayerOutput* GetOutputFromLayer (uint32_t layer_index,
-                                               uint32_t output_index) const;
-        const LayerOutputs* GetOutputsFromAllLayers() const;
 
         uint32_t                          num_network_layers_m;
         up_malloc_ddr<OCL_TIDL_BufParams> trace_buf_params_m;
@@ -120,12 +122,13 @@ class ExecutionObject::Impl
 };
 
 
-ExecutionObject::ExecutionObject(Device* d,
-                                 uint8_t device_index,
-                                 const   ArgInfo& create_arg,
-                                 const   ArgInfo& param_heap_arg,
-                                 const   Configuration& configuration,
-                                 int     layers_group_id)
+ExecutionObject::ExecutionObject(Device*    d,
+                                 DeviceType t,
+                                 uint8_t    device_index,
+                                 const      ArgInfo& create_arg,
+                                 const      ArgInfo& param_heap_arg,
+                                 const      Configuration& configuration,
+                                 int        layers_group_id)
 {
     TRACE::print("-> ExecutionObject::ExecutionObject()\n");
 
@@ -133,7 +136,7 @@ ExecutionObject::ExecutionObject(Device* d,
     DeviceArgInfo param_heap_arg_d(param_heap_arg, DeviceArgInfo::Kind::BUFFER);
 
     pimpl_m = std::unique_ptr<ExecutionObject::Impl>
-              { new ExecutionObject::Impl(d, device_index,
+              { new ExecutionObject::Impl(d, t, device_index,
                                           create_arg_d,
                                           param_heap_arg_d,
                                           configuration,
@@ -142,12 +145,13 @@ ExecutionObject::ExecutionObject(Device* d,
 }
 
 
-ExecutionObject::Impl::Impl(Device* d, uint8_t device_index,
+ExecutionObject::Impl::Impl(Device* d, DeviceType t, uint8_t device_index,
                             const DeviceArgInfo& create_arg,
                             const DeviceArgInfo& param_heap_arg,
                             const Configuration& configuration,
                             int    layers_group_id):
     device_m(d),
+    device_type_m(t),
     device_index_m(device_index),
     tidl_extmem_heap_m (nullptr, &__free_ddr),
     shared_initialize_params_m(nullptr, &__free_ddr),
@@ -569,7 +573,9 @@ bool ExecutionObject::Impl::RunAsync(CallType ct, uint32_t context_idx)
         {
             RecordEvent(current_frame_idx_m[context_idx],
                         (layers_group_id_m == 1) ? TimeStamp::EO1_PFSA_START:
-                                                   TimeStamp::EO2_PFSA_START);
+                                                   TimeStamp::EO2_PFSA_START,
+                        static_cast<int>(device_type_m),
+                        device_index_m);
 
             OCL_TIDL_ProcessParams *p_params = shared_process_params_m.get()
                                                + context_idx;
@@ -617,15 +623,11 @@ bool ExecutionObject::Impl::Wait(CallType ct, uint32_t context_idx)
         }
         case CallType::PROCESS:
         {
-            float host_elapsed_ms = 0.0f;
-            float *p_host_elapsed_ms = tidl::internal::NUM_CONTEXTS == 1 ?
-                                       &host_elapsed_ms : nullptr;
-
             RecordEvent(current_frame_idx_m[context_idx],
                         (layers_group_id_m == 1) ? TimeStamp::EO1_PFW_START:
                                                    TimeStamp::EO2_PFW_START);
 
-            bool has_work = k_process_m->Wait(p_host_elapsed_ms, context_idx);
+            bool has_work = k_process_m->Wait(context_idx);
             if (has_work)
             {
                 OCL_TIDL_ProcessParams *p_params = shared_process_params_m.get()

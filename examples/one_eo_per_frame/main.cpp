@@ -74,6 +74,11 @@ int main(int argc, char *argv[])
 
     unique_ptr<const char> reference_output(ReadReferenceOutput(ref_file));
 
+    // Enable time stamp generation. The timestamp file is post processed
+    // by execution_graph.py to generate graphical view of frame execution.
+    // Refer to the User's Guide for details.
+    EnableTimeStamps("1eo.log");
+
     bool status = Run(config_file, num_eve, num_dsp, reference_output.get());
 
     if (!status)

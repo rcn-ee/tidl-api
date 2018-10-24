@@ -145,7 +145,7 @@ class Kernel
 
         bool UpdateScalarArg(uint32_t index, size_t size, const void *value);
         Kernel& RunAsync(uint32_t context_idx = 0);
-        bool Wait(float *host_elapsed_ms = nullptr, uint32_t context_idx = 0);
+        bool Wait(uint32_t context_idx = 0);
         bool AddCallback(void *user_data, uint32_t context_idx = 0);
 
     private:
@@ -156,7 +156,6 @@ class Kernel
 
         Device*             device_m;
         uint8_t             device_index_m;
-        uint32_t            num_running_contexts_m;
 };
 
 

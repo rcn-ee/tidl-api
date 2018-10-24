@@ -52,7 +52,7 @@ class ExecutionObject : public ExecutionObjectInternalInterface
 
         //! @private
         // Used by the Executor to construct an ExecutionObject
-        ExecutionObject(Device* d, uint8_t device_index,
+        ExecutionObject(Device* d, DeviceType t, uint8_t device_index,
                         const  ArgInfo& create_arg,
                         const  ArgInfo& param_heap_arg,
                         const  Configuration& configuration,

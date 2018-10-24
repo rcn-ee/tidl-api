@@ -153,7 +153,7 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
         uint8_t index = static_cast<uint8_t>(ids);
         execution_objects_m.push_back(
              unique_ptr<ExecutionObject>
-             {new ExecutionObject(device_m.get(), index,
+             {new ExecutionObject(device_m.get(), core_type_m, index,
                                   create_arg, param_heap_arg,
                                   configuration_m,
                                   layers_group_id_m)} );

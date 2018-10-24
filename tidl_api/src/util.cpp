@@ -64,12 +64,24 @@ TimeStamp::TimeStamp(const std::string& file, int num_entries):
     std::memset(entries_m, 0, sizeof(Entry)*num_entries_m);
 }
 
-void TimeStamp::Update(int frame_idx, EventKind k)
+void TimeStamp::Update(int frame_idx, EventKind k, int type, int id)
 {
     int idx = frame_idx % num_entries_m;
     entries_m[idx].frame_idx = frame_idx;
     entries_m[idx].timestamp[k] = duration_cast<microseconds>
                  (high_resolution_clock::now().time_since_epoch()).count();
+
+    if (k == EO1_PFSA_START)
+    {
+        entries_m[idx].eo1_id   = id;
+        entries_m[idx].eo1_type = type;
+    }
+    else if (k == EO2_PFSA_START)
+    {
+        entries_m[idx].eo2_id   = id;
+        entries_m[idx].eo2_type = type;
+    }
+
 }
 
 TimeStamp::~TimeStamp()
@@ -103,7 +115,21 @@ TimeStamp::~TimeStamp()
 
                     default:             ofs << "UNKNOWN"; break;
                 }
-                ofs << "," << entries_m[i].timestamp[j] << std::endl;
+                ofs << "," << entries_m[i].timestamp[j];
+
+                if (j == EO1_PFSA_START)
+                {
+                    ofs << "," << entries_m[i].eo1_type
+                        << "," << entries_m[i].eo1_id;
+                }
+                else if (j == EO2_PFSA_START)
+                {
+                    ofs << "," << entries_m[i].eo2_type
+                        << "," << entries_m[i].eo2_id;
+                }
+
+
+                ofs << std::endl;
             }
 
     ofs.close();
@@ -112,12 +138,14 @@ TimeStamp::~TimeStamp()
 }
 
 
-void tidl::RecordEvent(int frame_idx, TimeStamp::EventKind k)
+void tidl::RecordEvent(int frame_idx, TimeStamp::EventKind k,
+                       int eo_type, int eo_id)
 {
     TimeStamp* t = tidl_api_timestamps.get();
     if (t)
-        t->Update(frame_idx, k);
+        t->Update(frame_idx, k, eo_type, eo_id);
 }
+
 
 std::size_t tidl::GetBinaryFileSize(const std::string &F)
 {
