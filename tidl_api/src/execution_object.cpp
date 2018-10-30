@@ -470,11 +470,8 @@ void ExecutionObject::Impl::HostWriteNetInput(uint32_t context_idx)
     for (unsigned int i = 0; i < shared_initialize_params_m->numInBufs; i++)
     {
         OCL_TIDL_BufParams *inBuf = &shared_initialize_params_m->inBufs[i];
-        uint32_t context_size = inBuf->bufPlaneWidth * inBuf->bufPlaneHeight;
-                 context_size = (context_size + OCL_TIDL_CACHE_ALIGN - 1) &
-                                (~(OCL_TIDL_CACHE_ALIGN - 1));
         char *inBufAddr = tidl_extmem_heap_m.get() + inBuf->bufPlaneBufOffset
-                          + context_idx * context_size;
+                          + context_idx * inBuf->contextSize;
 
             readPtr += readDataS8(
                 readPtr,
@@ -506,11 +503,8 @@ void ExecutionObject::Impl::HostReadNetOutput(uint32_t context_idx)
     for (unsigned int i = 0; i < shared_initialize_params_m->numOutBufs; i++)
     {
         OCL_TIDL_BufParams *outBuf = &shared_initialize_params_m->outBufs[i];
-        uint32_t context_size = outBuf->bufPlaneWidth * outBuf->bufPlaneHeight;
-                 context_size = (context_size + OCL_TIDL_CACHE_ALIGN - 1) &
-                                (~(OCL_TIDL_CACHE_ALIGN - 1));
         char *outBufAddr = tidl_extmem_heap_m.get() + outBuf->bufPlaneBufOffset
-                           + context_idx * context_size;
+                           + context_idx * outBuf->contextSize;
         if (writePtr != nullptr)
         {
             writePtr += writeDataS8(
