@@ -1,0 +1,10 @@
+numFrames   = 999900
+inData   = /usr/share/ti/tidl/examples/test/testvecs/input/preproc_0_224x224.y
+outData   = "/usr/share/ti/tidl/examples/classification/stats_tool_out.bin"
+netBinFile      = "/usr/share/ti/tidl/examples/test/testvecs/config/tidl_models/tidl_net_mobilenet_1_224.bin"
+paramsBinFile   = "/usr/share/ti/tidl/examples//test/testvecs/config/tidl_models/tidl_param_mobilenet_1_224.bin"
+preProcType = 2
+inWidth = 224
+inHeight = 224
+inNumChannels = 3
+layerIndex2LayerGroupId = { {28, 2}, {29, 2}, {30, 2} }

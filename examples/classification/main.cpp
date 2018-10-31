@@ -44,6 +44,7 @@
 #include "execution_object_pipeline.h"
 #include "configuration.h"
 #include "avg_fps_window.h"
+#include "imgutil.h"
 
 #include "opencv2/core.hpp"
 #include "opencv2/imgproc.hpp"
@@ -281,6 +282,8 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
         e_dsp = num_dsps == 0 ? nullptr :
                 new Executor(DeviceType::DSP, ids_dsp, configuration);
 
+        configuration.runFullNet = true; //Force all layers to be in the same group
+
         // Construct ExecutionObjectPipeline with single Execution Object to
         // process each frame. This is parallel processing of frames with
         // as many DSP and EVE cores that we have on hand.
@@ -296,10 +299,6 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
         break;
 
     case 2: // Two layers group
-        // JacintoNet11 specific : specify only layers that will be in
-        // layers group 2 ... by default all other layers are in group 1.
-        configuration.layerIndex2LayerGroupId = { {12, 2}, {13, 2}, {14, 2} };
-
         // Create Executors with the approriate core type, number of cores
         // and configuration specified
         // EVE will run layersGroupId 1 in the network, while
@@ -486,16 +485,7 @@ bool ReadFrame(ExecutionObjectPipeline* eop, const Configuration& c,
                cv::imshow(tmp_string, r_image);
             }
 #endif
-                //Convert from BGR pixel interleaved to BGR plane interleaved!
-            cv::resize(r_image, cnn_image, Size(c.inWidth,c.inHeight));
-            cv::split(cnn_image, bgr_frames);
-            int channel_size = c.inWidth * c.inHeight;
-
-            char* ptr = eop->GetInputBufferPtr();
-            memcpy(ptr,                bgr_frames[0].ptr(), channel_size);
-            memcpy(ptr+1*channel_size, bgr_frames[1].ptr(), channel_size);
-            memcpy(ptr+2*channel_size, bgr_frames[2].ptr(), channel_size);
-
+            imgutil::PreprocessImage(r_image, eop->GetInputBufferPtr(), c);
             eop->SetFrameIndex(frame_idx);
 
 #ifdef RMT_GST_STREAMER
@@ -649,7 +639,7 @@ void ProcessArgs(int argc, char *argv[], std::string& config_file,
                       break;
 
             case 'e': num_eves = atoi(optarg);
-                      assert (num_eves >= 0 && num_eves <= 2);
+                      assert (num_eves >= 0 && num_eves <= 4);
                       break;
 
             case 'v': verbose = true;
@@ -733,7 +723,7 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
     queue.pop();
   }
 
-  for (int i = k-1; i >= 0; i--)
+  for (int i = 0; i < k; i++)
   {
       int id = sorted[i].second;
 
