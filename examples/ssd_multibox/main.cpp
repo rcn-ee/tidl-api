@@ -45,7 +45,7 @@
 #include "execution_object.h"
 #include "execution_object_pipeline.h"
 #include "configuration.h"
-#include "../segmentation/object_classes.h"
+#include "../common/object_classes.h"
 #include "../common/utils.h"
 #include "../common/video_utils.h"
 
@@ -58,8 +58,9 @@ using namespace cv;
 #define DEFAULT_CONFIG    "jdetnet"
 #define DEFAULT_INPUT     "../test/testvecs/input/preproc_0_768x320.y"
 #define DEFAULT_INPUT_FRAMES (1)
+#define DEFAULT_OBJECT_CLASSES_LIST_FILE "./jdetnet_objects.json"
 
-object_class_table_t *object_class_table;
+std::unique_ptr<ObjectClasses> object_classes;
 uint32_t orig_width;
 uint32_t orig_height;
 
@@ -93,6 +94,7 @@ int main(int argc, char *argv[])
     // Process arguments
     cmdline_opts_t opts;
     opts.config = DEFAULT_CONFIG;
+    opts.object_classes_list_file = DEFAULT_OBJECT_CLASSES_LIST_FILE;
     opts.num_eves = 1;
     opts.num_dsps = 1;
     if (! ProcessArgs(argc, argv, opts))
@@ -110,8 +112,10 @@ int main(int argc, char *argv[])
     else
         cout << "Input: " << opts.input_file << endl;
 
-    // Get object class table
-    if ((object_class_table = GetObjectClassTable(opts.config)) == nullptr)
+    // Get object classes list
+    object_classes = std::unique_ptr<ObjectClasses>(
+                             new ObjectClasses(opts.object_classes_list_file));
+    if (object_classes->GetNumClasses() == 0)
     {
         cout << "No object classes defined for this config." << endl;
         return EXIT_FAILURE;
@@ -352,19 +356,17 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
         int   xmax  = (int) (out[i * 7 + 5] * width);
         int   ymax  = (int) (out[i * 7 + 6] * height);
 
-        object_class_t *object_class = GetObjectClass(object_class_table,
-                                                      label);
-        if (object_class == nullptr)  continue;
+        const ObjectClass& object_class = object_classes->At(label);
 
 #if 0
         printf("(%d, %d) -> (%d, %d): %s, score=%f\n",
-               xmin, ymin, xmax, ymax, object_class->label, score);
+               xmin, ymin, xmax, ymax, object_class.label, score);
 #endif
 
         cv::rectangle(frame, Point(xmin, ymin), Point(xmax, ymax),
-                      Scalar(object_class->color.blue,
-                             object_class->color.green,
-                             object_class->color.red), 2);
+                      Scalar(object_class.color.blue,
+                             object_class.color.green,
+                             object_class.color.red), 2);
     }
 
     // Resize to output width/height, keep aspect ratio
@@ -408,6 +410,7 @@ void DisplayHelp()
     " -i camera<number>    Use camera as input\n"
     "                      video input port: /dev/video<number>\n"
     " -i <name>.{mp4,mov,avi}  Use video file as input\n"
+    " -l <objects_list>    Path to the object classes list file\n"
     " -f <number>          Number of frames to process\n"
     " -w <number>          Output image/video width\n"
     " -v                   Verbose output during execution\n"

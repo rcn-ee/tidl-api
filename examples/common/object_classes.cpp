@@ -26,28 +26,58 @@
  *   THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
-#ifndef _OBJECT_CLASSES_H_
-#define _OBJECT_CLASSES_H_
+#include "object_classes.h"
 
-#include <string>
-#include <vector>
+extern "C" {
+    #include <json-c/json.h>
+}
 
-typedef struct {
-    const char *label;
-    struct {
-        unsigned char red;
-        unsigned char green;
-        unsigned char blue;
-    } color;
-} object_class_t;
 
-typedef struct {
-    unsigned int                 num_classes;
-    std::vector<object_class_t>  classes;
-} object_class_table_t;
+ObjectClasses::ObjectClasses(const std::string& json_file) : num_classes_m(0)
+{
+    struct json_object *ocs = json_object_from_file(json_file.c_str());
+    if (ocs != nullptr)
+    {
+        struct json_object *net_name, *objs, *obj, *label, *color;
+        if (json_object_object_get_ex(ocs, "network", &net_name))
+            network_name_m = json_object_get_string(net_name);
 
-extern object_class_table_t* GetObjectClassTable(std::string &config);
-extern object_class_t*       GetObjectClass(object_class_table_t *table,
-                                         int index);
+        if (json_object_object_get_ex(ocs, "objects", &objs))
+        {
+            num_classes_m = json_object_array_length(objs);
+            for (unsigned int i = 0; i < num_classes_m; i++)
+            {
+                obj = json_object_array_get_idx(objs, i);
 
-#endif
+                std::string s_label;
+                if (json_object_object_get_ex(obj, "label", &label))
+                    s_label = json_object_get_string(label);
+                else
+                    s_label = "label" + std::to_string(i);
+
+                unsigned char b, g, r;
+                if (json_object_object_get_ex(obj, "color_bgr", &color))
+                {
+                    b = json_object_get_int(json_object_array_get_idx(color,0));
+                    g = json_object_get_int(json_object_array_get_idx(color,1));
+                    r = json_object_get_int(json_object_array_get_idx(color,2));
+                }
+                else
+                    b = g = r = 255;
+
+                classes_m.emplace_back(s_label, b, g, r);
+            }
+        }
+
+        json_object_put(ocs);  // decrement refcount and free
+    }
+
+    classes_m.emplace_back("unknown", 0, 0, 0);  // sentinel
+}
+
+const ObjectClass& ObjectClasses::At(unsigned int index)
+{
+    if (index < num_classes_m)  return classes_m[index];
+    else                        return classes_m[num_classes_m];
+}
+

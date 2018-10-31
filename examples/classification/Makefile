@@ -34,7 +34,8 @@ LIBS     += -lopencv_highgui -lopencv_imgcodecs -lopencv_videoio\
 SOURCES = main.cpp findclasses.cpp
 
 $(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)
-	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(LDFLAGS) $(LIBS) -o $@
+	$(CXX) $(CXXFLAGS) $(SOURCES) $(TIDL_API_LIB) $(TIDL_API_LIB_IMGUTIL) \
+               $(LDFLAGS) $(LIBS) -o $@
 
 clean::
 	$(RM) -f $(EXE)

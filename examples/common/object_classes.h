@@ -26,43 +26,36 @@
  *   THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
-#include "object_classes.h"
+#ifndef _OBJECT_CLASSES_H_
+#define _OBJECT_CLASSES_H_
 
-object_class_table_t jseg21_table =
-{
-    5,
-    {
-        { "background",       { 127, 127, 127 } },
-        { "road",             {   0, 255,   0 } },
-        { "pedestrian",       { 255,   0,   0 } },
-        { "road sign",        { 255, 255,   0 } },
-        { "vehicle",          {   0,   0, 255 } },
-        { "unknown",          {   0,   0,   0 } }    /* guard */
-    }
+#include <string>
+#include <vector>
+
+struct ObjectClass {
+    std::string       label;
+    struct {
+        unsigned char blue;
+        unsigned char green;
+        unsigned char red;
+    } color;
+
+    ObjectClass(const std::string& l, unsigned char b, unsigned char g,
+                unsigned char r) : label { l }, color { b, g, r} {}
 };
 
-object_class_table_t jdetnet_table =
-{
-    4,
-    {
-        { "some class 1",     { 255,   0, 255 } },
-        { "pedestrian",       { 255,   0,   0 } },
-        { "road sign",        { 255, 255,   0 } },
-        { "vehicle",          {   0,   0, 255 } },
-        { "unknown",          {   0,   0,   0 } }    /* guard */
-    }
+class ObjectClasses {
+  public:
+    ObjectClasses(const std::string& json_file);
+    const ObjectClass& At(unsigned int index);
+
+    unsigned int       GetNumClasses()  { return num_classes_m; }
+    const std::string& GetNetworkName() { return network_name_m; }
+
+  private:
+    unsigned int              num_classes_m;
+    std::string               network_name_m;
+    std::vector<ObjectClass>  classes_m;
 };
 
-object_class_table_t* GetObjectClassTable(std::string &config)
-{
-     if (config.compare(0, 6, "jseg21") == 0)  return &jseg21_table;
-     else if (config == "jdetnet")             return &jdetnet_table;
-     else                                      return nullptr;
-}
-
-object_class_t* GetObjectClass(object_class_table_t *table, int index)
-{
-    if (index < 0 || (unsigned int)index >= table->num_classes)  index = table->num_classes;
-    return & (table->classes[index]);
-}
-
+#endif

@@ -42,6 +42,7 @@ typedef struct cmdline_opts_t_ {
   uint32_t    num_layers_groups;
   uint32_t    num_frames;
   std::string input_file;
+  std::string object_classes_list_file;
   uint32_t    output_width;
   bool        verbose;
   bool        is_camera_input;

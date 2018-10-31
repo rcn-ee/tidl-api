@@ -45,7 +45,6 @@
 #include "execution_object.h"
 #include "execution_object_pipeline.h"
 #include "configuration.h"
-#include "../segmentation/object_classes.h"
 #include "../common/utils.h"
 #include "../common/video_utils.h"
 

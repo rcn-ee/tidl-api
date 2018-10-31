@@ -1,0 +1,9 @@
+{
+  "network": "jdetNet",
+  "objects": [
+    { "label": "some class 1",     "color_bgr": [ 255,   0, 255 ] },
+    { "label": "pedestrian",       "color_bgr": [   0,   0, 255 ] },
+    { "label": "road sign",        "color_bgr": [   0, 255, 255 ] },
+    { "label": "vehicle",          "color_bgr": [ 255,   0,   0 ] }
+  ]
+}

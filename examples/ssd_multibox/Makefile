@@ -30,8 +30,9 @@ include ../make.common
 
 LIBS     += -lopencv_highgui -lopencv_imgcodecs -lopencv_videoio\
 			-lopencv_imgproc -lopencv_core
+LIBS     += -ljson-c
 
-SOURCES = main.cpp ../segmentation/object_classes.cpp ../common/utils.cpp \
+SOURCES = main.cpp ../common/object_classes.cpp ../common/utils.cpp \
           ../common/video_utils.cpp
 
 $(EXE): $(TIDL_API_LIB) $(HEADERS) $(SOURCES)

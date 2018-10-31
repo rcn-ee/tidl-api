@@ -51,6 +51,7 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
         {"num_layers_groups", required_argument, 0, 'g'},
         {"num_frames",   required_argument, 0, 'f'},
         {"input_file",   required_argument, 0, 'i'},
+        {"object_classes_list_file",   required_argument, 0, 'l'},
         {"output_width", required_argument, 0, 'w'},
         {"help",         no_argument,       0, 'h'},
         {"verbose",      no_argument,       0, 'v'},
@@ -61,7 +62,7 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
 
     while (true)
     {
-        int c = getopt_long(argc, argv, "c:d:e:g:f:i:w:hv", long_options,
+        int c = getopt_long(argc, argv, "c:d:e:g:f:i:l:w:hv", long_options,
                             &option_index);
 
         if (c == -1)
@@ -91,6 +92,9 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
                       break;
 
             case 'i': opts.input_file = optarg;
+                      break;
+
+            case 'l': opts.object_classes_list_file = optarg;
                       break;
 
             case 'w': opts.output_width = atoi(optarg);
