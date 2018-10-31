@@ -26,38 +26,57 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
+""" Layer output
+
+Illustrates writing the outputs of intermediate layers in the network to file.
+"""
+
+import argparse
 
 from tidl import DeviceId, DeviceType, Configuration, Executor, TidlError
 from tidl import allocate_memory, free_memory
 
-from tidl_app_utils import read_frame, write_output, report_time
+from tidl_app_utils import read_frame
 
-import argparse
 
-def main(config_file, num_frames):
-    c = Configuration()
-    c.read_from_file(config_file)
-    c.enable_layer_dump = True
-    c.num_frames = num_frames
+def main():
+    """ Parse arguments, read configuration and run network"""
+
+    parser = argparse.ArgumentParser(description=
+                                     'Dump output of each network layer to file.')
+    parser.add_argument(
+        '-c', '--config_file',
+        default='../test/testvecs/config/infer/tidl_config_j11_v2.txt',
+        help='Path to TIDL config file')
+
+    args = parser.parse_args()
+
+    # Run network for 1 frame since we interested in intermediate layer outputs
+    num_frames = 1
+
+    # Read configuration from file
+    configuration = Configuration()
+    configuration.read_from_file(args.config_file)
+    configuration.enable_layer_dump = True
+    configuration.num_frames = num_frames
 
     num_dsp = Executor.get_num_devices(DeviceType.DSP)
     num_eve = Executor.get_num_devices(DeviceType.EVE)
 
-    if (num_dsp == 0 and num_eve == 0):
+    if num_dsp == 0 and num_eve == 0:
         print('No TIDL API capable devices available')
         return
 
-    if (num_eve > 0):
+    if num_eve > 0:
         device_type = DeviceType.EVE
     else:
         device_type = DeviceType.DSP
 
     # Since we are dumping layer outputs, just run on one device
-    run(device_type, 1, c)
+    run(device_type, 1, configuration)
 
-    return
 
-def run(device_type, num_devices, c):
+def run(device_type, num_devices, configuration):
     """ Run the network on a single device and dump output of each layer"""
 
     print('Running network on {} {}'.format(num_devices, device_type))
@@ -67,7 +86,7 @@ def run(device_type, num_devices, c):
     try:
         print('TIDL API: performing one time initialization ...')
 
-        executor = Executor(device_type, device_ids, c, 1)
+        executor = Executor(device_type, device_ids, configuration, 1)
 
         # Collect all EOs from EVE and DSP executors
         eos = []
@@ -77,37 +96,27 @@ def run(device_type, num_devices, c):
         allocate_memory(eos)
 
         # Open input, output files
-        f_in  = open(c.in_data, 'rb')
+        f_in = open(configuration.in_data, 'rb')
 
 
         print('TIDL API: processing input frames ...')
 
         num_eos = len(eos)
-        for frame_index in range(c.num_frames+num_eos):
-            eo = eos [frame_index % num_eos]
+        for frame_index in range(configuration.num_frames+num_eos):
+            execution_object = eos[frame_index % num_eos]
 
-            if (eo.process_frame_wait()):
-                eo.write_layer_outputs_to_file()
+            if execution_object.process_frame_wait():
+                execution_object.write_layer_outputs_to_file()
 
-            if (read_frame(eo, frame_index, c, f_in)):
-                eo.process_frame_start_async()
-
+            if read_frame(execution_object, frame_index, configuration, f_in):
+                execution_object.process_frame_start_async()
 
         f_in.close()
 
         free_memory(eos)
     except TidlError as err:
-        print (err)
+        print(err)
 
-    return
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=
-                       'Dump output of each network layer to file. ')
-    parser.add_argument('-c', '--config_file',
-               default='../test/testvecs/config/infer/tidl_config_j11_v2.txt',
-               help='Path to TIDL config file')
-    args = parser.parse_args()
-
-    # Run network for 1 frame since we interested in intermediate layer outputs
-    main(args.config_file, 1)
+    main()

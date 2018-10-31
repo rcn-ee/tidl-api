@@ -63,16 +63,11 @@ def write_output(eo, f):
     f.write(arg_info)
 
 def report_time(eo):
-    """Report execution time on host and device"""
+    """Report execution time on device"""
 
-    elapsed_host   = eo.get_host_process_time_in_ms()
     elapsed_device = eo.get_process_time_in_ms()
-    overhead = elapsed_host - elapsed_device
 
     # https://pyformat.info/
-    print('frame{:3d}: Time on {}: {:4.2f} ms, host: {:4.2f} ms '
-          'API overhead: {:2.2f} ms'.format(eo.get_frame_index(),
-                                           eo.get_device_name(),
-                                           elapsed_device,
-                                           elapsed_host,
-                                           overhead))
+    print('frame{:3d}: Time on {}: {:4.2f} ms '.format(eo.get_frame_index(),
+                                                       eo.get_device_name(),
+                                                       elapsed_device))

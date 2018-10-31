@@ -73,25 +73,6 @@ void init_eop(module &m)
              "returns false if process_frame_wait() was called without a\n"
              " corresponding call to process_frame_start_async")
 
-        .def("get_device_name", &EOP::GetDeviceName)
-
-        .def("get_host_process_time_in_ms",
-             (float (EOP::*)() const) &EOP::GetHostProcessTimeInMilliSeconds,
-             "Milliseconds taken on the host to process a frame")
-
-        .def("get_process_time_in_ms",
-             (float (EOP::*)() const) &EOP::GetProcessTimeInMilliSeconds,
-             "Milliseconds taken on the device to process a frame")
-
-        .def("get_host_process_time_in_ms",
-             (float (EOP::*)(uint32_t) const)
-             &EOP::GetHostProcessTimeInMilliSeconds,
-             "Milliseconds taken on the host to process\n"
-             "a frame by the specified EO")
-
-        .def("get_process_time_in_ms",
-             (float (EOP::*)(uint32_t) const)
-             &EOP::GetProcessTimeInMilliSeconds,
-             "Milliseconds taken on the device to process\n"
-             "a frame by the specified EO");
+        .def("get_device_name", &EOP::GetDeviceName,
+             "Returns the combined device names used by the pipeline");
 }

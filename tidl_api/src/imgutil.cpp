@@ -81,10 +81,11 @@ bool tidl::imgutil::PreprocessImage(Mat& image, char *ptr,
         meanValues[2] = 123;
 
     }
+    // See https://github.com/tensorflow/models/blob/82e783e3172f254b62dc4af08987754ebb7c348c/research/slim/preprocessing/inception_preprocessing.py#L244
     else if (preProcType == 2) // mobileNet, inceptionNet
     {
         cv::cvtColor(image, image, CV_BGR2RGB);
-        float factor  = 0.875;
+        float factor  = 0.875; // From TF preprocess_for_eval
         int32_t orgWidth  = image.size[1];
         int32_t orgHeight = image.size[0];
 
@@ -107,7 +108,7 @@ bool tidl::imgutil::PreprocessImage(Mat& image, char *ptr,
         meanValues[1] = 128;
         meanValues[2] = 128;
     }
-    else if (preProcType == 3)
+    else if (preProcType == 3) // CIFAR 10
     {
         cv::cvtColor(image, image, CV_BGR2RGB);
         int32_t half_the_width  =  32/ 2;
@@ -122,7 +123,7 @@ bool tidl::imgutil::PreprocessImage(Mat& image, char *ptr,
         image = tempImage(myROI);
         enableMeanSub = false;
     }
-    else if (preProcType == 4)
+    else if (preProcType == 4) // JdetNet
     {
         cv::resize(image, tempImage, Size(output_width,output_height),
                    0, 0, cv::INTER_AREA);

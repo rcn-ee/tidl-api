@@ -67,6 +67,11 @@ class Configuration
 
     //! Pre-processing type applied to the input frame
     //! Specific to each network, can take values from 0 to 4, default is 0
+    //! 0 -> Caffe-Jacinto models
+    //! 1 -> Caffe models (SqueezeNet)
+    //! 2 -> TensorFlow (Inception, MobileNet)
+    //! 3 -> CIFAR 10
+    //! 4 -> JdetNet
     int     preProcType;
 
     //! Force to run all layers, regardless of layersGroupId partitioning

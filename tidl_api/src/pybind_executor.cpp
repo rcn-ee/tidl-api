@@ -124,5 +124,9 @@ PYBIND11_MODULE(tidl, m)
     m.def("free_memory",
            (void (*)(const vector<EOP *>&)) &FreeMemory,
           "Free input and output buffers of all ExecutionObjectPipelines");
+
+    m.def("enable_time_stamps",
+           &EnableTimeStamps,
+          "Enable timestamp generation for API events");
 }
 

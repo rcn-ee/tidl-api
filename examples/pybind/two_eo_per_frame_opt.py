@@ -26,16 +26,13 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
 
-""" Process each frame using a single ExecutionObject.
-    Increase throughput by using multiple ExecutionObjects.
-"""
 
 import argparse
-
-from tidl import DeviceId, DeviceType, Configuration, Executor, TidlError
+from tidl import DeviceId, DeviceType, Configuration, TidlError
+from tidl import Executor, ExecutionObjectPipeline
 from tidl import allocate_memory, free_memory, enable_time_stamps
 
-from tidl_app_utils import read_frame, write_output, report_time
+from tidl_app_utils import read_frame, write_output
 
 
 def main():
@@ -52,21 +49,94 @@ def main():
     configuration.enable_api_trace = False
     configuration.num_frames = args.num_frames
 
+    # Heap sizes for this network determined using Configuration.showHeapStats
+    configuration.param_heap_size = (3 << 20)
+    configuration.network_heap_size = (20 << 20)
+
     num_dsp = Executor.get_num_devices(DeviceType.DSP)
     num_eve = Executor.get_num_devices(DeviceType.EVE)
 
-    if num_dsp == 0 and num_eve == 0:
-        print('No TIDL API capable devices available')
+    if num_dsp == 0 or num_eve == 0:
+        print('This example required EVEs and DSPs.')
         return
 
-    enable_time_stamps("1eo_timestamp.log", 16)
+    enable_time_stamps("2eo_opt_timestamp.log", 16)
     run(num_eve, num_dsp, configuration)
 
-    return
+# Run layer group 1 on EVE, 2 on DSP
+EVE_LAYER_GROUP_ID = 1
+DSP_LAYER_GROUP_ID = 2
 
 
-DESCRIPTION = 'Process frames using all available Execution Objects. '\
-              'Each ExecutionObject processes a single frame'
+def run(num_eve, num_dsp, c):
+    """ Run the network on the specified device type and number of devices"""
+
+    print('Running on {} EVEs, {} DSPs'.format(num_eve, num_dsp))
+
+    dsp_device_ids = set([DeviceId.ID0, DeviceId.ID1,
+                          DeviceId.ID2, DeviceId.ID3][0:num_dsp])
+    eve_device_ids = set([DeviceId.ID0, DeviceId.ID1,
+                          DeviceId.ID2, DeviceId.ID3][0:num_eve])
+
+    c.layer_index_to_layer_group_id = {12:DSP_LAYER_GROUP_ID,
+                                       13:DSP_LAYER_GROUP_ID,
+                                       14:DSP_LAYER_GROUP_ID}
+
+    try:
+        print('TIDL API: performing one time initialization ...')
+
+        eve = Executor(DeviceType.EVE, eve_device_ids, c, EVE_LAYER_GROUP_ID)
+        dsp = Executor(DeviceType.DSP, dsp_device_ids, c, DSP_LAYER_GROUP_ID)
+
+        num_eve_eos = eve.get_num_execution_objects()
+        num_dsp_eos = dsp.get_num_execution_objects()
+
+        # On AM5749, create a total of 4 pipelines (EOPs):
+        # EOPs[0] : { EVE1, DSP1 }
+        # EOPs[1] : { EVE1, DSP1 } for double buffering
+        # EOPs[2] : { EVE2, DSP2 }
+        # EOPs[3] : { EVE2, DSP2 } for double buffering
+        PIPELINE_DEPTH = 2
+
+        eops = []
+        num_pipe = max(num_eve_eos, num_dsp_eos)
+        for i in range(num_pipe):
+            for i in range(PIPELINE_DEPTH):
+                eops.append(ExecutionObjectPipeline([eve.at(i % num_eve_eos),
+                                                     dsp.at(i % num_dsp_eos)]))
+
+        allocate_memory(eops)
+
+        # Open input, output files
+        f_in = open(c.in_data, 'rb')
+        f_out = open(c.out_data, 'wb')
+
+
+        print('TIDL API: processing input frames ...')
+
+        num_eops = len(eops)
+        for frame_index in range(c.num_frames+num_eops):
+            eop = eops[frame_index % num_eops]
+
+            if eop.process_frame_wait():
+                write_output(eop, f_out)
+
+            if read_frame(eop, frame_index, c, f_in):
+                eop.process_frame_start_async()
+
+
+        f_in.close()
+        f_out.close()
+
+        free_memory(eops)
+    except TidlError as err:
+        print(err)
+
+
+DESCRIPTION = 'Process frames using ExecutionObjectPipeline. '\
+              'Each ExecutionObjectPipeline processes a single frame. '\
+              'The example also uses double buffering on the EOPs to '\
+              'hide frame read overhead.'
 
 def parse_args():
     """Parse input arguments"""
@@ -79,64 +149,6 @@ def parse_args():
     args = parser.parse_args()
 
     return args
-
-
-def run(num_eve, num_dsp, configuration):
-    """ Run the network on the specified device type and number of devices"""
-
-    print('Running network across {} EVEs, {} DSPs'.format(num_eve, num_dsp))
-
-    dsp_device_ids = set([DeviceId.ID0, DeviceId.ID1,
-                          DeviceId.ID2, DeviceId.ID3][0:num_dsp])
-    eve_device_ids = set([DeviceId.ID0, DeviceId.ID1,
-                          DeviceId.ID2, DeviceId.ID3][0:num_eve])
-
-    # Heap sizes for this network determined using Configuration.showHeapStats
-    configuration.param_heap_size = (3 << 20)
-    configuration.network_heap_size = (20 << 20)
-
-
-    try:
-        print('TIDL API: performing one time initialization ...')
-
-        eve = Executor(DeviceType.EVE, eve_device_ids, configuration, 1)
-        dsp = Executor(DeviceType.DSP, dsp_device_ids, configuration, 1)
-
-        # Collect all EOs from EVE and DSP executors
-        eos = []
-        for i in range(eve.get_num_execution_objects()):
-            eos.append(eve.at(i))
-
-        for i in range(dsp.get_num_execution_objects()):
-            eos.append(dsp.at(i))
-
-        allocate_memory(eos)
-
-        # Open input, output files
-        f_in = open(configuration.in_data, 'rb')
-        f_out = open(configuration.out_data, 'wb')
-
-
-        print('TIDL API: processing input frames ...')
-
-        num_eos = len(eos)
-        for frame_index in range(configuration.num_frames+num_eos):
-            execution_object = eos[frame_index % num_eos]
-
-            if execution_object.process_frame_wait():
-                report_time(execution_object)
-                write_output(execution_object, f_out)
-
-            if read_frame(execution_object, frame_index, configuration, f_in):
-                execution_object.process_frame_start_async()
-
-
-        f_in.close()
-        f_out.close()
-
-        free_memory(eos)
-    except TidlError as err:
-        print(err)
 
 
 if __name__ == '__main__':

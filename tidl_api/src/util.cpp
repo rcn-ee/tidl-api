@@ -67,6 +67,7 @@ TimeStamp::TimeStamp(const std::string& file, int num_entries):
 void TimeStamp::Update(int frame_idx, EventKind k, int type, int id)
 {
     int idx = frame_idx % num_entries_m;
+
     entries_m[idx].frame_idx = frame_idx;
     entries_m[idx].timestamp[k] = duration_cast<microseconds>
                  (high_resolution_clock::now().time_since_epoch()).count();
@@ -83,6 +84,15 @@ void TimeStamp::Update(int frame_idx, EventKind k, int type, int id)
     }
 
 }
+
+void TimeStamp::Zero(int frame_idx, EventKind k)
+{
+    int idx = frame_idx % num_entries_m;
+
+    entries_m[idx].frame_idx    = frame_idx;
+    entries_m[idx].timestamp[k] = 0;
+}
+
 
 TimeStamp::~TimeStamp()
 {
@@ -146,6 +156,12 @@ void tidl::RecordEvent(int frame_idx, TimeStamp::EventKind k,
         t->Update(frame_idx, k, eo_type, eo_id);
 }
 
+void tidl::ResetEvent(int frame_idx, TimeStamp::EventKind k)
+{
+    TimeStamp* t = tidl_api_timestamps.get();
+    if (t)
+        t->Zero(frame_idx, k);
+}
 
 std::size_t tidl::GetBinaryFileSize(const std::string &F)
 {

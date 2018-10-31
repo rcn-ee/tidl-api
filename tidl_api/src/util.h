@@ -65,6 +65,7 @@ class TimeStamp
         TimeStamp(const std::string& file, int num_entries);
         ~TimeStamp();
         void Update(int frame_idx, EventKind k, int type=0, int id=0);
+        void Zero  (int frame_idx, EventKind k);
 
     private:
         Entry*            entries_m;
@@ -76,4 +77,5 @@ class TimeStamp
 void RecordEvent(int frame_idx, TimeStamp::EventKind k,
                  int eo_type=0, int eo_id=0);
 
+void ResetEvent(int frame_idx, TimeStamp::EventKind k);
 } // namespace tidl

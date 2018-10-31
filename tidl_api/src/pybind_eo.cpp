@@ -74,10 +74,6 @@ void init_eo(module &m)
 
         .def("get_device_name", &EO::GetDeviceName)
 
-        .def("get_host_process_time_in_ms",
-             &EO::GetHostProcessTimeInMilliSeconds,
-             "Milliseconds taken on the host to process a frame")
-
         .def("get_process_time_in_ms",
              &EO::GetProcessTimeInMilliSeconds,
              "Milliseconds taken on the device to process a frame")

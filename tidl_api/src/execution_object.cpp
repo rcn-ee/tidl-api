@@ -631,11 +631,18 @@ bool ExecutionObject::Impl::Wait(CallType ct, uint32_t context_idx)
                                     __FILE__, __FUNCTION__, __LINE__);
 
                 HostReadNetOutput(context_idx);
-            }
 
-            RecordEvent(current_frame_idx_m[context_idx],
-                        (layers_group_id_m == 1) ? TimeStamp::EO1_PFW_END:
-                                                   TimeStamp::EO2_PFW_END);
+                RecordEvent(current_frame_idx_m[context_idx],
+                            (layers_group_id_m == 1) ? TimeStamp::EO1_PFW_END:
+                                                       TimeStamp::EO2_PFW_END);
+            }
+            else
+            {
+                // If there is no work, reset start event time
+                ResetEvent(current_frame_idx_m[context_idx],
+                           (layers_group_id_m == 1) ? TimeStamp::EO1_PFW_START:
+                                                      TimeStamp::EO2_PFW_START);
+            }
 
             return has_work;
         }
