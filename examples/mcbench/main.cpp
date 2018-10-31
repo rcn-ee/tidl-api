@@ -55,13 +55,13 @@ using namespace cv;
 
 
 #define NUM_VIDEO_FRAMES  100
-#define DEFAULT_CONFIG    "../test/testvecs/config/mcbench/tidl_config_j11_v2.txt"
+#define DEFAULT_CONFIG    "../test/testvecs/config/infer/tidl_config_j11_v2.txt"
 
 bool RunConfiguration(const cmdline_opts_t& opts);
 Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c,
                          int layers_group_id);
 bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
-                                    Configuration& configuration, 
+                                    Configuration& configuration,
                                     uint32_t num_layers_groups,
                                     Executor*& e_eve, Executor*& e_dsp,
                                   std::vector<ExecutionObjectPipeline*>& eops);
@@ -124,24 +124,20 @@ bool RunConfiguration(const cmdline_opts_t& opts)
 {
     // Read the TI DL configuration file
     Configuration c;
-    std::string config_file = opts.config;
-    std::string inputFile;
-
-    bool status = c.ReadFromFile(config_file);
-    if (!status)
-    {
-        cerr << "Error in configuration file: " << config_file << endl;
+    if (!c.ReadFromFile(opts.config))
         return false;
-    }
-    c.enableApiTrace = opts.verbose;
 
+    c.enableApiTrace = opts.verbose;
+    if(opts.num_layers_groups == 1)
+       c.runFullNet = true; //Force all layers to be in the same group
+
+    std::string inputFile;
     if (opts.input_file.empty())
         inputFile   = c.inData;
     else
         inputFile = opts.input_file;
 
-    int channel_size = c.inWidth * c.inHeight;
-    int frame_size = c.inNumChannels * channel_size;
+    int frame_size = c.inNumChannels * c.inWidth * c.inHeight;
 
     c.numFrames = GetBinaryFileSize (inputFile) / frame_size;
 
@@ -150,51 +146,23 @@ bool RunConfiguration(const cmdline_opts_t& opts)
     // Read input file into memory buffer
     char *input_frame_buffer = new char[c.numFrames * frame_size]();
     ifstream ifs(inputFile, ios::binary);
-    ifs.read(input_frame_buffer, channel_size * 3);
+    ifs.read(input_frame_buffer, c.numFrames * frame_size);
     if(!ifs.good()) {
        std::cout << "Invalid File input:" << inputFile << std::endl;
-       return false;    
+       return false;
     }
 
+    bool status = true;
     try
     {
-        // Construct ExecutionObjectPipeline that utilizes multiple
-        // ExecutionObjects to process a single frame, each ExecutionObject
-        // processes one layerGroup of the network
-        //
-        // Pipeline depth can enable more optimized pipeline execution:
-        // Given one EVE and one DSP as an example, with different
-        //     pipeline_depth, we have different execution behavior:
-        // If pipeline_depth is set to 1,
-        //    we create one EOP: eop0 (eve0, dsp0)
-        //    pipeline execution of multiple frames over time is as follows:
-        //    --------------------- time ------------------->
-        //    eop0: [eve0...][dsp0]
-        //    eop0:                [eve0...][dsp0]
-        //    eop0:                               [eve0...][dsp0]
-        //    eop0:                                              [eve0...][dsp0]
-        // If pipeline_depth is set to 2,
-        //    we create two EOPs: eop0 (eve0, dsp0), eop1(eve0, dsp0)
-        //    pipeline execution of multiple frames over time is as follows:
-        //    --------------------- time ------------------->
-        //    eop0: [eve0...][dsp0]
-        //    eop1:          [eve0...][dsp0]
-        //    eop0:                   [eve0...][dsp0]
-        //    eop1:                            [eve0...][dsp0]
-        // Additional benefit of setting pipeline_depth to 2 is that
-        //    it can also overlap host ReadFrame() with device processing:
-        //    --------------------- time ------------------->
-        //    eop0: [RF][eve0...][dsp0]
-        //    eop1:     [RF]     [eve0...][dsp0]
-        //    eop0:                    [RF][eve0...][dsp0]
-        //    eop1:                             [RF][eve0...][dsp0]
         Executor *e_eve = NULL;
         Executor *e_dsp = NULL;
         std::vector<ExecutionObjectPipeline *> eops;
         if (! CreateExecutionObjectPipelines(opts.num_eves, opts.num_dsps, c,
-                                        opts.num_layers_groups, e_eve, e_dsp, eops))
+                                             opts.num_layers_groups,
+                                             e_eve, e_dsp, eops))
             return false;
-        uint32_t num_eops = eops.size();
+
         // Allocate input/output memory for each EOP
         AllocateMemory(eops);
 
@@ -203,6 +171,7 @@ bool RunConfiguration(const cmdline_opts_t& opts)
 
         // Process frames with available eops in a pipelined manner
         // additional num_eops iterations to flush pipeline (epilogue)
+        uint32_t num_eops = eops.size();
         for (uint32_t frame_idx = 0;
              frame_idx < opts.num_frames + num_eops; frame_idx++)
         {
@@ -210,10 +179,7 @@ bool RunConfiguration(const cmdline_opts_t& opts)
 
             // Wait for previous frame on the same eop to finish processing
             if (eop->ProcessFrameWait())
-            {
-                if(opts.verbose)
-                  ReportTime(eop);
-            }
+                ;
 
             // Read a frame and start processing it with current eo
             if (ReadFrame(*eop, frame_idx, c, opts, input_frame_buffer))
@@ -228,7 +194,10 @@ bool RunConfiguration(const cmdline_opts_t& opts)
         cout << "FPS:" << opts.num_frames / elapsed.count() << endl;
 
         FreeMemory(eops);
-        for (auto eop : eops)  delete eop;
+
+        for (auto eop : eops)
+            delete eop;
+
         delete e_eve;
         delete e_dsp;
     }
@@ -237,6 +206,7 @@ bool RunConfiguration(const cmdline_opts_t& opts)
         cerr << e.what() << endl;
         status = false;
     }
+
     delete [] input_frame_buffer;
     return status;
 }
@@ -255,7 +225,7 @@ Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c,
 }
 
 bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
-                                    Configuration& configuration, 
+                                    Configuration& configuration,
                                     uint32_t num_layers_groups,
                                     Executor*& e_eve, Executor*& e_dsp,
                                     std::vector<ExecutionObjectPipeline*>& eops)
@@ -265,6 +235,37 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
         ids_eve.insert(static_cast<DeviceId>(i));
     for (uint32_t i = 0; i < num_dsps; i++)
         ids_dsp.insert(static_cast<DeviceId>(i));
+
+    // Construct ExecutionObjectPipeline that utilizes multiple
+    // ExecutionObjects to process a single frame, each ExecutionObject
+    // processes one layerGroup of the network
+    //
+    // Pipeline depth can enable more optimized pipeline execution:
+    // Given one EVE and one DSP as an example, with different
+    //     buffer_factor, we have different execution behavior:
+    // If buffer_factor is set to 1,
+    //    we create one EOP: eop0 (eve0, dsp0)
+    //    pipeline execution of multiple frames over time is as follows:
+    //    --------------------- time ------------------->
+    //    eop0: [eve0...][dsp0]
+    //    eop0:                [eve0...][dsp0]
+    //    eop0:                               [eve0...][dsp0]
+    //    eop0:                                              [eve0...][dsp0]
+    // If buffer_factor is set to 2,
+    //    we create two EOPs: eop0 (eve0, dsp0), eop1(eve0, dsp0)
+    //    pipeline execution of multiple frames over time is as follows:
+    //    --------------------- time ------------------->
+    //    eop0: [eve0...][dsp0]
+    //    eop1:          [eve0...][dsp0]
+    //    eop0:                   [eve0...][dsp0]
+    //    eop1:                            [eve0...][dsp0]
+    // Additional benefit of setting buffer_factor to 2 is that
+    //    it can also overlap host ReadFrame() with device processing:
+    //    --------------------- time ------------------->
+    //    eop0: [RF][eve0...][dsp0]
+    //    eop1:     [RF]     [eve0...][dsp0]
+    //    eop0:                    [RF][eve0...][dsp0]
+    //    eop1:                             [RF][eve0...][dsp0]
     const uint32_t buffer_factor = 2;
 
     switch(num_layers_groups)
@@ -306,15 +307,13 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
         // EO level rather than at EOP level, in addition to double buffering
         // and overlapping host pre/post-processing with device processing
         for (uint32_t j = 0; j < buffer_factor; j++)
-        {
             for (uint32_t i = 0; i < std::max(num_eves, num_dsps); i++)
                 eops.push_back(new ExecutionObjectPipeline(
                                 {(*e_eve)[i%num_eves], (*e_dsp)[i%num_dsps]}));
-        }
         break;
 
     default:
-        std::cout << "Layers groups can be either 1 or 2!" << std::endl;
+        std::cout << "Layers groups must be either 1 or 2!" << std::endl;
         return false;
         break;
     }
@@ -322,21 +321,59 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
     return true;
 }
 
-bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
-               const Configuration& c, const cmdline_opts_t& opts, char *input_frames_buffer)
+static void subtractMeanValue(unsigned char *frame_buffer, int channel_size,
+                              int32_t mean_value)
 {
-    if ((uint32_t)frame_idx >= opts.num_frames)
+    int32_t one_pixel;
+
+    for (int i = 0; i < channel_size; i ++)
+    {
+        one_pixel  = (int32_t)frame_buffer[i];
+        one_pixel -= mean_value;
+        if(one_pixel > 127)  one_pixel = 127;
+        if(one_pixel < -128) one_pixel = -128;
+        frame_buffer[i] = (unsigned char)one_pixel;
+    }
+}
+
+bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
+               const Configuration& c, const cmdline_opts_t& opts,
+               char *input_frames_buffer)
+{
+    if (frame_idx >= opts.num_frames)
         return false;
 
     eop.SetFrameIndex(frame_idx);
 
-    char*  frame_buffer = eop.GetInputBufferPtr();
+    unsigned char* frame_buffer = (unsigned char *)eop.GetInputBufferPtr();
     assert (frame_buffer != nullptr);
+    //Current implementation of this function assumes 3 channels on input
+    assert (c.inNumChannels == 3);
+
     int channel_size = c.inWidth * c.inHeight;
-    char *bgr_frames_input = input_frames_buffer + (frame_idx % c.numFrames) * channel_size * 3;
+    char *bgr_frames_input = input_frames_buffer + (frame_idx % c.numFrames) *
+                             channel_size * c.inNumChannels;
+
     memcpy(frame_buffer,                bgr_frames_input + 0, channel_size);
-    memcpy(frame_buffer + 1*channel_size, bgr_frames_input + 1 * channel_size, channel_size);
-    memcpy(frame_buffer + 2*channel_size, bgr_frames_input + 2 * channel_size, channel_size);
+    if(c.preProcType == 1)
+       subtractMeanValue(frame_buffer, channel_size, 104);
+    else if(c.preProcType == 2)
+       subtractMeanValue(frame_buffer, channel_size, 128);
+    frame_buffer += channel_size;
+
+    memcpy(frame_buffer, bgr_frames_input + 1 * channel_size, channel_size);
+    if(c.preProcType == 1)
+       subtractMeanValue(frame_buffer, channel_size, 117);
+    else if(c.preProcType == 2)
+       subtractMeanValue(frame_buffer, channel_size, 128);
+    frame_buffer += channel_size;
+
+    memcpy(frame_buffer, bgr_frames_input + 2 * channel_size, channel_size);
+    if(c.preProcType == 1)
+       subtractMeanValue(frame_buffer, channel_size, 123);
+    else if(c.preProcType == 2)
+       subtractMeanValue(frame_buffer, channel_size, 128);
+
     return true;
 }
 
@@ -344,25 +381,17 @@ void DisplayHelp()
 {
     std::cout <<
     "Usage: mcbench\n"
-    "  Will run partitioned mcbench network to perform "
-    "multi-objects detection\n"
-    "  and classification.  First part of network "
-    "(layersGroupId 1) runs on EVE,\n"
-    "  second part (layersGroupId 2) runs on DSP.\n"
+    "  Runs partitioned network to perform multi-object detection\n"
+    "  and classification. First part of network (layersGroupId 1) runs on\n"
+    "  EVE, second part (layersGroupId 2) runs on DSP.\n"
     "  Use -c to run a different segmentation network.  Default is jdetnet.\n"
     "Optional arguments:\n"
-    " -c <config>          Valid configs: ../test/testvecs/config/infer/... files \n"
-    " -d <number>          Number of dsp cores to use\n"
-    " -e <number>          Number of eve cores to use\n"
-    " -g <1|2>             Number of layer groups (layer group <=> consecutive group of layers)\n"
+    " -c <config>          Valid configs: ../test/testvecs/config/infer/... \n"
+    " -d <number>          Number of DSP cores to use\n"
+    " -e <number>          Number of EVE cores to use\n"
+    " -g <1|2>             Number of layer groups\n"
     " -f <number>          Number of frames to process\n"
-    " -r <number>          Keep repeating specified number of frames from input file\n"
-    " -i <image>           Path to the image file as input\n"
-    "                      Default are 9 frames in testvecs\n"
-    " -i camera<number>    Use camera as input\n"
-    "                      video input port: /dev/video<number>\n"
-    " -i <name>.{mp4,mov,avi}  Use video file as input\n"
-    " -w <number>          Output image/video width\n"
+    " -i <image>           Path to the input image file\n"
     " -v                   Verbose output during execution\n"
     " -h                   Help\n";
 }
