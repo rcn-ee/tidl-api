@@ -67,6 +67,9 @@ class TimeStamp
         void Update(int frame_idx, EventKind k, int type=0, int id=0);
         void Zero  (int frame_idx, EventKind k);
 
+        TimeStamp(const TimeStamp&)            = delete;
+        TimeStamp& operator=(const TimeStamp&) = delete;
+
     private:
         Entry*            entries_m;
         const int         num_entries_m;
