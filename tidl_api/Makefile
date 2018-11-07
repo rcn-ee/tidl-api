@@ -23,6 +23,7 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
 # THE POSSIBILITY OF SUCH DAMAGE.
+PYTHON_INCLUDE_DIR ?= $(wildcard $(TARGET_ROOTDIR)/usr/include/python3*)
 
 LIB_NAME = tidl_api.a
 DSP_SRCFILE = dsp/ocl_wrapper.cl
@@ -30,7 +31,7 @@ DSP_OUTFILE = dsp/ocl_wrapper.dsp_h
 LIB_IMGUTIL_NAME = tidl_imgutil.a
 PY_LIB_NAME = tidl.so
 
-all: $(LIB_NAME) $(LIB_IMGUTIL_NAME)
+all: $(LIB_NAME) $(LIB_IMGUTIL_NAME) $(PY_LIB_NAME)
 
 include make.inc
 include make.buildid
@@ -71,7 +72,7 @@ CXXFLAGS += -I$(TI_OCL_INSTALL)/usr/share/ti/opencl
 CXXFLAGS += -I$(TARGET_ROOTDIR)/usr/share/ti/opencl
 CXXFLAGS += -Isrc -Iinc
 CXXFLAGS += $(BUILD_ID)
-PY_INCLUDE = -I$(TARGET_ROOTDIR)/usr/include/python3.5m -I$(PYBIND11_INC_DIR)
+PY_INCLUDE = -I$(PYTHON_INCLUDE_DIR) -I$(PYBIND11_INC_DIR)
 
 $(DSP_OUTFILE): $(DSP_SRCFILE)
 	$(MAKE) -C dsp
