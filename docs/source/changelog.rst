@@ -6,6 +6,8 @@ Changelog
 ===============================
 **Added**
 
+#. Updated API implementation to minimize TIDL API/OpenCL dispatch overhead using multiple execution contexts in the :term:`ExecutionObject`.
+
 #. Execution Graph generation
 
     Enable a two phase approach to generating execution graphs. Use the
@@ -17,7 +19,14 @@ Changelog
 
     The generated log file can be viewed by using the execution_graph.py script. Refer to :ref:`execution-graph` for details.
 
-#. Python 3 bindings for TIDL API
+#. Added Python 3 bindings for TIDL API. See the ``examples/pybind`` directory for examples of using the Python bindings. Set PYTHONPATH to the location of ``tidl.so``.
+
+   .. code::
+
+        root@am57xx-evm:~# export PYTHONPATH=/home/root/tidl-api/tidl_api
+        root@am57xx-evm:~# python3
+        >>> import tidl
+        >>> help (tidl)
 
 **Removed**
 

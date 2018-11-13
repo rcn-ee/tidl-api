@@ -126,9 +126,24 @@ class Configuration
     //! size.
     bool showHeapStats;
 
-    int    quantHistoryParam1;
-    int    quantHistoryParam2;
-    int    quantMargin;
+    //! Weight in percentage applied to previously processed input frame during
+    //! application startup (first 10 frames of input).
+    //!
+    //! TIDL maintains range statistics for previously processed frames.
+    //! It quantizes the current inference activations using these range
+    //! statistics from previous inputs (weighted average range). Therefore,
+    //! the results observed when the input is processed on the device will
+    //! not be identical to that observed during the import stage.
+    //! Parameters to control quantization:
+    //! @see quantHistoryParam1, quantHistoryParam2, quantMargin
+    int quantHistoryParam1;
+
+    //! Weight in percentage applied to previously processed input frames
+    //! after the first 10 input frames.
+    int quantHistoryParam2;
+
+    //! Margin added to the average in percentage.
+    int quantMargin;
 
     //! Default constructor.
     Configuration();
