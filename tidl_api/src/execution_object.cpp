@@ -180,6 +180,9 @@ ExecutionObject::Impl::Impl(Device* d, DeviceType t, uint8_t device_index,
         EnableOutputBufferTrace();
 
     SetupProcessKernel();
+
+    for (int i = 0; i < tidl::internal::NUM_CONTEXTS; i++)
+        current_frame_idx_m[i] = 0;
 }
 
 // Pointer to implementation idiom: https://herbsutter.com/gotw/_100/:
