@@ -44,6 +44,7 @@ Changelog
 
    These methods were replaced by a timestamp based approach because they were
    no longer accurate with multiple ExecutionObject contexts and pipelining.
+   Refer to :ref:`execution-graph` for details.
 
 1.1.0 [Processor Linux SDK 5.1]
 ===============================

@@ -10,8 +10,29 @@ This section illustrates using TIDL APIs to leverage deep learning in user appli
 * Create :term:`Executor` objects - one to manage overall execution on the EVEs, the other for C66x DSPs.
 * Use the :term:`Execution Objects<EO>` (EO) created by the Executor to process :term:`frames<Frame>`. There are two approaches to processing frames using Execution Objects:
 
-  #. Each EO processes a single frame.
-  #. Split processing frame across multiple EOs using an :term:`ExecutionObjectPipeline`.
+.. list-table:: TIDL API Use Cases
+   :header-rows: 1
+   :widths: 30 50 20
+
+   * - Use Case
+     - Application/Network characteristic
+     - Examples
+   * - Each :term:`EO` processes a single frame. The network consists of a single :term:`Layer Group` and the entire Layer Group is processed on a single EO. See :ref:`use-case-1`.
+     -
+
+       * The latency to run the network on a single frame meets application requirements
+       * If frame processing time is fairly similar across EVE and C66x, multiple EOs can be used to increase throughtput
+       * The latency to read an input frame can be hidden by using 2 :term:`EOPs<EOP>` with the same :term:`EO`.
+     - one_eo_per_frame, imagenet, segmentation
+
+   * - Split processing a single frame across multiple :term:`EOs<EO>` using an :term:`ExecutionObjectPipeline`.  The network consists of 2 or more :term:`Layer Groups<Layer Group>`. See :ref:`use-case-2` and :ref:`use-case-3`.
+     -
+
+       * Network execution must be split across EVE and C66x to meet single frame latency requirements.
+       * Split processing a single frame across multiple :term:`EOs<EO>` using an :term:`ExecutionObjectPipeline`.
+       * Splitting can lower the overall latency because memory bound :term:`layers<Layer>` tend to run faster on the C66x.
+     - two_eo_per_frame, two_eo_per_frame_opt, ssd_multibox
+
 
 Refer Section :ref:`api-documentation` for API documentation.
 
@@ -43,10 +64,10 @@ In this approach, the :term:`network<Network>` is set up as a single :term:`Laye
 
     .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
         :language: c++
-        :lines: 92-94
+        :lines: 97-99
         :linenos:
 
-#. Create Executor on C66x and EVE. In this example, all available C66x and EVE  cores are used (lines 1-2 and :ref:`CreateExecutor`).
+#. Create Executor on C66x and EVE. In this example, all available C66x and EVE  cores are used (lines 2-3 and :ref:`CreateExecutor`).
 #. Create a vector of available ExecutionObjects from both Executors (lines 7-8 and :ref:`CollectEOs`).
 #. Allocate input and output buffers for each ExecutionObject (:ref:`AllocateMemory`)
 #. Run the network on each input frame.  The frames are processed with available execution objects in a pipelined manner. The additional num_eos iterations are required to flush the pipeline (lines 15-26).
@@ -56,26 +77,26 @@ In this approach, the :term:`network<Network>` is set up as a single :term:`Laye
 
     .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
         :language: c++
-        :lines: 108-127,129,133-139
+        :lines: 113-132,134,138-142
         :linenos:
 
     .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
         :language: c++
-        :lines: 154-163
+        :lines: 159-168
         :linenos:
         :caption: CreateExecutor
         :name: CreateExecutor
 
     .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
         :language: c++
-        :lines: 166-172
+        :lines: 171-177
         :linenos:
         :caption: CollectEOs
         :name: CollectEOs
 
     .. literalinclude:: ../../examples/common/utils.cpp
         :language: c++
-        :lines: 197-212
+        :lines: 176-191
         :linenos:
         :caption: AllocateMemory
         :name: AllocateMemory
@@ -83,7 +104,7 @@ In this approach, the :term:`network<Network>` is set up as a single :term:`Laye
 The complete example is available at ``/usr/share/ti/tidl/examples/one_eo_per_frame/main.cpp``.
 
 .. note::
-    The double buffering technique described in :ref:`use-case-3` can be used with a single :term:`ExecutionObject` to overlap reading a frame with the processing of the previous frame.
+    The double buffering technique described in :ref:`use-case-3` can be used with a single :term:`ExecutionObject` to overlap reading an input frame with the processing of the previous input frame. Refer to ``examples/imagenet/main.cpp``.
 
 .. _use-case-2:
 
@@ -121,7 +142,7 @@ The network consists of 2 :term:`Layer Groups<Layer Group>`. :term:`Execution Ob
 
     .. literalinclude:: ../../examples/one_eo_per_frame/main.cpp
         :language: c++
-        :lines: 92-94
+        :lines: 97-99
         :linenos:
 
 #. Update the default layer group index assignment. Pooling (layer 12), InnerProduct (layer 13) and SoftMax (layer 14) are added to a second layer group. Refer :ref:`layer-group-override` for details.
@@ -143,12 +164,12 @@ The network consists of 2 :term:`Layer Groups<Layer Group>`. :term:`Execution Ob
 
     .. literalinclude:: ../../examples/two_eo_per_frame/main.cpp
         :language: c++
-        :lines: 110-138,140,147-153
+        :lines: 132-139,144-149
         :linenos:
 
     .. literalinclude:: ../../examples/common/utils.cpp
         :language: c++
-        :lines: 225-240
+        :lines: 204-219
         :linenos:
         :caption: AllocateMemory
         :name: AllocateMemory2
@@ -176,15 +197,18 @@ The only change in the code compared to :ref:`use-case-2` is to create an additi
 
 .. literalinclude:: ../../examples/two_eo_per_frame_opt/main.cpp
     :language: c++
-    :lines: 117-129
+    :lines: 122-134
     :linenos:
     :caption: Setting up EOPs for double buffering
     :name: test-code
 
 .. note::
     EOP1 in :numref:`frame-across-eos-opt` -> EOPs[0] in :numref:`test-code`.
+
     EOP2 in :numref:`frame-across-eos-opt` -> EOPs[1] in :numref:`test-code`.
+
     EOP3 in :numref:`frame-across-eos-opt` -> EOPs[2] in :numref:`test-code`.
+
     EOP4 in :numref:`frame-across-eos-opt` -> EOPs[3] in :numref:`test-code`.
 
 The complete example is available at ``/usr/share/ti/tidl/examples/two_eo_per_frame_opt/main.cpp``.

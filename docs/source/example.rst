@@ -39,8 +39,12 @@ Examples
      - OpenCV used to read input image from file or capture from camera.
    * - classification
      - Classification example, called from the Matrix GUI.
-     -
+     - EVE or C66x
      - OpenCV used to read input image from file or capture from camera.
+   * - mcbench
+     - Used to benchmark supported networks. Refer ``mcbench/scripts`` for command line options.
+     - EVE or C66x
+     - Pre-processed image read from file.
    * - layer_output
      - Illustrates using TIDL APIs to access output buffers of intermediate :term:`layers<Layer>` in the network.
      - EVE or C66x
