@@ -258,6 +258,8 @@ versus ExecutionObject level.
      - 1630 ms
      - 1408 ms
 
+.. _mnist-example:
+
 MNIST
 -----
 
