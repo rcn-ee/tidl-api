@@ -296,7 +296,8 @@ bool ReadFrame(ExecutionObjectPipeline &eop,
     return imgutil::PreprocessImage(image, frame_buffer, c);
 }
 
-// Display top 5 classified imagenet classes with probabilities
+// Display top 5 classified imagenet classes with probabilities 5% or higher
+#define REPORT_THRESHOLD   13    // 13/255  = 5.098%
 bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
 {
     const int k = 5;
@@ -331,8 +332,13 @@ bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
     }
 
     for (int i = k - 1; i >= 0; i--)
+    {
+        if (sorted[i].first <= REPORT_THRESHOLD)  break;
         cout << k-i << ": "
-             << object_classes->At(sorted[i].second).label << endl;
+             << object_classes->At(sorted[i].second).label
+             << ",   prob = " << setprecision(4)
+             << ((sorted[i].first * 100) / 255.0f) << "%" << endl;
+    }
 
     return true;
 }

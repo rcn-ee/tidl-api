@@ -80,7 +80,8 @@ Imagenet
 
 The imagenet example takes an image as input and outputs 1000 probabilities.
 Each probability corresponds to one object in the 1000 objects that the
-network is pre-trained with.  The example outputs top 5 predictions for a given input image.
+network is pre-trained with.  The example outputs top 5 (up to) predictions
+with probabilities of 5% or higher for a given input image.
 
 The following figure and tables shows an input image, top 5 predicted
 objects as output, and the processing time on either EVE or C66x.
@@ -89,15 +90,13 @@ objects as output, and the processing time on either EVE or C66x.
    :width: 600
 
 
-==== ==============
-Rank Object Classes
-==== ==============
-1    tabby
-2    Egyptian_cat
-3    tiger_cat
-4    lynx
-5    Persian_cat
-==== ==============
+==== ============== ===========
+Rank Object Classes Probability
+==== ============== ===========
+1    tabby          52.55%
+2    Egyptian_cat   21.18%
+3    tiger_cat      17.65%
+==== ============== ===========
 
 =======   ====================== ==================== ============
 Device    Device Processing Time Host Processing Time API Overhead
@@ -135,10 +134,6 @@ with single buffering and double buffering,
    * - 2 C66xs
      - 1021 ms
      - 814 ms
-
-.. note::
-    The predicitions reported here are based on the output of the softmax
-    layer in the network, which are not normalized to the real probabilities.
 
 Segmentation
 ------------
@@ -332,15 +327,12 @@ The following listing illustrates how to build and run the examples.
 
 .. code-block:: shell
 
-   root@am57xx-evm:~/tidl-api/examples/imagenet# ./imagenet
+   root@am57xx-evm:~/tidl/examples/imagenet# ./imagenet
    Input: ../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg
-   frame[  0]: Time on EVE0: 106.50 ms, host: 107.96 ms API overhead: 1.35 %
-   1: tabby
-   2: Egyptian_cat
-   3: tiger_cat
-   4: lynx
-   5: Persian_cat
-   Loop total time (including read/write/opencv/print/etc):  202.6ms
+   1: tabby,   prob = 52.55%
+   2: Egyptian_cat,   prob = 21.18%
+   3: tiger_cat,   prob = 17.65%
+   Loop total time (including read/write/opencv/print/etc):  183.3ms
    imagenet PASSED
 
    root@am57xx-evm:~/tidl-api/examples/segmentation# ./segmentation
