@@ -1,9 +1,0 @@
-numFrames   = 1
-preProcType = 0
-inData   = ../test/testvecs/input/digit_28x28.y
-outData   = "stats_tool_out.bin"
-netBinFile      = "../test/testvecs/config/tidl_models/tidl_net_mnist_cnn.bin"
-paramsBinFile   = "../test/testvecs/config/tidl_models/tidl_param_mnist_cnn.bin"
-inWidth = 28
-inHeight = 28
-inNumChannels = 2

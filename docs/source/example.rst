@@ -37,6 +37,13 @@ Examples
      - Object detection
      - EVE and C66x (network is split across both EVE and C66x)
      - OpenCV used to read input image from file or capture from camera.
+   * - mnist
+     - handwritten digits recognition (MNIST).  This example illustrates
+       low TIDL API overhead (~1.8%) for small networks with low compute
+       requirements (<5ms).
+     - EVE
+     - Pre-processed white-on-black images read from file, with or without
+       MNIST database file headers.
    * - classification
      - Classification example, called from the Matrix GUI.
      - EVE or C66x
@@ -251,6 +258,68 @@ versus ExecutionObject level.
      - 1630 ms
      - 1408 ms
 
+MNIST
+-----
+
+The MNIST example takes a pre-processed 28x28 white-on-black frame from
+a file as input and predicts the hand-written digit in the frame.
+For example, the example will predict 0 for the following frame.
+
+.. code-block:: none
+
+    root@am57xx-evm:~/tidl/examples/mnist# hexdump -v -e '28/1 "%2x" "\n"' -n 784 ../test/testvecs/input/digits10_images_28x28.y
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 3 314 8 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0319bdfeec1671b 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 01ed5ffd2a4e4ec89 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 1bcffee2a 031e6e225 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 05ff7ffbf 2 0 078ffa1 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0b2f2f34e 0 0 015e0d8 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0148deab2 0 0 0 0 0bdec 2 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 084f845 0 0 0 0 0a4f222 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0c4d3 5 0 0 0 0 096f21c 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 052f695 0 0 0 0 0 0a7ed 8 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 09af329 0 0 0 0 0 0d1cf 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 2d4c8 0 0 0 0 0 01ae9a2 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 038fa9a 0 0 0 0 0 062ff76 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 07afe5d 0 0 0 0 0 0a9e215 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0bdec1d 0 0 0 0 017e7aa 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 1e7d6 0 0 0 0 0 096f85a 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 01df2bf 0 0 0 0 015e1ca 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 061fc95 0 0 0 0 084f767 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 06eff8b 0 0 0 033e8ca 4 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 060fc9e 0 0 0 092d63e 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 01bf1da 6 0 019b656 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0c3fb8e a613e7b 5 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 049f1fcf5f696 9 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 04ca0b872 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+The file can contain multiple frames.  If an optional label file is also
+given, the example will compare predicted result against pre-determined
+label for accuracy.  The input files may or may not have `MNIST dataset
+file headers <http://yann.lecun.com/exdb/mnist/>`_.  If using headers,
+input filenames must end with idx3-ubyte or idx1-ubyte.
+
+The MNIST example also illustrates low overhead of TIDL API for small
+networks with low compute requirements (<5ms).  The network runs about 3ms
+on EVE for a single frame.  As shown in the following table, when running
+over 1000 frames, the overhead is about 1.8%.
+
+.. list-table:: Loop overall time over 1000 frames
+   :header-rows: 1
+
+   * - Device(s)
+     - Device Processing Time
+     - Host Processing Time
+     - API Overhead
+   * - 1 EVE
+     - 3091 ms
+     - 3146 ms
+     - 1.78%
+
 Running Examples
 ----------------
 
@@ -294,6 +363,24 @@ The following listing illustrates how to build and run the examples.
    Saving frame 0 with SSD multiboxes to: multibox_0.png
    Loop total time (including read/write/opencv/print/etc):  320.2ms
    ssd_multibox PASSED
+
+   root@am57xx-evm:~/tidl/examples/mnist# ./mnist
+   Input images: ../test/testvecs/input/digits10_images_28x28.y
+   Input labels: ../test/testvecs/input/digits10_labels_10x1.y
+   0
+   1
+   2
+   3
+   4
+   5
+   6
+   7
+   8
+   9
+   Device total time:  31.02ms
+   Loop total time (including read/write/print/etc):  32.49ms
+   Accuracy:    100%
+   mnist PASSED
 
 
 Image input

@@ -47,31 +47,25 @@
 #include "imgutil.h"
 #include "../common/video_utils.h"
 
-#include "opencv2/core.hpp"
-#include "opencv2/imgproc.hpp"
-#include "opencv2/highgui.hpp"
-#include "opencv2/videoio.hpp"
-
 using namespace std;
 using namespace tidl;
-using namespace cv;
 
-#define NUM_VIDEO_FRAMES  300
-#define DEFAULT_CONFIG    "mnist"
-#define NUM_DEFAULT_INPUTS  1
-#define DEFAULT_INPUT_FRAMES 1
-const char *default_inputs[NUM_DEFAULT_INPUTS] =
-{
-    "../test/testvecs/input/digit_28x28.y"
-};
+#define DEFAULT_CONFIG    "mnist_lenet"
+#define DEFAULT_INPUT_IMAGES "../test/testvecs/input/digits10_images_28x28.y"
+#define DEFAULT_INPUT_LABELS "../test/testvecs/input/digits10_labels_10x1.y"
+
+uint32_t images_file_offset = 0;
+uint32_t labels_file_offset = 0;
+uint32_t num_frames_file    = 0;
+uint32_t num_wrong_results  = 0;
 
 
 Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c);
 bool RunConfiguration(cmdline_opts_t& opts);
 bool ReadFrame(ExecutionObjectPipeline& eop,
                uint32_t frame_idx, const Configuration& c,
-               const cmdline_opts_t& opts, VideoCapture &cap);
-bool WriteFrameOutput(const ExecutionObjectPipeline &eop);
+               const cmdline_opts_t& opts, ifstream &ifs);
+bool WriteFrameOutput(const ExecutionObjectPipeline &eop, ifstream &ifs_labels);
 void DisplayHelp();
 
 
@@ -101,13 +95,31 @@ int main(int argc, char *argv[])
         exit(EXIT_SUCCESS);
     }
     assert(opts.num_dsps != 0 || opts.num_eves != 0);
-    if (opts.num_frames == 0)
-        opts.num_frames = (opts.is_camera_input || opts.is_video_input) ?
-                          NUM_VIDEO_FRAMES : 1;
+    if (opts.num_dsps != 0)
+    {
+        cout << "MNIST network not supported on DSP yet." << endl;
+        exit(EXIT_SUCCESS);
+    }
+
     if (opts.input_file.empty())
-        cout << "Input: " << default_inputs[0] << endl;
-    else
-        cout << "Input: " << opts.input_file << endl;
+    {
+        opts.input_file               = DEFAULT_INPUT_IMAGES;
+        opts.object_classes_list_file = DEFAULT_INPUT_LABELS;
+    }
+
+    // if inputs are MNIST data set: skip MNIST header
+    string& s_images = opts.input_file;
+    if (s_images.size() > 10 &&
+        s_images.compare(s_images.size() - 10, 10, "idx3-ubyte") == 0)
+        images_file_offset = 16;
+    string& s_labels = opts.object_classes_list_file;
+    if (s_labels.size() > 10 &&
+        s_labels.compare(s_labels.size() - 10, 10, "idx1-ubyte") == 0)
+        labels_file_offset = 8;
+
+    cout << "Input images: " << opts.input_file << endl;
+    if (! opts.object_classes_list_file.empty())
+        cout << "Input labels: " << opts.object_classes_list_file << endl;
 
     // Run network
     bool status = RunConfiguration(opts);
@@ -126,7 +138,7 @@ bool RunConfiguration(cmdline_opts_t& opts)
     // Read the TI DL configuration file
     Configuration c;
     string config_file = "../test/testvecs/config/infer/tidl_config_"
-                              + opts.config + ".txt";
+                         + opts.config + ".txt";
     bool status = c.ReadFromFile(config_file);
     if (!status)
     {
@@ -135,9 +147,27 @@ bool RunConfiguration(cmdline_opts_t& opts)
     }
     c.enableApiTrace = opts.verbose;
 
-    // setup camera/video input/output
-    VideoCapture cap;
-    if (! SetVideoInputOutput(cap, opts, "MNIST"))  return false;
+    // setup images/labels input/output
+    ifstream ifs, ifs_labels;
+    ifs.open(opts.input_file, ios::binary | ios::ate);
+    if (! ifs.good())
+    {
+        cerr << "Cannot open " << opts.input_file << endl;
+        return false;
+    }
+    num_frames_file = (((int) ifs.tellg()) - images_file_offset) /
+                      (c.inWidth * c.inHeight);
+    if (opts.num_frames == 0)
+        opts.num_frames = num_frames_file;
+    if (! opts.object_classes_list_file.empty())
+    {
+        ifs_labels.open(opts.object_classes_list_file, ios::binary);
+        if (! ifs_labels.good())
+        {
+            cerr << "Cannot open " << opts.object_classes_list_file << endl;
+            return false;
+        }
+    }
 
     try
     {
@@ -198,11 +228,11 @@ bool RunConfiguration(cmdline_opts_t& opts)
             {
                 device_time +=
                       eos[frame_idx % num_eos]->GetProcessTimeInMilliSeconds();
-                WriteFrameOutput(*eop);
+                WriteFrameOutput(*eop, ifs_labels);
             }
 
             // Read a frame and start processing it with current eop
-            if (ReadFrame(*eop, frame_idx, c, opts, cap))
+            if (ReadFrame(*eop, frame_idx, c, opts, ifs))
                 eop->ProcessFrameStartAsync();
         }
 
@@ -210,9 +240,17 @@ bool RunConfiguration(cmdline_opts_t& opts)
         chrono::duration<float> elapsed = tloop1 - tloop0;
         cout << "Device total time: " << setw(6) << setprecision(4)
              << device_time << "ms" << endl;
-        cout << "Loop total time (including read/write/opencv/print/etc): "
+        cout << "Loop total time (including read/write/print/etc): "
              << setw(6) << setprecision(4)
              << (elapsed.count() * 1000) << "ms" << endl;
+        if (opts.num_frames > 0 && ifs_labels.is_open())
+        {
+            cout << "Accuracy: " << setw(6) << setprecision(4)
+                 << (opts.num_frames-num_wrong_results)*100.f / opts.num_frames
+                 << "%" << endl;
+            if (opts.input_file == DEFAULT_INPUT_IMAGES && num_wrong_results >0)
+                status = false;
+        }
 
         FreeMemory(eops);
         for (auto eop : eops)  delete eop;
@@ -242,7 +280,7 @@ Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c)
 
 bool ReadFrame(ExecutionObjectPipeline &eop,
                uint32_t frame_idx, const Configuration& c,
-               const cmdline_opts_t& opts, VideoCapture &cap)
+               const cmdline_opts_t& opts, ifstream &ifs)
 {
     if (frame_idx >= opts.num_frames)
         return false;
@@ -253,63 +291,14 @@ bool ReadFrame(ExecutionObjectPipeline &eop,
     assert (frame_buffer != nullptr);
     int channel_size = c.inWidth * c.inHeight;
 
-    Mat image;
-    if (! opts.is_camera_input && ! opts.is_video_input)
-    {
-        if (opts.input_file.empty())
-        {
-            ifstream ifs(default_inputs[frame_idx % NUM_DEFAULT_INPUTS],
-                         ios::binary);
-            ifs.seekg((frame_idx % DEFAULT_INPUT_FRAMES) * channel_size);
-            ifs.read(frame_buffer, channel_size);
-            memcpy(frame_buffer+channel_size, frame_buffer, channel_size);
-            bool ifs_status = ifs.good();
-            ifs.close();
-            return ifs_status;  // already PreProc-ed
-        }
-        else
-        {
-            image = cv::imread(opts.input_file, CV_LOAD_IMAGE_COLOR);
-            if (image.empty())
-            {
-                cerr << "Unable to read input image" << endl;
-                return false;
-            }
-        }
-    }
-    else
-    {
-        Mat v_image;
-        if (! cap.grab())  return false;
-        if (! cap.retrieve(v_image)) return false;
-        #define DISPLAY_SIZE 112
-        int orig_width  = v_image.cols;
-        int orig_height = v_image.rows;
-        // Crop camera/video input to center DISPLAY_SIZE x DISPLAY_SIZE input
-        if (orig_width > DISPLAY_SIZE && orig_height > DISPLAY_SIZE)
-        {
-            image = Mat(v_image, Rect((orig_width-DISPLAY_SIZE)/2,
-                                      (orig_height-DISPLAY_SIZE)/2,
-                                      DISPLAY_SIZE, DISPLAY_SIZE));
-        }
-        else
-            image = v_image;
-        cv::imshow("MNIST", image);
-        waitKey(2);
-    }
-
-    // Convert to Gray image, resize to 28x28, copy into frame_buffer
-    Mat s_image, bgr_frames[3];
-    cv::resize(image, s_image, Size(c.inWidth, c.inHeight),
-               0, 0, cv::INTER_AREA);
-    cv::split(s_image, bgr_frames);
-    memcpy(frame_buffer,                bgr_frames[0].ptr(), channel_size);
-    memcpy(frame_buffer+1*channel_size, bgr_frames[1].ptr(), channel_size);
-    return true;
+    // already PreProc-ed white-on-black 28x28 frames
+    ifs.seekg(images_file_offset + (frame_idx%num_frames_file) * channel_size);
+    ifs.read(frame_buffer, channel_size);
+    return ifs.good();
 }
 
 // Display top 5 classified imagenet classes with probabilities
-bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
+bool WriteFrameOutput(const ExecutionObjectPipeline &eop, ifstream &ifs_labels)
 {
     unsigned char *out = (unsigned char *) eop.GetOutputBufferPtr();
     int out_size = eop.GetOutputBufferSizeInBytes();
@@ -318,7 +307,7 @@ bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
     int           maxloc = -1;
     for (int i = 0; i < out_size; i++)
     {
-        // cout << (int) out[i] << " ";
+        // cout << (int) out[i] << " ";  // 10 probability outputs
         if (out[i] > maxval)
         {
             maxval = out[i];
@@ -327,25 +316,32 @@ bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
     }
     cout << maxloc << endl;
 
+    // check inference result against pre-determined label
+    if (ifs_labels.is_open())
+    {
+        int frame_index = eop.GetFrameIndex();
+        char label = -1;
+        ifs_labels.seekg(labels_file_offset + (frame_index % num_frames_file));
+        ifs_labels.read(&label, 1);
+        if (maxloc != (int) label)
+            num_wrong_results += 1;
+    }
+
     return true;
 }
 
 void DisplayHelp()
 {
     cout <<
-    "Usage: imagenet\n"
-    "  Will run imagenet network to predict top 5 object"
-    " classes for the input.\n  Use -c to run a"
-    "  different imagenet network. Default is j11_v2.\n"
+    "Usage: mnist\n"
+    "  Will run MNIST LeNet to predict the digit in a 28x28"
+    " white-on-black image.\n  Use -c to run a"
+    "  different MNIST network. Default is mnist_lenet.\n"
     "Optional arguments:\n"
-    " -c <config>          Valid configs: j11_bn, j11_prelu, j11_v2\n"
-    " -d <number>          Number of dsp cores to use\n"
+    " -c <config>          Valid configs: mnist_lenet\n"
     " -e <number>          Number of eve cores to use\n"
-    " -i <image>           Path to the image file as input\n"
-    " -i camera<number>    Use camera as input\n"
-    "                      video input port: /dev/video<number>\n"
-    " -i <name>.{mp4,mov,avi}  Use video file as input\n"
-    " -l <objects_list>    Path to the object classes list file\n"
+    " -i <images>          Path to the MNIST white-on-black images file\n"
+    " -l <labels>          Path to the MNIST labels file\n"
     " -f <number>          Number of frames to process\n"
     " -v                   Verbose output during execution\n"
     " -h                   Help\n";
