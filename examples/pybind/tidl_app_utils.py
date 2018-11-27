@@ -33,23 +33,21 @@ from tidl import Configuration
 from tidl import Executor
 from tidl import TidlError
 
-import tidl
-
 def read_frame(eo, frame_index, c, f):
     """Read a frame into the ExecutionObject input buffer"""
 
-    if (frame_index >= c.num_frames):
+    if frame_index >= c.num_frames:
         return False
 
     # Read into the EO's input buffer
     arg_info = eo.get_input_buffer()
     bytes_read = f.readinto(arg_info)
 
-    if (bytes_read != arg_info.size()):
-        print("Expected {} bytes, read {}".format(size, bytes_read))
+    if bytes_read != arg_info.size():
+        print("Expected {} bytes, read {}".format(args_info.size(), bytes_read))
         return False
 
-    if (len(f.peek(1)) == 0):
+    if len(f.peek(1)) == 0:
         f.seek(0)
 
     eo.set_frame_index(frame_index)

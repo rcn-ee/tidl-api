@@ -61,7 +61,7 @@ def main():
     num_eve = Executor.get_num_devices(DeviceType.EVE)
 
     if num_dsp == 0 or num_eve == 0:
-        print('This example required EVEs and DSPs.')
+        print('This example requires EVEs and DSPs.')
         return
 
     enable_time_stamps("2eo_timestamp.log", 16)

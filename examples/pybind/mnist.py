@@ -30,12 +30,13 @@
     Increase throughput by using multiple ExecutionObjects.
 """
 
+import os
 import argparse
+import numpy as np
 
-from tidl import DeviceId, DeviceType, Configuration, Executor, TidlError
-from tidl import allocate_memory, free_memory, enable_time_stamps
-
-from tidl_app_utils import read_frame, write_output, report_time
+from tidl import DeviceId, DeviceType, Configuration, TidlError
+from tidl import Executor, ExecutionObjectPipeline
+from tidl import allocate_memory, free_memory
 
 
 def main():
@@ -43,45 +44,37 @@ def main():
 
     args = parse_args()
 
-    # Heaps are sized for the j11_v2 network. Changing the network will
-    # require updating network_heap_size and param_heap_size
-    config_file = '../test/testvecs/config/infer/tidl_config_j11_v2.txt'
+    config_file = '../test/testvecs/config/infer/tidl_config_mnist_lenet.txt'
+    labels_file = '../test/testvecs/input/digits10_labels_10x1.y'
 
     configuration = Configuration()
     configuration.read_from_file(config_file)
-    configuration.enable_api_trace = False
-    configuration.num_frames = args.num_frames
 
-    num_dsp = Executor.get_num_devices(DeviceType.DSP)
     num_eve = Executor.get_num_devices(DeviceType.EVE)
+    num_dsp = 0
 
-    if num_dsp == 0 and num_eve == 0:
-        print('No TIDL API capable devices available')
+    if num_eve == 0:
+        print('MNIST network currently supported only on EVE')
         return
 
-    enable_time_stamps("1eo_timestamp.log", 16)
-    run(num_eve, num_dsp, configuration)
+    run(num_eve, num_dsp, configuration, labels_file)
 
     return
 
 
-DESCRIPTION = 'Process frames using all available Execution Objects. '\
-              'Each ExecutionObject processes a single frame'
+DESCRIPTION = 'Run the mnist network on preprocessed input.'
 
 def parse_args():
     """Parse input arguments"""
 
     parser = argparse.ArgumentParser(description=DESCRIPTION)
-    parser.add_argument('-n', '--num_frames',
-                        type=int,
-                        default=16,
-                        help='Number of frames to process')
     args = parser.parse_args()
 
     return args
 
+PIPELINE_DEPTH = 2
 
-def run(num_eve, num_dsp, configuration):
+def run(num_eve, num_dsp, configuration, labels_file):
     """ Run the network on the specified device type and number of devices"""
 
     print('Running network across {} EVEs, {} DSPs'.format(num_eve, num_dsp))
@@ -95,50 +88,113 @@ def run(num_eve, num_dsp, configuration):
     configuration.param_heap_size = (3 << 20)
     configuration.network_heap_size = (20 << 20)
 
+
     try:
         print('TIDL API: performing one time initialization ...')
 
         # Collect all EOs from EVE and DSP executors
         eos = []
 
-        if len(eve_device_ids) != 0:
+        if eve_device_ids:
             eve = Executor(DeviceType.EVE, eve_device_ids, configuration, 1)
             for i in range(eve.get_num_execution_objects()):
                 eos.append(eve.at(i))
 
-        if len(dsp_device_ids) != 0:
+        if dsp_device_ids:
             dsp = Executor(DeviceType.DSP, dsp_device_ids, configuration, 1)
             for i in range(dsp.get_num_execution_objects()):
                 eos.append(dsp.at(i))
 
-        allocate_memory(eos)
+
+        eops = []
+        num_eos = len(eos)
+        for j in range(num_eos):
+            for i in range(PIPELINE_DEPTH):
+                eops.append(ExecutionObjectPipeline([eos[i]]))
+
+        allocate_memory(eops)
 
         # Open input, output files
         f_in = open(configuration.in_data, 'rb')
-        f_out = open(configuration.out_data, 'wb')
+        f_labels = open(labels_file, 'rb')
 
+        input_size = os.path.getsize(configuration.in_data)
+        configuration.num_frames = int(input_size/(configuration.height *
+                                                   configuration.width))
 
-        print('TIDL API: processing input frames ...')
+        print('TIDL API: processing {} input frames ...'.format(configuration.num_frames))
 
-        num_eos = len(eos)
-        for frame_index in range(configuration.num_frames+num_eos):
-            execution_object = eos[frame_index % num_eos]
+        num_eops = len(eops)
+        num_errors = 0
+        for frame_index in range(configuration.num_frames+num_eops):
+            eop = eops[frame_index % num_eops]
 
-            if execution_object.process_frame_wait():
-                report_time(execution_object)
-                write_output(execution_object, f_out)
+            if eop.process_frame_wait():
+                num_errors += process_output(eop, f_labels)
 
-            if read_frame(execution_object, frame_index, configuration, f_in):
-                execution_object.process_frame_start_async()
+            if read_frame(eop, frame_index, configuration, f_in):
+                eop.process_frame_start_async()
 
 
         f_in.close()
-        f_out.close()
+        f_labels.close()
 
-        free_memory(eos)
+        free_memory(eops)
+
+        if num_errors == 0:
+            print("mnist PASSED")
+        else:
+            print("mnist FAILED")
+
     except TidlError as err:
         print(err)
 
+def read_frame(eo, frame_index, configuration, f_input):
+    """Read a frame into the ExecutionObject input buffer"""
+
+    if frame_index >= configuration.num_frames:
+        return False
+
+    # Read into the EO's input buffer
+    arg_info = eo.get_input_buffer()
+    bytes_read = f_input.readinto(arg_info)
+
+    if bytes_read == 0:
+        return False
+
+    # TIDL library requires a minimum of 2 channels. Read image data into
+    # channel 0. f_input.readinto will read twice as many bytes i.e. 2 input
+    # digits. Seek back to avoid skipping inputs.
+    f_input.seek((frame_index+1)*configuration.height*configuration.width)
+
+    eo.set_frame_index(frame_index)
+
+    return True
+
+def process_output(eo, f_labels):
+    """Display and check the inference result against labels."""
+
+    maxval = 0
+    maxloc = -1
+
+    out_buffer = eo.get_output_buffer()
+    output_array = np.asarray(out_buffer)
+    for i in range(out_buffer.size()):
+        if output_array[i] > maxval:
+            maxval = output_array[i]
+            maxloc = i
+
+    print(maxloc)
+
+    # Check inference result against label
+    frame_index = eo.get_frame_index()
+    f_labels.seek(frame_index)
+    label = ord(f_labels.read(1))
+    if maxloc != label:
+        print('Error Expected {}, got {}'.format(label, maxloc))
+        return 1
+
+    return 0
 
 if __name__ == '__main__':
     main()
