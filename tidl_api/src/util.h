@@ -40,4 +40,45 @@ bool        CompareFiles      (const std::string &F1, const std::string &F2);
 bool        CompareFrames(const std::string &F1, const std::string &F2,
                          int numFrames, int width, int height);
 
+class TimeStamp
+{
+    public:
+        enum EventKind { EOP_PFSA_START=0, EOP_PFSA_END,
+                         EOP_PFW_START,    EOP_PFW_END,
+                         EOP_RAN_START,    EOP_RAN_END,
+                         EO1_PFSA_START,   EO1_PFSA_END,
+                         EO1_PFW_START,    EO1_PFW_END,
+                         EO2_PFSA_START,   EO2_PFSA_END,
+                         EO2_PFW_START,    EO2_PFW_END,
+                         NUM_EVENTS };
+        struct Entry
+        {
+            unsigned int       eo1_type;
+            unsigned int       eo1_id;
+            unsigned int       eo2_type;
+            unsigned int       eo2_id;
+            unsigned long long frame_idx;
+            unsigned long long timestamp[EventKind::NUM_EVENTS];
+        };
+
+
+        TimeStamp(const std::string& file, int num_entries);
+        ~TimeStamp();
+        void Update(int frame_idx, EventKind k, int type=0, int id=0);
+        void Zero  (int frame_idx, EventKind k);
+
+        TimeStamp(const TimeStamp&)            = delete;
+        TimeStamp& operator=(const TimeStamp&) = delete;
+
+    private:
+        Entry*            entries_m;
+        const int         num_entries_m;
+        const std::string file_m;
+};
+
+
+void RecordEvent(int frame_idx, TimeStamp::EventKind k,
+                 int eo_type=0, int eo_id=0);
+
+void ResetEvent(int frame_idx, TimeStamp::EventKind k);
 } // namespace tidl

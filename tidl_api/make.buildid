@@ -25,9 +25,8 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 MAJOR_VER=1
-MINOR_VER=1
+MINOR_VER=2
 PATCH_VER=0
-BUILD_VER=1
 
 ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
 BUILD_SHA?=$(shell git rev-parse --short HEAD)
@@ -35,6 +34,6 @@ endif
 
 .PHONY: $(BUILD_ID)
 BUILD_ID := -D_BUILD_VER=$(shell echo "" | \
-                awk '{ printf ("%02d.%02d.%02d.%02d", $(MAJOR_VER), \
-                $(MINOR_VER), $(PATCH_VER), $(BUILD_VER)); }') \
+                awk '{ printf ("%02d.%02d.%02d", $(MAJOR_VER), \
+                $(MINOR_VER), $(PATCH_VER)); }') \
 			-D_BUILD_SHA=$(BUILD_SHA)

@@ -30,8 +30,146 @@
 #include <iostream>
 #include <fstream>
 #include <assert.h>
+#include <chrono>
+#include <mutex>
+#include <cstring>
+#include <memory>
+#include "executor.h"
 
 using namespace tidl;
+
+using namespace std::chrono;
+
+std::unique_ptr<TimeStamp> tidl_api_timestamps(nullptr);
+
+bool tidl::EnableTimeStamps(const std::string& file, size_t num_frames)
+{
+    std::mutex m;
+    std::lock_guard<std::mutex> guard(m);
+
+    if (tidl_api_timestamps.get() != nullptr)
+        return true;
+
+    tidl_api_timestamps.reset(new TimeStamp(file, num_frames));
+    if (tidl_api_timestamps.get() == nullptr)
+        return false;
+
+    return true;
+}
+
+TimeStamp::TimeStamp(const std::string& file, int num_entries):
+                        num_entries_m(num_entries), file_m(file)
+{
+    entries_m = new Entry[num_entries_m];
+    if (entries_m)
+        std::memset(entries_m, 0, sizeof(Entry)*num_entries_m);
+}
+
+void TimeStamp::Update(int frame_idx, EventKind k, int type, int id)
+{
+    if (!entries_m)
+        return;
+
+    int idx = frame_idx % num_entries_m;
+
+    entries_m[idx].frame_idx = frame_idx;
+    entries_m[idx].timestamp[k] = duration_cast<microseconds>
+                 (high_resolution_clock::now().time_since_epoch()).count();
+
+    if (k == EO1_PFSA_START)
+    {
+        entries_m[idx].eo1_id   = id;
+        entries_m[idx].eo1_type = type;
+    }
+    else if (k == EO2_PFSA_START)
+    {
+        entries_m[idx].eo2_id   = id;
+        entries_m[idx].eo2_type = type;
+    }
+}
+
+void TimeStamp::Zero(int frame_idx, EventKind k)
+{
+    if (!entries_m)
+        return;
+
+    int idx = frame_idx % num_entries_m;
+
+    entries_m[idx].frame_idx    = frame_idx;
+    entries_m[idx].timestamp[k] = 0;
+}
+
+
+TimeStamp::~TimeStamp()
+{
+    if (!entries_m)
+        return;
+
+    std::ofstream ofs;
+    ofs.open(file_m, std::ofstream::out);
+
+    for (int i=0; i < num_entries_m; i++)
+        for (int j=0; j < EventKind::NUM_EVENTS; j++)
+            if (entries_m[i].timestamp[j] != 0)
+            {
+                ofs << entries_m[i].frame_idx << ",";
+                switch (j)
+                {
+                    case EOP_PFSA_START: ofs << "EOP:PFSA:Start"; break;
+                    case EOP_PFSA_END:   ofs << "EOP:PFSA:End"; break;
+                    case EOP_PFW_START:  ofs << "EOP:PFW:Start"; break;
+                    case EOP_PFW_END:    ofs << "EOP:PFW:End"; break;
+                    case EOP_RAN_START:  ofs << "EOP:RAN:Start"; break;
+                    case EOP_RAN_END:    ofs << "EOP:RAN:End"; break;
+
+                    case EO1_PFSA_START: ofs << "EO1:PFSA:Start"; break;
+                    case EO1_PFSA_END:   ofs << "EO1:PFSA:End"; break;
+                    case EO1_PFW_START:  ofs << "EO1:PFW:Start"; break;
+                    case EO1_PFW_END:    ofs << "EO1:PFW:End"; break;
+
+                    case EO2_PFSA_START: ofs << "EO2:PFSA:Start"; break;
+                    case EO2_PFSA_END:   ofs << "EO2:PFSA:End"; break;
+                    case EO2_PFW_START:  ofs << "EO2:PFW:Start"; break;
+                    case EO2_PFW_END:    ofs << "EO2:PFW:End"; break;
+
+                    default:             ofs << "UNKNOWN"; break;
+                }
+                ofs << "," << entries_m[i].timestamp[j];
+
+                if (j == EO1_PFSA_START)
+                {
+                    ofs << "," << entries_m[i].eo1_type
+                        << "," << entries_m[i].eo1_id;
+                }
+                else if (j == EO2_PFSA_START)
+                {
+                    ofs << "," << entries_m[i].eo2_type
+                        << "," << entries_m[i].eo2_id;
+                }
+
+
+                ofs << std::endl;
+            }
+
+    ofs.close();
+    delete [] entries_m;
+}
+
+
+void tidl::RecordEvent(int frame_idx, TimeStamp::EventKind k,
+                       int eo_type, int eo_id)
+{
+    TimeStamp* t = tidl_api_timestamps.get();
+    if (t)
+        t->Update(frame_idx, k, eo_type, eo_id);
+}
+
+void tidl::ResetEvent(int frame_idx, TimeStamp::EventKind k)
+{
+    TimeStamp* t = tidl_api_timestamps.get();
+    if (t)
+        t->Zero(frame_idx, k);
+}
 
 std::size_t tidl::GetBinaryFileSize(const std::string &F)
 {

@@ -30,8 +30,7 @@
 
 #pragma once
 #include "opencv2/core.hpp"
-#include "opencv2/imgproc.hpp"
-using namespace cv;
+#include "configuration.h"
 
 namespace tidl {
 namespace imgutil {
@@ -40,17 +39,7 @@ namespace imgutil {
 //! the DL network expects
 //! @param image        Input image data (OpenCV data structure)
 //! @param ptr          Output buffer that TI DL takes as input
-//! @param roi          Number of Region-Of-Interests
-//! @param n            Number of channels
-//! @param width        Input image width
-//! @param height       Input image height
-//! @param pitch        Output buffer (ptr) pitch for each line
-//! @param chOffset     Output buffer (ptr) offset for each channel
-//! @param frameCount   Number of frames in input image data
-//! @param preProcType  Preprocessing type, specified in network config
-bool PreProcImage(Mat& image, char *ptr, int16_t roi, int16_t n,
-                  int16_t width, int16_t height, int16_t pitch,
-                  int32_t chOffset, int32_t frameCount, int32_t preProcType);
+bool PreprocessImage(cv::Mat& image, char *ptr, const tidl::Configuration& c);
 
 } // namesapce tidl::imgutil
 } // namespace tidl

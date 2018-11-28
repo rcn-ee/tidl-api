@@ -1,0 +1,10 @@
+{
+  "network": "jseg21",
+  "objects": [
+    { "label": "background", "color_bgr": [ 127, 127, 127 ] },
+    { "label": "road",       "color_bgr": [   0, 255,   0 ] },
+    { "label": "pedestrian", "color_bgr": [   0,   0, 255 ] },
+    { "label": "road sign",  "color_bgr": [   0, 255, 255 ] },
+    { "label": "vehicle",    "color_bgr": [ 255,   0,   0 ] }
+  ]
+}

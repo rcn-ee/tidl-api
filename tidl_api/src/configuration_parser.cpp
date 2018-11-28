@@ -80,7 +80,12 @@ struct ConfigParser : qi::grammar<Iterator, ascii::space_type>
          lit("outData")       >> '=' >> q_path[ph::ref(x.outData) = _1]       |
          lit("netBinFile")    >> '=' >> q_path[ph::ref(x.netBinFile) = _1]    |
          lit("paramsBinFile") >> '=' >> q_path[ph::ref(x.paramsBinFile) = _1] |
-         lit("enableTrace")   >> '=' >> bool_[ph::ref(x.enableOutputTrace)= _1]
+         lit("enableTrace")   >> '=' >> bool_[ph::ref(x.enableOutputTrace)= _1] |
+         lit("quantHistoryParam1")   >> '=' >>
+                                   int_[ph::ref(x.quantHistoryParam1)= _1] |
+         lit("quantHistoryParam2")   >> '=' >>
+                                   int_[ph::ref(x.quantHistoryParam2)= _1] |
+         lit("quantMargin")   >> '=' >> int_[ph::ref(x.quantMargin)= _1]
          ;
     }
 

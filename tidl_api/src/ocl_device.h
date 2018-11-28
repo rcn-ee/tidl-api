@@ -39,6 +39,7 @@
 #include <memory>
 #include "executor.h"
 #include "device_arginfo.h"
+#include "parameters.h"
 
 namespace tidl
 {
@@ -142,19 +143,19 @@ class Kernel
                const KernelArgs &args, uint8_t device_index);
         ~Kernel();
 
-        Kernel& RunAsync();
-        bool Wait(float *host_elapsed_ms = nullptr);
-        bool AddCallback(void *user_data);
+        bool UpdateScalarArg(uint32_t index, size_t size, const void *value);
+        Kernel& RunAsync(uint32_t context_idx = 0);
+        bool Wait(uint32_t context_idx = 0);
+        bool AddCallback(void *user_data, uint32_t context_idx = 0);
 
     private:
         cl_kernel           kernel_m;
-        cl_event            event_m;
+        cl_event            event_m[tidl::internal::NUM_CONTEXTS];
         std::vector<cl_mem> buffers_m;
         const std::string   name_m;
 
         Device*             device_m;
         uint8_t             device_index_m;
-        bool                is_running_m;
 };
 
 

@@ -137,8 +137,6 @@ bool Run(int num_eve, int num_dsp, const char* ref_output)
             // Wait for previous frame on the same EOP to finish processing
             if (eop->ProcessFrameWait())
             {
-                ReportTime(eop);
-
                 // The reference output is valid only for the first frame
                 // processed on each EOP
                 if (frame_idx < num_eops && !CheckFrame(eop, ref_output))

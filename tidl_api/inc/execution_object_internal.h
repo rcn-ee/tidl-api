@@ -83,16 +83,6 @@ class ExecutionObjectInternalInterface
         //! ExecutionObject::ProcessFrameStartAsync.
         virtual bool ProcessFrameWait() =0;
 
-        //! @brief return the number of milliseconds taken *on the device* to
-        //! execute the process call
-        //! @return Number of milliseconds to process a frame on the device.
-        virtual float GetProcessTimeInMilliSeconds() const =0;
-
-        //! @brief return the number of milliseconds taken *on the host* to
-        //! execute the process call
-        //! @return Number of milliseconds to process a frame on the host.
-        virtual float GetHostProcessTimeInMilliSeconds() const =0;
-
         //! Returns the device name that the ExecutionObject runs on
         virtual const std::string& GetDeviceName() const =0;
 

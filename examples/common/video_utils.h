@@ -39,12 +39,16 @@ typedef struct cmdline_opts_t_ {
   std::string config;
   uint32_t    num_dsps;
   uint32_t    num_eves;
+  uint32_t    num_layers_groups;
   uint32_t    num_frames;
   std::string input_file;
+  std::string object_classes_list_file;
   uint32_t    output_width;
   bool        verbose;
   bool        is_camera_input;
   bool        is_video_input;
+  bool        is_preprocessed_input;
+  uint32_t    output_prob_threshold;
 } cmdline_opts_t;
 
 

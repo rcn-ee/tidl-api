@@ -107,28 +107,6 @@ class ExecutionObjectPipeline : public ExecutionObjectInternalInterface
         //! ExecutionObjectPipeline::ProcessFrameStartAsync().
         bool ProcessFrameWait() override;
 
-        //! @brief return the number of milliseconds taken *on the device* to
-        //! execute the process call
-        //! @return Number of milliseconds to process a frame on the device.
-        float GetProcessTimeInMilliSeconds() const override;
-
-        //! @brief return the number of milliseconds taken *on the device*
-        //! to process a layersGroup by a componenet ExecutionObject
-        //! @return Number of milliseconds to process a layersGroup on the
-        //! device by a component ExecutionObject.
-        float GetProcessTimeInMilliSeconds(uint32_t eo_index) const;
-
-        //! @brief return the number of milliseconds taken *on the host* to
-        //! execute the process call
-        //! @return Number of milliseconds to process a frame on the host.
-        float GetHostProcessTimeInMilliSeconds() const override;
-
-        //! @brief return the number of milliseconds taken *on the host*
-        //! to process a layersGroup by a componenet ExecutionObject
-        //! @return Number of milliseconds to process a layersGroup on the
-        //! host by a component ExecutionObject.
-        float GetHostProcessTimeInMilliSeconds(uint32_t eo_index) const;
-
         //! Return the combined device names that this pipeline runs on
         const std::string& GetDeviceName() const override;
 

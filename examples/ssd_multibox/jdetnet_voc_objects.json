@@ -1,0 +1,26 @@
+{
+  "network": "jdetnet_voc",
+  "objects": [
+    { "label": "background",       "color_bgr": [ 255, 255, 255 ] },
+    { "label": "aeroplane",        "color_bgr": [   0,   0,   0 ] },
+    { "label": "bicycle",          "color_bgr": [   0,   0,   0 ] },
+    { "label": "bird",             "color_bgr": [   0,   0,   0 ] },
+    { "label": "boat",             "color_bgr": [   0,   0,   0 ] },
+    { "label": "bottle",           "color_bgr": [   0,   0,   0 ] },
+    { "label": "bus",              "color_bgr": [ 192,   0,   0 ] },
+    { "label": "car",              "color_bgr": [ 255,   0,   0 ] },
+    { "label": "cat",              "color_bgr": [   0,   0,   0 ] },
+    { "label": "chair",            "color_bgr": [   0,   0,   0 ] },
+    { "label": "cow",              "color_bgr": [   0, 224,   0 ] },
+    { "label": "diningtable",      "color_bgr": [   0,   0,   0 ] },
+    { "label": "dog",              "color_bgr": [   0,   0,   0 ] },
+    { "label": "horse",            "color_bgr": [   0, 255,   0 ] },
+    { "label": "motorbike",        "color_bgr": [ 128,   0,   0 ] },
+    { "label": "person",           "color_bgr": [   0,   0, 255 ] },
+    { "label": "pottedplant",      "color_bgr": [   0, 128,   0 ] },
+    { "label": "sheep",            "color_bgr": [   0, 192,   0 ] },
+    { "label": "sofa",             "color_bgr": [   0,   0,   0 ] },
+    { "label": "train",            "color_bgr": [ 224,   0,   0 ] },
+    { "label": "tvmonitor",        "color_bgr": [   0,   0,   0 ] }
+  ]
+}

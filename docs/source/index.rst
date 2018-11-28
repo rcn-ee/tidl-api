@@ -14,7 +14,7 @@ TI Deep Learning API User's Guide
    api
    viewer
    faq/index
-   readme/index
+   changelog
    notice
    disclaimer
 

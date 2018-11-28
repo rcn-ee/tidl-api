@@ -52,7 +52,7 @@ class ExecutionObject : public ExecutionObjectInternalInterface
 
         //! @private
         // Used by the Executor to construct an ExecutionObject
-        ExecutionObject(Device* d, uint8_t device_index,
+        ExecutionObject(Device* d, DeviceType t, uint8_t device_index,
                         const  ArgInfo& create_arg,
                         const  ArgInfo& param_heap_arg,
                         const  Configuration& configuration,
@@ -99,12 +99,7 @@ class ExecutionObject : public ExecutionObjectInternalInterface
         //! @brief return the number of milliseconds taken *on the device* to
         //! execute the process call
         //! @return Number of milliseconds to process a frame on the device.
-        float GetProcessTimeInMilliSeconds() const override;
-
-        //! @brief return the number of milliseconds taken *on the host* to
-        //! execute the process call
-        //! @return Number of milliseconds to process a frame on the host.
-        float GetHostProcessTimeInMilliSeconds() const override;
+        float GetProcessTimeInMilliSeconds() const;
 
         //! Returns the device name that the ExecutionObject runs on
         const std::string& GetDeviceName() const override;
@@ -137,17 +132,17 @@ class ExecutionObject : public ExecutionObjectInternalInterface
 
         //! @private
         // Used by the ExecutionObjectPipeline
-        bool AddCallback(CallType ct, void *user_data);
-        void AcquireLock();
-        void ReleaseLock();
+        bool AddCallback(CallType ct, void *user_data, uint32_t context_idx);
+        bool AcquireAndRunContext(uint32_t& context_idx,
+                                  int frame_idx,
+                                  const IODeviceArgInfo& in,
+                                  const IODeviceArgInfo& out);
+
+        bool WaitAndReleaseContext(uint32_t  context_idx);
 
         ExecutionObject()                                  = delete;
         ExecutionObject(const ExecutionObject&)            = delete;
         ExecutionObject& operator=(const ExecutionObject&) = delete;
-
-        //! @private
-        void SetInputOutputBuffer(const IODeviceArgInfo* in,
-                                  const IODeviceArgInfo* out);
 
     private:
         class Impl;

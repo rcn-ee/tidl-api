@@ -69,6 +69,11 @@ int main(int argc, char *argv[])
     string ref_file ="../test/testvecs/reference/j11_v2_ref.bin";
     unique_ptr<const char> reference_output(ReadReferenceOutput(ref_file));
 
+    // Enable time stamp generation. The timestamp file is post processed
+    // by execution_graph.py to generate graphical view of frame execution.
+    // Refer to the User's Guide for details.
+    EnableTimeStamps("2eo_opt.log");
+
     bool status = Run(num_eve, num_dsp, reference_output.get());
 
     if (!status)
@@ -140,8 +145,6 @@ bool Run(int num_eve, int num_dsp, const char* ref_output)
             // Wait for previous frame on the same EOP to finish processing
             if (eop->ProcessFrameWait())
             {
-                ReportTime(eop);
-
                 // The reference output is valid only for the first frame
                 // processed on each EOP
                 if (frame_idx < num_eops && !CheckFrame(eop, ref_output))

@@ -29,9 +29,10 @@
 #include <assert.h>
 #include <mutex>
 #include <condition_variable>
-#include <chrono>
 #include "device_arginfo.h"
 #include "execution_object_pipeline.h"
+#include "parameters.h"
+#include "util.h"
 
 using namespace tidl;
 
@@ -55,20 +56,15 @@ class ExecutionObjectPipeline::Impl
         //! for pipelined execution
         std::vector<ExecutionObject*> eos_m;
         std::vector<IODeviceArgInfo*> iobufs_m;
-        std::vector<float> eo_device_time_m;
-        std::vector<float> eo_host_time_m;
 
         std::string device_name_m;
 
         //! current frame index
         int frame_idx_m;
 
-        //! current execution object index
+        //! current execution object index, and it context index
         uint32_t curr_eo_idx_m;
-
-        // device and host time tracking: pipeline start to finish
-        float device_time_m;
-        float host_time_m;
+        uint32_t curr_eo_context_idx_m;
 
     private:
         //! @brief Initialize ExecutionObjectPipeline with given
@@ -79,9 +75,6 @@ class ExecutionObjectPipeline::Impl
         bool has_work_m, is_processed_m;
         std::mutex mutex_m;
         std::condition_variable cv_m;
-
-        // host time tracking: pipeline start to finish
-        std::chrono::time_point<std::chrono::steady_clock> start_m;
 };
 
 ExecutionObjectPipeline::ExecutionObjectPipeline(
@@ -146,11 +139,15 @@ int ExecutionObjectPipeline::GetFrameIndex() const
 
 bool ExecutionObjectPipeline::ProcessFrameStartAsync()
 {
+    RecordEvent(pimpl_m->frame_idx_m, TimeStamp::EOP_PFSA_START);
+
     assert(GetInputBufferPtr() != nullptr && GetOutputBufferPtr() != nullptr);
     bool st = pimpl_m->RunAsyncStart();
     if (st)
         st = pimpl_m->eos_m[0]->AddCallback(ExecutionObject::CallType::PROCESS,
-                                            this);
+                                         this, pimpl_m->curr_eo_context_idx_m);
+
+    RecordEvent(pimpl_m->frame_idx_m, TimeStamp::EOP_PFSA_END);
     return st;
 }
 
@@ -161,7 +158,12 @@ bool ExecutionObjectPipeline::ProcessFrameWait()
 
 void CallbackWrapper(void *user_data)
 {
+    int frame_index = ((ExecutionObjectPipeline *) user_data)->GetFrameIndex();
+    RecordEvent(frame_index, TimeStamp::EOP_RAN_START);
+
     ((ExecutionObjectPipeline *) user_data)->RunAsyncNext();
+
+    RecordEvent(frame_index, TimeStamp::EOP_RAN_END);
 }
 
 void ExecutionObjectPipeline::RunAsyncNext()
@@ -169,31 +171,8 @@ void ExecutionObjectPipeline::RunAsyncNext()
     bool has_next = pimpl_m->RunAsyncNext();
     if (has_next)
         pimpl_m->eos_m[pimpl_m->curr_eo_idx_m]->AddCallback(
-                                     ExecutionObject::CallType::PROCESS, this);
-}
-
-float ExecutionObjectPipeline::GetProcessTimeInMilliSeconds() const
-{
-    return pimpl_m->device_time_m;
-}
-
-float ExecutionObjectPipeline::GetHostProcessTimeInMilliSeconds() const
-{
-    return pimpl_m->host_time_m;
-}
-
-float ExecutionObjectPipeline::GetProcessTimeInMilliSeconds(
-        uint32_t eo_index) const
-{
-    assert(eo_index < pimpl_m->eos_m.size());
-    return pimpl_m->eo_device_time_m[eo_index];
-}
-
-float ExecutionObjectPipeline::GetHostProcessTimeInMilliSeconds(
-        uint32_t eo_index) const
-{
-    assert(eo_index < pimpl_m->eos_m.size());
-    return pimpl_m->eo_host_time_m[eo_index];
+                                     ExecutionObject::CallType::PROCESS, this,
+                                     pimpl_m->curr_eo_context_idx_m);
 }
 
 const std::string& ExecutionObjectPipeline::GetDeviceName() const
@@ -272,11 +251,6 @@ void ExecutionObjectPipeline::Impl::Initialize()
         ArgInfo out(ptr, size);
         iobufs_m.push_back(new IODeviceArgInfo(out));
     }
-
-    // Record keeping for each EO's device time and host time
-    // because EO could be shared by another EOP
-    eo_device_time_m.resize(eos_m.size());
-    eo_host_time_m.resize(eos_m.size());
 }
 
 ExecutionObjectPipeline::Impl::~Impl()
@@ -299,45 +273,39 @@ void ExecutionObjectPipeline::Impl::SetInputOutputBuffer(const ArgInfo &in,
     iobufs_m.back()  = new IODeviceArgInfo(out);
 }
 
+// Start execution on the first EO in the pipeline. Callbacks are used
+// to trigger execution on subsequent EOs
 bool ExecutionObjectPipeline::Impl::RunAsyncStart()
 {
     has_work_m = true;
     is_processed_m = false;
-    device_time_m = 0.0f;
-    host_time_m = 0.0f;
     curr_eo_idx_m = 0;
-    eos_m[0]->AcquireLock();
-    start_m = std::chrono::steady_clock::now();
-    eos_m[0]->SetInputOutputBuffer(iobufs_m[0], iobufs_m[1]);
-    return eos_m[0]->ProcessFrameStartAsync();
+    return eos_m[0]->AcquireAndRunContext(curr_eo_context_idx_m,
+                                          frame_idx_m,
+                                          *iobufs_m[0], *iobufs_m[1]);
 }
 
+// Invoked via the callback function, CallbackWrapper. Used to advance the
+// pipeline.
 // returns true if we have more EOs to execute
 bool ExecutionObjectPipeline::Impl::RunAsyncNext()
 {
-    eos_m[curr_eo_idx_m]->ProcessFrameWait();
-    // need to capture EO's device/host time before we release its lock
-    eo_device_time_m[curr_eo_idx_m] = eos_m[curr_eo_idx_m]->
-                                                GetProcessTimeInMilliSeconds();
-    eo_host_time_m[curr_eo_idx_m]   = eos_m[curr_eo_idx_m]->
-                                            GetHostProcessTimeInMilliSeconds();
-    device_time_m += eo_device_time_m[curr_eo_idx_m];
-    eos_m[curr_eo_idx_m]->ReleaseLock();
+    eos_m[curr_eo_idx_m]->WaitAndReleaseContext(curr_eo_context_idx_m);
     curr_eo_idx_m += 1;
     if (curr_eo_idx_m < eos_m.size())
     {
-        eos_m[curr_eo_idx_m]->AcquireLock();
-        eos_m[curr_eo_idx_m]->SetInputOutputBuffer(iobufs_m[curr_eo_idx_m],
-                                                   iobufs_m[curr_eo_idx_m+1]);
-        eos_m[curr_eo_idx_m]->ProcessFrameStartAsync();
+        eos_m[curr_eo_idx_m]->AcquireAndRunContext(curr_eo_context_idx_m,
+                                                   frame_idx_m,
+                                                   *iobufs_m[curr_eo_idx_m],
+                                                   *iobufs_m[curr_eo_idx_m+1]);
         return true;
     }
     else
     {
-        std::chrono::duration<float> elapsed = std::chrono::steady_clock::now()
-                                               - start_m;
-        host_time_m = elapsed.count() * 1000;  // seconds to milliseconds
-        is_processed_m = true;
+        {
+            std::lock_guard<std::mutex> lock(mutex_m);
+            is_processed_m = true;
+        }
         cv_m.notify_all();
         return false;
     }
@@ -347,9 +315,14 @@ bool ExecutionObjectPipeline::Impl::Wait()
 {
     if (! has_work_m)  return false;
 
+    RecordEvent(frame_idx_m, TimeStamp::EOP_PFW_START);
+
     std::unique_lock<std::mutex> lock(mutex_m);
     cv_m.wait(lock, [this]{ return this->is_processed_m; });
     has_work_m = false;
+
+    RecordEvent(frame_idx_m, TimeStamp::EOP_PFW_END);
+
     return true;
 }
 

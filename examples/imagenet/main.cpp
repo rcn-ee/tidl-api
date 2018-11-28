@@ -44,7 +44,7 @@
 #include "execution_object.h"
 #include "execution_object_pipeline.h"
 #include "configuration.h"
-#include "imagenet_classes.h"
+#include "../common/object_classes.h"
 #include "imgutil.h"
 #include "../common/video_utils.h"
 
@@ -55,23 +55,27 @@
 
 using namespace std;
 using namespace tidl;
-using namespace tidl::imgutil;
 using namespace cv;
 
 #define NUM_VIDEO_FRAMES  300
 #define DEFAULT_CONFIG    "j11_v2"
 #define NUM_DEFAULT_INPUTS  1
+#define DEFAULT_OBJECT_CLASSES_LIST_FILE "imagenet_objects.json"
+#define DEFAULT_OUTPUT_PROB_THRESHOLD  5
 const char *default_inputs[NUM_DEFAULT_INPUTS] =
 {
     "../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg"
 };
+std::unique_ptr<ObjectClasses> object_classes;
+
 
 Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c);
 bool RunConfiguration(cmdline_opts_t& opts);
 bool ReadFrame(ExecutionObjectPipeline& eop,
                uint32_t frame_idx, const Configuration& c,
                const cmdline_opts_t& opts, VideoCapture &cap);
-bool WriteFrameOutput(const ExecutionObjectPipeline &eop);
+bool WriteFrameOutput(const ExecutionObjectPipeline &eop,
+                      const cmdline_opts_t& opts);
 void DisplayHelp();
 
 
@@ -93,6 +97,8 @@ int main(int argc, char *argv[])
     // Process arguments
     cmdline_opts_t opts;
     opts.config = DEFAULT_CONFIG;
+    opts.object_classes_list_file = DEFAULT_OBJECT_CLASSES_LIST_FILE;
+    opts.output_prob_threshold = DEFAULT_OUTPUT_PROB_THRESHOLD;
     if (num_eves != 0) { opts.num_eves = 1;  opts.num_dsps = 0; }
     else               { opts.num_eves = 0;  opts.num_dsps = 1; }
     if (! ProcessArgs(argc, argv, opts))
@@ -108,6 +114,15 @@ int main(int argc, char *argv[])
         cout << "Input: " << default_inputs[0] << endl;
     else
         cout << "Input: " << opts.input_file << endl;
+
+    // Get object classes list
+    object_classes = std::unique_ptr<ObjectClasses>(
+                             new ObjectClasses(opts.object_classes_list_file));
+    if (object_classes->GetNumClasses() == 0)
+    {
+        cout << "No object classes defined for this config." << endl;
+        return EXIT_FAILURE;
+    }
 
     // Run network
     bool status = RunConfiguration(opts);
@@ -195,8 +210,7 @@ bool RunConfiguration(cmdline_opts_t& opts)
             // Wait for previous frame on the same eop to finish processing
             if (eop->ProcessFrameWait())
             {
-                ReportTime(eop);
-                WriteFrameOutput(*eop);
+                WriteFrameOutput(*eop, opts);
             }
 
             // Read a frame and start processing it with current eop
@@ -282,12 +296,12 @@ bool ReadFrame(ExecutionObjectPipeline &eop,
     }
 
     // TI DL image preprocessing, into frame_buffer
-    return PreProcImage(image, frame_buffer, 1, 3, c.inWidth, c.inHeight,
-                        c.inWidth, c.inWidth * c.inHeight, 1, c.preProcType);
+    return imgutil::PreprocessImage(image, frame_buffer, c);
 }
 
-// Display top 5 classified imagenet classes with probabilities
-bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
+// Display top 5 classified imagenet classes with probabilities 5% or higher
+bool WriteFrameOutput(const ExecutionObjectPipeline &eop,
+                      const cmdline_opts_t& opts)
 {
     const int k = 5;
     unsigned char *out = (unsigned char *) eop.GetOutputBufferPtr();
@@ -320,8 +334,15 @@ bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
       queue.pop();
     }
 
+    unsigned int min_prob_255 = opts.output_prob_threshold * 255;
     for (int i = k - 1; i >= 0; i--)
-        cout << k-i << ": " << imagenet_classes[sorted[i].second] << endl;
+    {
+        if (sorted[i].first * 100 < min_prob_255)  break;
+        cout << k-i << ": "
+             << object_classes->At(sorted[i].second).label
+             << ",   prob = " << setprecision(4)
+             << ((sorted[i].first * 100) / 255.0f) << "%" << endl;
+    }
 
     return true;
 }
@@ -341,7 +362,10 @@ void DisplayHelp()
     " -i camera<number>    Use camera as input\n"
     "                      video input port: /dev/video<number>\n"
     " -i <name>.{mp4,mov,avi}  Use video file as input\n"
+    " -l <objects_list>    Path to the object classes list file\n"
     " -f <number>          Number of frames to process\n"
+    " -p <number>          Output probablity threshold in percentage\n"
+    "                      Default is 5 percent or higher.\n"
     " -v                   Verbose output during execution\n"
     " -h                   Help\n";
 }

@@ -29,6 +29,10 @@ TIDL API allows the user to create a Configuration object by reading from a file
     * netBinFile
     * paramsBinFile
 
+    * quantHistoryParam1
+    * quantHistoryParam2
+    * quantMargin
+
     * enableTrace
 
 An example configuration file:

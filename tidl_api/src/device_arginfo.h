@@ -69,7 +69,6 @@ class PipeInfo
 {
     public:
         uint32_t dataQ_m[OCL_TIDL_MAX_IN_BUFS];
-        uint32_t bufAddr_m[OCL_TIDL_MAX_IN_BUFS];
 };
 
 /*! @class IODeviceArgInfo
