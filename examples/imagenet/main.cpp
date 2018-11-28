@@ -61,6 +61,7 @@ using namespace cv;
 #define DEFAULT_CONFIG    "j11_v2"
 #define NUM_DEFAULT_INPUTS  1
 #define DEFAULT_OBJECT_CLASSES_LIST_FILE "imagenet_objects.json"
+#define DEFAULT_OUTPUT_PROB_THRESHOLD  5
 const char *default_inputs[NUM_DEFAULT_INPUTS] =
 {
     "../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg"
@@ -73,7 +74,8 @@ bool RunConfiguration(cmdline_opts_t& opts);
 bool ReadFrame(ExecutionObjectPipeline& eop,
                uint32_t frame_idx, const Configuration& c,
                const cmdline_opts_t& opts, VideoCapture &cap);
-bool WriteFrameOutput(const ExecutionObjectPipeline &eop);
+bool WriteFrameOutput(const ExecutionObjectPipeline &eop,
+                      const cmdline_opts_t& opts);
 void DisplayHelp();
 
 
@@ -96,6 +98,7 @@ int main(int argc, char *argv[])
     cmdline_opts_t opts;
     opts.config = DEFAULT_CONFIG;
     opts.object_classes_list_file = DEFAULT_OBJECT_CLASSES_LIST_FILE;
+    opts.output_prob_threshold = DEFAULT_OUTPUT_PROB_THRESHOLD;
     if (num_eves != 0) { opts.num_eves = 1;  opts.num_dsps = 0; }
     else               { opts.num_eves = 0;  opts.num_dsps = 1; }
     if (! ProcessArgs(argc, argv, opts))
@@ -207,7 +210,7 @@ bool RunConfiguration(cmdline_opts_t& opts)
             // Wait for previous frame on the same eop to finish processing
             if (eop->ProcessFrameWait())
             {
-                WriteFrameOutput(*eop);
+                WriteFrameOutput(*eop, opts);
             }
 
             // Read a frame and start processing it with current eop
@@ -297,8 +300,8 @@ bool ReadFrame(ExecutionObjectPipeline &eop,
 }
 
 // Display top 5 classified imagenet classes with probabilities 5% or higher
-#define REPORT_THRESHOLD   13    // 13/255  = 5.098%
-bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
+bool WriteFrameOutput(const ExecutionObjectPipeline &eop,
+                      const cmdline_opts_t& opts)
 {
     const int k = 5;
     unsigned char *out = (unsigned char *) eop.GetOutputBufferPtr();
@@ -331,9 +334,10 @@ bool WriteFrameOutput(const ExecutionObjectPipeline &eop)
       queue.pop();
     }
 
+    unsigned int min_prob_255 = opts.output_prob_threshold * 255;
     for (int i = k - 1; i >= 0; i--)
     {
-        if (sorted[i].first <= REPORT_THRESHOLD)  break;
+        if (sorted[i].first * 100 < min_prob_255)  break;
         cout << k-i << ": "
              << object_classes->At(sorted[i].second).label
              << ",   prob = " << setprecision(4)
@@ -360,6 +364,8 @@ void DisplayHelp()
     " -i <name>.{mp4,mov,avi}  Use video file as input\n"
     " -l <objects_list>    Path to the object classes list file\n"
     " -f <number>          Number of frames to process\n"
+    " -p <number>          Output probablity threshold in percentage\n"
+    "                      Default is 5 percent or higher.\n"
     " -v                   Verbose output during execution\n"
     " -h                   Help\n";
 }

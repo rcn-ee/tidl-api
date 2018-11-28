@@ -201,8 +201,20 @@ SSD
 SSD is the abbreviation for Single Shot multi-box Detector.
 The ssd_multibox example takes an image as input and detects multiple
 objects with bounding boxes according to pre-trained categories.
+The example supports the ssd network with two sets of pretrained categories:
+``jdetnet_voc`` and ``jdetnet``.
+
+The following figures show an image as input and the image with recognized
+objects boxed as output from ``jdetnet_voc``: person in red and horse in green.
+
+.. figure:: images/horse.png
+   :width: 600
+
+.. figure:: images/horse_multibox.png
+   :width: 600
+
 The following figures show another street scene as input and the scene
-with recognized objects boxed as output: pedestrians in red,
+with recognized objects boxed as output from ``jdetnet``: pedestrians in red,
 vehicles in blue and road signs in yellow.
 
 .. image:: ../../examples/test/testvecs/input/roads/pexels-photo-378570.jpeg
@@ -211,7 +223,15 @@ vehicles in blue and road signs in yellow.
 .. image:: images/pexels-photo-378570-ssd.jpg
    :width: 600
 
-The network we ran in this category is jdenet_ssd, which has 43 layers.
+Please use command line options to switch between these two sets of pre-trained
+categoris, e.g.
+
+.. code-block:: shell
+
+   ./ssd_multibox # default is jdetnet_voc 
+   ./ssd_multibox -c jdetnet -l jdetnet_objects.json -p 16 -i ../test/testvecs/input/preproc_0_768x320.y
+
+The ssd network used in both categories has 43 layers.
 Input to the network is RGB image of size 768x320.  Output is a list of
 boxes (up to 20), each box has information about the box coordinates, and
 which pre-trained category that the object inside the box belongs to.
