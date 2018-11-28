@@ -37,10 +37,21 @@ Examples
      - Object detection
      - EVE and C66x (network is split across both EVE and C66x)
      - OpenCV used to read input image from file or capture from camera.
+   * - mnist
+     - handwritten digits recognition (MNIST).  This example illustrates
+       low TIDL API overhead (~1.8%) for small networks with low compute
+       requirements (<5ms).
+     - EVE
+     - Pre-processed white-on-black images read from file, with or without
+       MNIST database file headers.
    * - classification
      - Classification example, called from the Matrix GUI.
-     -
+     - EVE or C66x
      - OpenCV used to read input image from file or capture from camera.
+   * - mcbench
+     - Used to benchmark supported networks. Refer ``mcbench/scripts`` for command line options.
+     - EVE or C66x
+     - Pre-processed image read from file.
    * - layer_output
      - Illustrates using TIDL APIs to access output buffers of intermediate :term:`layers<Layer>` in the network.
      - EVE or C66x
@@ -69,7 +80,8 @@ Imagenet
 
 The imagenet example takes an image as input and outputs 1000 probabilities.
 Each probability corresponds to one object in the 1000 objects that the
-network is pre-trained with.  The example outputs top 5 predictions for a given input image.
+network is pre-trained with.  The example outputs top 5 (up to) predictions
+with probabilities of 5% or higher for a given input image.
 
 The following figure and tables shows an input image, top 5 predicted
 objects as output, and the processing time on either EVE or C66x.
@@ -78,15 +90,13 @@ objects as output, and the processing time on either EVE or C66x.
    :width: 600
 
 
-==== ==============
-Rank Object Classes
-==== ==============
-1    tabby
-2    Egyptian_cat
-3    tiger_cat
-4    lynx
-5    Persian_cat
-==== ==============
+==== ============== ===========
+Rank Object Classes Probability
+==== ============== ===========
+1    tabby          52.55%
+2    Egyptian_cat   21.18%
+3    tiger_cat      17.65%
+==== ============== ===========
 
 =======   ====================== ==================== ============
 Device    Device Processing Time Host Processing Time API Overhead
@@ -124,10 +134,6 @@ with single buffering and double buffering,
    * - 2 C66xs
      - 1021 ms
      - 814 ms
-
-.. note::
-    The predicitions reported here are based on the output of the softmax
-    layer in the network, which are not normalized to the real probabilities.
 
 Segmentation
 ------------
@@ -195,8 +201,20 @@ SSD
 SSD is the abbreviation for Single Shot multi-box Detector.
 The ssd_multibox example takes an image as input and detects multiple
 objects with bounding boxes according to pre-trained categories.
+The example supports the ssd network with two sets of pretrained categories:
+``jdetnet_voc`` and ``jdetnet``.
+
+The following figures show an image as input and the image with recognized
+objects boxed as output from ``jdetnet_voc``: person in red and horse in green.
+
+.. figure:: images/horse.png
+   :width: 600
+
+.. figure:: images/horse_multibox.png
+   :width: 600
+
 The following figures show another street scene as input and the scene
-with recognized objects boxed as output: pedestrians in red,
+with recognized objects boxed as output from ``jdetnet``: pedestrians in red,
 vehicles in blue and road signs in yellow.
 
 .. image:: ../../examples/test/testvecs/input/roads/pexels-photo-378570.jpeg
@@ -205,7 +223,15 @@ vehicles in blue and road signs in yellow.
 .. image:: images/pexels-photo-378570-ssd.jpg
    :width: 600
 
-The network we ran in this category is jdenet_ssd, which has 43 layers.
+Please use command line options to switch between these two sets of pre-trained
+categoris, e.g.
+
+.. code-block:: shell
+
+   ./ssd_multibox # default is jdetnet_voc 
+   ./ssd_multibox -c jdetnet -l jdetnet_objects.json -p 16 -i ../test/testvecs/input/preproc_0_768x320.y
+
+The ssd network used in both categories has 43 layers.
 Input to the network is RGB image of size 768x320.  Output is a list of
 boxes (up to 20), each box has information about the box coordinates, and
 which pre-trained category that the object inside the box belongs to.
@@ -247,6 +273,70 @@ versus ExecutionObject level.
      - 1630 ms
      - 1408 ms
 
+.. _mnist-example:
+
+MNIST
+-----
+
+The MNIST example takes a pre-processed 28x28 white-on-black frame from
+a file as input and predicts the hand-written digit in the frame.
+For example, the example will predict 0 for the following frame.
+
+.. code-block:: none
+
+    root@am57xx-evm:~/tidl/examples/mnist# hexdump -v -e '28/1 "%2x" "\n"' -n 784 ../test/testvecs/input/digits10_images_28x28.y
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 3 314 8 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0319bdfeec1671b 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 01ed5ffd2a4e4ec89 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 1bcffee2a 031e6e225 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 05ff7ffbf 2 0 078ffa1 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0b2f2f34e 0 0 015e0d8 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0148deab2 0 0 0 0 0bdec 2 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 084f845 0 0 0 0 0a4f222 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0c4d3 5 0 0 0 0 096f21c 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 052f695 0 0 0 0 0 0a7ed 8 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 09af329 0 0 0 0 0 0d1cf 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 2d4c8 0 0 0 0 0 01ae9a2 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 038fa9a 0 0 0 0 0 062ff76 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 07afe5d 0 0 0 0 0 0a9e215 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0bdec1d 0 0 0 0 017e7aa 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 1e7d6 0 0 0 0 0 096f85a 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 01df2bf 0 0 0 0 015e1ca 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 061fc95 0 0 0 0 084f767 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 06eff8b 0 0 0 033e8ca 4 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 060fc9e 0 0 0 092d63e 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 01bf1da 6 0 019b656 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0c3fb8e a613e7b 5 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 049f1fcf5f696 9 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 04ca0b872 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+     0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+
+The file can contain multiple frames.  If an optional label file is also
+given, the example will compare predicted result against pre-determined
+label for accuracy.  The input files may or may not have `MNIST dataset
+file headers <http://yann.lecun.com/exdb/mnist/>`_.  If using headers,
+input filenames must end with idx3-ubyte or idx1-ubyte.
+
+The MNIST example also illustrates low overhead of TIDL API for small
+networks with low compute requirements (<5ms).  The network runs about 3ms
+on EVE for a single frame.  As shown in the following table, when running
+over 1000 frames, the overhead is about 1.8%.
+
+.. list-table:: Loop overall time over 1000 frames
+   :header-rows: 1
+
+   * - Device(s)
+     - Device Processing Time
+     - Host Processing Time
+     - API Overhead
+   * - 1 EVE
+     - 3091 ms
+     - 3146 ms
+     - 1.78%
+
 Running Examples
 ----------------
 
@@ -257,15 +347,12 @@ The following listing illustrates how to build and run the examples.
 
 .. code-block:: shell
 
-   root@am57xx-evm:~/tidl-api/examples/imagenet# ./imagenet
+   root@am57xx-evm:~/tidl/examples/imagenet# ./imagenet
    Input: ../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg
-   frame[  0]: Time on EVE0: 106.50 ms, host: 107.96 ms API overhead: 1.35 %
-   1: tabby
-   2: Egyptian_cat
-   3: tiger_cat
-   4: lynx
-   5: Persian_cat
-   Loop total time (including read/write/opencv/print/etc):  202.6ms
+   1: tabby,   prob = 52.55%
+   2: Egyptian_cat,   prob = 21.18%
+   3: tiger_cat,   prob = 17.65%
+   Loop total time (including read/write/opencv/print/etc):  183.3ms
    imagenet PASSED
 
    root@am57xx-evm:~/tidl-api/examples/segmentation# ./segmentation
@@ -290,6 +377,24 @@ The following listing illustrates how to build and run the examples.
    Saving frame 0 with SSD multiboxes to: multibox_0.png
    Loop total time (including read/write/opencv/print/etc):  320.2ms
    ssd_multibox PASSED
+
+   root@am57xx-evm:~/tidl/examples/mnist# ./mnist
+   Input images: ../test/testvecs/input/digits10_images_28x28.y
+   Input labels: ../test/testvecs/input/digits10_labels_10x1.y
+   0
+   1
+   2
+   3
+   4
+   5
+   6
+   7
+   8
+   9
+   Device total time:  31.02ms
+   Loop total time (including read/write/print/etc):  32.49ms
+   Accuracy:    100%
+   mnist PASSED
 
 
 Image input

@@ -47,6 +47,8 @@ typedef struct cmdline_opts_t_ {
   bool        verbose;
   bool        is_camera_input;
   bool        is_video_input;
+  bool        is_preprocessed_input;
+  uint32_t    output_prob_threshold;
 } cmdline_opts_t;
 
 

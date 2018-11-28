@@ -42,6 +42,7 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
     opts.verbose         = false;
     opts.is_camera_input = false;
     opts.is_video_input  = false;
+    opts.is_preprocessed_input = false;
 
     const struct option long_options[] =
     {
@@ -53,6 +54,7 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
         {"input_file",   required_argument, 0, 'i'},
         {"object_classes_list_file",   required_argument, 0, 'l'},
         {"output_width", required_argument, 0, 'w'},
+        {"prob_threshold_percentage", required_argument, 0, 'p'},
         {"help",         no_argument,       0, 'h'},
         {"verbose",      no_argument,       0, 'v'},
         {0, 0, 0, 0}
@@ -62,7 +64,7 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
 
     while (true)
     {
-        int c = getopt_long(argc, argv, "c:d:e:g:f:i:l:w:hv", long_options,
+        int c = getopt_long(argc, argv, "c:d:e:g:f:i:l:w:p:hv", long_options,
                             &option_index);
 
         if (c == -1)
@@ -101,6 +103,12 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
                       assert (opts.output_width > 0);
                       break;
 
+            case 'p': opts.output_prob_threshold = atoi(optarg);
+                      assert (opts.output_prob_threshold >= 0 &&
+                              opts.output_prob_threshold <= 100);
+                      break;
+
+
             case 'v': opts.verbose = true;
                       break;
 
@@ -126,6 +134,9 @@ bool ProcessArgs(int argc, char *argv[], cmdline_opts_t& opts)
         opts.is_video_input = (suffix == ".mp4") || (suffix == ".avi") ||
                               (suffix == ".mov");
     }
+    if (opts.input_file.size() > 2 &&
+        opts.input_file.compare(opts.input_file.size() - 2, 2, ".y") == 0)
+        opts.is_preprocessed_input = true;
 
     return true;
 }
@@ -156,4 +167,3 @@ bool SetVideoInputOutput(VideoCapture &cap, const cmdline_opts_t& opts,
 
     return true;
 }
-

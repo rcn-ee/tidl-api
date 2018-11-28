@@ -95,20 +95,21 @@ def run(num_eve, num_dsp, configuration):
     configuration.param_heap_size = (3 << 20)
     configuration.network_heap_size = (20 << 20)
 
-
     try:
         print('TIDL API: performing one time initialization ...')
 
-        eve = Executor(DeviceType.EVE, eve_device_ids, configuration, 1)
-        dsp = Executor(DeviceType.DSP, dsp_device_ids, configuration, 1)
-
         # Collect all EOs from EVE and DSP executors
         eos = []
-        for i in range(eve.get_num_execution_objects()):
-            eos.append(eve.at(i))
 
-        for i in range(dsp.get_num_execution_objects()):
-            eos.append(dsp.at(i))
+        if len(eve_device_ids) != 0:
+            eve = Executor(DeviceType.EVE, eve_device_ids, configuration, 1)
+            for i in range(eve.get_num_execution_objects()):
+                eos.append(eve.at(i))
+
+        if len(dsp_device_ids) != 0:
+            dsp = Executor(DeviceType.DSP, dsp_device_ids, configuration, 1)
+            for i in range(dsp.get_num_execution_objects()):
+                eos.append(dsp.at(i))
 
         allocate_memory(eos)
 

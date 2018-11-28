@@ -74,6 +74,10 @@ CXXFLAGS += -Isrc -Iinc
 CXXFLAGS += $(BUILD_ID)
 PY_INCLUDE = -I$(PYTHON_INCLUDE_DIR) -I$(PYBIND11_INC_DIR)
 
+# pybind11 recommends setting visibility to hidden to reduce code size and
+# prevent name clashed when multiple shared libraries use pybind11
+$(HOST_OBJ_PYBIND_FILES): CXXFLAGS += -fvisibility=hidden
+
 $(DSP_OUTFILE): $(DSP_SRCFILE)
 	$(MAKE) -C dsp
 

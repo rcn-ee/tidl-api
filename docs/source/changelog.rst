@@ -7,6 +7,7 @@ Changelog
 **Added**
 
 #. Updated API implementation to minimize TIDL API/OpenCL dispatch overhead using multiple execution contexts in the :term:`ExecutionObject`.
+   Refer to :ref:`mnist-example` example for details.
 
 #. Execution Graph generation
 
@@ -44,6 +45,7 @@ Changelog
 
    These methods were replaced by a timestamp based approach because they were
    no longer accurate with multiple ExecutionObject contexts and pipelining.
+   Refer to :ref:`execution-graph` for details.
 
 1.1.0 [Processor Linux SDK 5.1]
 ===============================

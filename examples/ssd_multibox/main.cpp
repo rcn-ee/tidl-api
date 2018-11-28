@@ -55,14 +55,16 @@ using namespace cv;
 
 
 #define NUM_VIDEO_FRAMES  100
-#define DEFAULT_CONFIG    "jdetnet"
-#define DEFAULT_INPUT     "../test/testvecs/input/preproc_0_768x320.y"
+#define DEFAULT_CONFIG    "jdetnet_voc"
+#define DEFAULT_INPUT     "../test/testvecs/input/horse_768x320.y"
 #define DEFAULT_INPUT_FRAMES (1)
-#define DEFAULT_OBJECT_CLASSES_LIST_FILE "./jdetnet_objects.json"
+#define DEFAULT_OBJECT_CLASSES_LIST_FILE "./jdetnet_voc_objects.json"
+#define DEFAULT_OUTPUT_PROB_THRESHOLD  25
 
 std::unique_ptr<ObjectClasses> object_classes;
 uint32_t orig_width;
 uint32_t orig_height;
+uint32_t num_frames_file;
 
 
 bool RunConfiguration(const cmdline_opts_t& opts);
@@ -70,7 +72,7 @@ Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c,
                          int layers_group_id);
 bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
                const Configuration& c, const cmdline_opts_t& opts,
-               VideoCapture &cap);
+               VideoCapture &cap, ifstream &ifs);
 bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
                       const Configuration& c, const cmdline_opts_t& opts);
 static void DisplayHelp();
@@ -97,6 +99,8 @@ int main(int argc, char *argv[])
     opts.object_classes_list_file = DEFAULT_OBJECT_CLASSES_LIST_FILE;
     opts.num_eves = 1;
     opts.num_dsps = 1;
+    opts.input_file = DEFAULT_INPUT;
+    opts.output_prob_threshold = DEFAULT_OUTPUT_PROB_THRESHOLD;
     if (! ProcessArgs(argc, argv, opts))
     {
         DisplayHelp();
@@ -106,11 +110,9 @@ int main(int argc, char *argv[])
     if (opts.num_frames == 0)
         opts.num_frames = (opts.is_camera_input || opts.is_video_input) ?
                           NUM_VIDEO_FRAMES :
-                          (opts.input_file.empty() ? DEFAULT_INPUT_FRAMES : 1);
-    if (opts.input_file.empty())
-        cout << "Input: " << DEFAULT_INPUT << endl;
-    else
-        cout << "Input: " << opts.input_file << endl;
+                          ((opts.input_file == DEFAULT_INPUT) ?
+                           DEFAULT_INPUT_FRAMES : 1);
+    cout << "Input: " << opts.input_file << endl;
 
     // Get object classes list
     object_classes = std::unique_ptr<ObjectClasses>(
@@ -150,6 +152,20 @@ bool RunConfiguration(const cmdline_opts_t& opts)
     // setup camera/video input
     VideoCapture cap;
     if (! SetVideoInputOutput(cap, opts, "SSD_Multibox"))  return false;
+
+    // setup preprocessed input
+    ifstream ifs;
+    if (opts.is_preprocessed_input)
+    {
+        ifs.open(opts.input_file, ios::binary | ios::ate);
+        if (! ifs.good())
+        {
+            cerr << "Cannot open " << opts.input_file << endl;
+            return false;
+        }
+        num_frames_file = ((int) ifs.tellg()) /
+                          (c.inWidth * c.inHeight * c.inNumChannels);
+    }
 
     try
     {
@@ -218,7 +234,7 @@ bool RunConfiguration(const cmdline_opts_t& opts)
             }
 
             // Read a frame and start processing it with current eo
-            if (ReadFrame(*eop, frame_idx, c, opts, cap))
+            if (ReadFrame(*eop, frame_idx, c, opts, cap, ifs))
                 eop->ProcessFrameStartAsync();
         }
 
@@ -257,7 +273,7 @@ Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c,
 
 bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
                const Configuration& c, const cmdline_opts_t& opts,
-               VideoCapture &cap)
+               VideoCapture &cap, ifstream &ifs)
 {
     if ((uint32_t)frame_idx >= opts.num_frames)
         return false;
@@ -267,20 +283,18 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
     char*  frame_buffer = eop.GetInputBufferPtr();
     assert (frame_buffer != nullptr);
     int channel_size = c.inWidth * c.inHeight;
+    int frame_size   = channel_size * c.inNumChannels;
 
     Mat image;
     if (!opts.is_camera_input && !opts.is_video_input)
     {
-        if (opts.input_file.empty())
+        if (opts.is_preprocessed_input)
         {
-            ifstream ifs(DEFAULT_INPUT, ios::binary);
-            ifs.seekg((frame_idx % DEFAULT_INPUT_FRAMES) * channel_size * 3);
-            ifs.read(frame_buffer, channel_size * 3);
-            bool ifs_status = ifs.good();
-            ifs.close();
             orig_width  = c.inWidth;
             orig_height = c.inHeight;
-            return ifs_status;  // already PreProc-ed
+            ifs.seekg((frame_idx % num_frames_file) * frame_size);
+            ifs.read(frame_buffer, frame_size);
+            return ifs.good();
         }
         else
         {
@@ -335,7 +349,7 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
 
     int frame_index = eop.GetFrameIndex();
     char outfile_name[64];
-    if (opts.input_file.empty())
+    if (opts.is_preprocessed_input)
     {
         snprintf(outfile_name, 64, "frame_%d.png", frame_index);
         cv::imwrite(outfile_name, frame);
@@ -350,6 +364,9 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
         int index = (int)    out[i * 7 + 0];
         if (index < 0)  break;
 
+        float score =        out[i * 7 + 2];
+        if (score * 100 < opts.output_prob_threshold)  continue;
+
         int   label = (int)  out[i * 7 + 1];
         int   xmin  = (int) (out[i * 7 + 3] * width);
         int   ymin  = (int) (out[i * 7 + 4] * height);
@@ -359,10 +376,14 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
         const ObjectClass& object_class = object_classes->At(label);
 
 #if 0
-        printf("(%d, %d) -> (%d, %d): %s, score=%f\n",
-               xmin, ymin, xmax, ymax, object_class.label, score);
+        printf("%2d: (%d, %d) -> (%d, %d): %s, score=%f\n",
+               i, xmin, ymin, xmax, ymax, object_class.label.c_str(), score);
 #endif
 
+        if (xmin < 0)       xmin = 0;
+        if (ymin < 0)       ymin = 0;
+        if (xmax > width)   xmax = width;
+        if (ymax > height)  ymax = height;
         cv::rectangle(frame, Point(xmin, ymin), Point(xmax, ymax),
                       Scalar(object_class.color.blue,
                              object_class.color.green,
@@ -400,9 +421,9 @@ void DisplayHelp()
     "  and classification.  First part of network "
     "(layersGroupId 1) runs on EVE,\n"
     "  second part (layersGroupId 2) runs on DSP.\n"
-    "  Use -c to run a different segmentation network.  Default is jdetnet.\n"
+    "  Use -c to run a different segmentation network.  Default is jdetnet_voc.\n"
     "Optional arguments:\n"
-    " -c <config>          Valid configs: jdetnet \n"
+    " -c <config>          Valid configs: jdetnet_voc, jdetnet \n"
     " -d <number>          Number of dsp cores to use\n"
     " -e <number>          Number of eve cores to use\n"
     " -i <image>           Path to the image file as input\n"
@@ -413,6 +434,8 @@ void DisplayHelp()
     " -l <objects_list>    Path to the object classes list file\n"
     " -f <number>          Number of frames to process\n"
     " -w <number>          Output image/video width\n"
+    " -p <number>          Output probability threshold in percentage\n"
+    "                      Default is 25 percent or higher\n"
     " -v                   Verbose output during execution\n"
     " -h                   Help\n";
 }

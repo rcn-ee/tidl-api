@@ -61,11 +61,15 @@ TimeStamp::TimeStamp(const std::string& file, int num_entries):
                         num_entries_m(num_entries), file_m(file)
 {
     entries_m = new Entry[num_entries_m];
-    std::memset(entries_m, 0, sizeof(Entry)*num_entries_m);
+    if (entries_m)
+        std::memset(entries_m, 0, sizeof(Entry)*num_entries_m);
 }
 
 void TimeStamp::Update(int frame_idx, EventKind k, int type, int id)
 {
+    if (!entries_m)
+        return;
+
     int idx = frame_idx % num_entries_m;
 
     entries_m[idx].frame_idx = frame_idx;
@@ -82,11 +86,13 @@ void TimeStamp::Update(int frame_idx, EventKind k, int type, int id)
         entries_m[idx].eo2_id   = id;
         entries_m[idx].eo2_type = type;
     }
-
 }
 
 void TimeStamp::Zero(int frame_idx, EventKind k)
 {
+    if (!entries_m)
+        return;
+
     int idx = frame_idx % num_entries_m;
 
     entries_m[idx].frame_idx    = frame_idx;
@@ -96,6 +102,9 @@ void TimeStamp::Zero(int frame_idx, EventKind k)
 
 TimeStamp::~TimeStamp()
 {
+    if (!entries_m)
+        return;
+
     std::ofstream ofs;
     ofs.open(file_m, std::ofstream::out);
 
@@ -143,7 +152,6 @@ TimeStamp::~TimeStamp()
             }
 
     ofs.close();
-
     delete [] entries_m;
 }
 
