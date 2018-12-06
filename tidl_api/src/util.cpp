@@ -34,7 +34,10 @@
 #include <mutex>
 #include <cstring>
 #include <memory>
-#include "executor.h"
+
+namespace tidl {
+bool EnableTimeStamps(const std::string& file, size_t num_frames);
+}
 
 using namespace tidl;
 
