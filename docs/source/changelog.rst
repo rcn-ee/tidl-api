@@ -2,7 +2,7 @@
 Changelog
 #########
 
-1.2.0 [Processor Linux SDK 5.2]
+1.2.1 [Processor Linux SDK 5.2]
 ===============================
 **Added**
 
