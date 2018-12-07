@@ -194,6 +194,9 @@ bool RunConfiguration(const std::string& config_file, int num_layers_groups, uin
     if (verbose)
         configuration.enableApiTrace = true;
 
+    if (num_layers_groups == 1)
+        configuration.runFullNet = true; //Force all layers to be in the same group
+
     try
     {
         // Create ExecutionObjectPipelines
@@ -281,8 +284,6 @@ bool CreateExecutionObjectPipelines(uint32_t num_eves, uint32_t num_dsps,
                 new Executor(DeviceType::EVE, ids_eve, configuration);
         e_dsp = num_dsps == 0 ? nullptr :
                 new Executor(DeviceType::DSP, ids_dsp, configuration);
-
-        configuration.runFullNet = true; //Force all layers to be in the same group
 
         // Construct ExecutionObjectPipeline with single Execution Object to
         // process each frame. This is parallel processing of frames with
