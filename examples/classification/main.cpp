@@ -504,8 +504,7 @@ bool ReadFrame(ExecutionObjectPipeline* eop, const Configuration& c,
     } else {
         if(live_input == -1) {
             //Rewind!
-            cap.release();
-            cap.open(std::string(video_clip));
+            cap.set(CAP_PROP_POS_FRAMES, 0);
         }
     }
 
