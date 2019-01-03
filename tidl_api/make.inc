@@ -238,7 +238,7 @@ DSP_INCLUDE += -I$(TARGET_ROOTDIR)/usr/share/ti/cgt-c6x/include
 
 CL6X += -mv6600 --abi=eabi $(DSP_INCLUDE)
 
-LIBS  = -lOpenCL -locl_util
+LIBS  = -lTIOpenCL -locl_util
 
 %.o: %.cpp
 	@echo Compiling $<
