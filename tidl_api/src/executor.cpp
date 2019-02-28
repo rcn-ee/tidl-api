@@ -120,9 +120,8 @@ bool ExecutorImpl::Initialize(const Configuration& configuration)
     // Read network from file into network struct in TIDL_CreateParams
     sTIDL_Network_t *net = &(shared_createparam.get())->net;
 
-    bool status = ReadBinary(configuration_m.netBinFile,
-                             reinterpret_cast<char *>(net),
-                             sizeof(sTIDL_Network_t));
+    bool status = ReadNetworkBinary(configuration_m.netBinFile,
+                                    reinterpret_cast<char *>(net));
     assert(status != false);
 
     // Force to run full network if runFullNet is set

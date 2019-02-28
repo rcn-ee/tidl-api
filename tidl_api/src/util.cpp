@@ -221,6 +221,44 @@ bool tidl::ReadBinary(const std::string &F, char* buffer, int size)
     return true;
 }
 
+bool tidl::ReadNetworkBinary(const std::string &F, char *buffer)
+{
+    std::size_t fsize = GetBinaryFileSize(F);
+
+    /* Read binary network format in the latest TIDL-API (1.3.x or later) */
+    if (fsize == sizeof(sTIDL_Network_t))
+        return ReadBinary(F, buffer, fsize);
+
+    /* Read binary network format in TIDL-API 1.2.x or earlier */
+    if (fsize == sizeof(sTIDL_1_2_Network_t))
+    {
+       sTIDL_1_2_Network_t *tmp = new sTIDL_1_2_Network_t;
+       if (tmp == nullptr)  return false;
+       if (! ReadBinary(F, (char *) tmp, fsize)) return false;
+       ConvertFromNetwork_1_2((sTIDL_Network_t *) buffer, tmp);
+       delete tmp;
+       return true;
+    }
+
+    std::cout << "ERROR: Wrong network binary size: " << fsize << std::endl;
+    return false;
+}
+
+void tidl::ConvertFromNetwork_1_2(sTIDL_Network_t *new_net,
+                                  sTIDL_1_2_Network_t *old_net)
+{
+    memcpy(new_net, old_net, 7 * sizeof(int32_t));  /* first 7 common fields */
+    int32_t strideOffsetMethod = old_net->strideOffsetMethod;
+    new_net->reserved          = old_net->reserved;
+
+    for (int i = 0; i < TIDL_NUM_MAX_LAYERS; i++)
+    {
+        memcpy(& new_net->TIDLLayers[i], & old_net->TIDLLayers[i],
+               sizeof(sTIDL_1_2_Layer_t));
+        new_net->TIDLLayers[i].strideOffsetMethod = strideOffsetMethod;
+    }
+}
+
 bool tidl::CompareFiles(const std::string &F1, const std::string &F2)
 {
     std::size_t s1 = GetBinaryFileSize(F1);
@@ -239,13 +277,9 @@ bool tidl::CompareFiles(const std::string &F1, const std::string &F2)
     for (size_t i=0; i < s1; i++)
         if (b1[i] != b2[i])
         {
-            std::cout << "Error at " << i << " " <<
-                         (int)b1[i] << " != " << (int)b2[i];
-            std::cout << std::endl;
-            errors++;
-
-            if (errors > 10)
-                break;
+            if (errors++ < 10)
+                std::cout << "Error at " << i << " " <<
+                             (int)b1[i] << " != " << (int)b2[i] << std::endl;
         }
 
     delete[] b1;
@@ -253,6 +287,7 @@ bool tidl::CompareFiles(const std::string &F1, const std::string &F2)
 
     if (errors == 0) return true;
 
+    std::cout << "Total " << errors << " errors out of " << s1 << std::endl;
     return false;
 }
 
@@ -284,16 +319,16 @@ bool tidl::CompareFrames(const std::string &F1, const std::string &F2,
                 if (b1[index] != b2[index])
                 {
                     status = false;
-                    std::cout << "Error at " << index << " " <<
-                                 (int)b1[index] << " != " << (int)b2[index];
-                    std::cout << std::endl;
-                    errors++;
-
+                    if (errors++ < 10)
+                        std::cout << "Error at " << index << " " <<
+                                     (int)b1[index] << " != " << (int)b2[index]
+                                  << std::endl;
                 }
-                if (errors > 10) break;
             }
-            if (errors > 10) break;
         }
+        if (errors > 0)
+            std::cout << "Total " << errors << " errors out of " <<
+                         height * width << std::endl;
     }
 
     delete[] b1;
