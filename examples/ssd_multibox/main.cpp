@@ -39,6 +39,7 @@
 #include <queue>
 #include <vector>
 #include <cstdio>
+#include <string>
 #include <chrono>
 
 #include "executor.h"
@@ -63,13 +64,12 @@ using namespace cv;
 
 /* Enable this macro to record individual output files and */
 /* resized, cropped network input files                    */
-#define DEBUG_FILES
+//#define DEBUG_FILES
 
 std::unique_ptr<ObjectClasses> object_classes;
 uint32_t orig_width;
 uint32_t orig_height;
 uint32_t num_frames_file;
-
 
 bool RunConfiguration(const cmdline_opts_t& opts);
 Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c,
@@ -78,20 +78,17 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
                const Configuration& c, const cmdline_opts_t& opts,
                VideoCapture &cap, ifstream &ifs);
 bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
-                      const Configuration& c, const cmdline_opts_t& opts);
+                      const Configuration& c, const cmdline_opts_t& opts, float confidence_value);
 static void DisplayHelp();
 
 /***************************************************************/
 /* Slider to control detection confidence level                */
 /***************************************************************/
-int prob_slider = DEFAULT_OUTPUT_PROB_THRESHOLD;
-int prob_slider_max = 100;
 static void on_trackbar( int slider_id, void *inst )
 {
   //This function is invoked on every slider move. 
   //No action required, since prob_slider is automatically updated.
   //But, for any additional operation on slider move, this is the place to insert code.
-  //std::cout << "slider moved to:" << prob_slider << " max val is:" << prob_slider_max << endl;
 }
 
 
@@ -154,6 +151,7 @@ int main(int argc, char *argv[])
 
 bool RunConfiguration(const cmdline_opts_t& opts)
 {
+    int prob_slider     = DEFAULT_OUTPUT_PROB_THRESHOLD;
     // Read the TI DL configuration file
     Configuration c;
     std::string config_file = "../test/testvecs/config/infer/tidl_config_"
@@ -169,10 +167,10 @@ bool RunConfiguration(const cmdline_opts_t& opts)
     VideoCapture cap;
     if (! SetVideoInputOutput(cap, opts, "SSD_Multibox"))  return false;
 
-    char TrackbarName[50];
+    std::string TrackbarName("Confidence(%):");
     prob_slider = (int)floor(opts.output_prob_threshold);
-    sprintf( TrackbarName, "Prob(%d %%)", prob_slider_max );
-    createTrackbar( TrackbarName, "SSD_Multibox", &prob_slider, prob_slider_max, on_trackbar );
+    createTrackbar( TrackbarName.c_str(), "SSD_Multibox", &prob_slider, 100, on_trackbar );
+    std::cout << TrackbarName << std::endl;
 
     // setup preprocessed input
     ifstream ifs;
@@ -251,7 +249,7 @@ bool RunConfiguration(const cmdline_opts_t& opts)
             // Wait for previous frame on the same eop to finish processing
             if (eop->ProcessFrameWait())
             {
-                WriteFrameOutput(*eop, c, opts);
+                WriteFrameOutput(*eop, c, opts, (float)prob_slider);
             }
 
             // Read a frame and start processing it with current eo
@@ -392,13 +390,13 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
 
 // Create frame with boxes drawn around classified objects
 bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
-                      const Configuration& c, const cmdline_opts_t& opts)
+                      const Configuration& c, const cmdline_opts_t& opts, float confidence_value)
 {
     // Asseembly original frame
     int width  = c.inWidth;
     int height = c.inHeight;
     int channel_size = width * height;
-    Mat frame, r_frame, bgr[3];
+    Mat frame, bgr[3];
 
     unsigned char *in = (unsigned char *) eop.GetInputBufferPtr();
     bgr[0] = Mat(height, width, CV_8UC(1), in);
@@ -424,7 +422,7 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
         if (index < 0)  break;
 
         float score =        out[i * 7 + 2];
-        if (score * 100 < (float)prob_slider)  continue;
+        if (score * 100 < confidence_value)  continue;
 
         int   label = (int)  out[i * 7 + 1];
         int   xmin  = (int) (out[i * 7 + 3] * width);
@@ -449,10 +447,9 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
                              object_class.color.red), 2);
     }
 
-    r_frame = frame;
     if (opts.is_camera_input || opts.is_video_input)
     {
-        cv::imshow("SSD_Multibox", r_frame);
+        cv::imshow("SSD_Multibox", frame);
 #ifdef DEBUG_FILES
         // Image files can be converted into video using, example script
         // (on desktop Ubuntu, with ffmpeg installed):
@@ -466,7 +463,7 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
     else
     {
         snprintf(outfile_name, 64, "multibox_%d.png", frame_index);
-        cv::imwrite(outfile_name, r_frame);
+        cv::imwrite(outfile_name, frame);
         printf("Saving frame %d with SSD multiboxes to: %s\n",
                frame_index, outfile_name);
     }
