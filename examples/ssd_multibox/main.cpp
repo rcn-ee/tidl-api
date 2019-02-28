@@ -61,6 +61,10 @@ using namespace cv;
 #define DEFAULT_OBJECT_CLASSES_LIST_FILE "./jdetnet_voc_objects.json"
 #define DEFAULT_OUTPUT_PROB_THRESHOLD  25
 
+/* Enable this macro to record individual output files and */
+/* resized, cropped network input files                    */
+#define DEBUG_FILES
+
 std::unique_ptr<ObjectClasses> object_classes;
 uint32_t orig_width;
 uint32_t orig_height;
@@ -76,6 +80,19 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
 bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
                       const Configuration& c, const cmdline_opts_t& opts);
 static void DisplayHelp();
+
+/***************************************************************/
+/* Slider to control detection confidence level                */
+/***************************************************************/
+int prob_slider = DEFAULT_OUTPUT_PROB_THRESHOLD;
+int prob_slider_max = 100;
+static void on_trackbar( int slider_id, void *inst )
+{
+  //This function is invoked on every slider move. 
+  //No action required, since prob_slider is automatically updated.
+  //But, for any additional operation on slider move, this is the place to insert code.
+  //std::cout << "slider moved to:" << prob_slider << " max val is:" << prob_slider_max << endl;
+}
 
 
 int main(int argc, char *argv[])
@@ -148,10 +165,14 @@ bool RunConfiguration(const cmdline_opts_t& opts)
         return false;
     }
     c.enableApiTrace = opts.verbose;
-
     // setup camera/video input
     VideoCapture cap;
     if (! SetVideoInputOutput(cap, opts, "SSD_Multibox"))  return false;
+
+    char TrackbarName[50];
+    prob_slider = (int)floor(opts.output_prob_threshold);
+    sprintf( TrackbarName, "Prob(%d %%)", prob_slider_max );
+    createTrackbar( TrackbarName, "SSD_Multibox", &prob_slider, prob_slider_max, on_trackbar );
 
     // setup preprocessed input
     ifstream ifs;
@@ -308,22 +329,60 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
     }
     else
     {
-        // 640x480 camera input, process one in every 5 frames,
-        // can adjust number of skipped frames to match real time processing
-        if (! cap.grab())  return false;
-        if (! cap.grab())  return false;
-        if (! cap.grab())  return false;
-        if (! cap.grab())  return false;
-        if (! cap.grab())  return false;
-        if (! cap.retrieve(image)) return false;
+        if(opts.is_camera_input)
+        {
+           if (! cap.grab()) return false;
+           if (! cap.retrieve(image)) return false;
+        } 
+        else
+        { // Video clip
+           if (cap.grab()) 
+           {
+             if (! cap.retrieve(image)) return false;
+           } else {
+             //Rewind!
+             std::cout << "Video clip rewinded!" << std::endl;
+             cap.set(CAP_PROP_POS_FRAMES, 0);
+             if (! cap.grab()) return false;
+             if (! cap.retrieve(image)) return false;
+           }
+        }
     }
 
-    // scale to network input size
+    // Scale to network input size:
+    // Preserve aspect ratio, by doing central cropping
+    // Choose vertical or horizontal central cropping based on dimension reduction
     Mat s_image, bgr_frames[3];
     orig_width  = image.cols;
     orig_height = image.rows;
-    cv::resize(image, s_image, Size(c.inWidth, c.inHeight),
-               0, 0, cv::INTER_AREA);
+    if(orig_width > orig_height)
+    {
+       float change_width  = (float)c.inWidth / (float)orig_width;
+       float change_height = (float)c.inHeight / (float)orig_height; 
+       if(change_width < change_height)
+       { // E.g. for 1920x1080->512x512, we first crop central part roi(420, 0, 1080, 1080), then resize to (512x512)
+         int offset_x = (int)round(0.5 * ((float)orig_width - ((float)orig_height * (float)c.inWidth / (float)c.inHeight)));
+         cv::resize(image(Rect(offset_x, 0, orig_width - 2 * offset_x, orig_height)), s_image, Size(c.inWidth, c.inHeight), 0, 0, cv::INTER_AREA);
+       } else {
+         // E.g. for 1920x1080->768x320, we first crop central part roi(0, 140, 1920, 800), then resize to (768x320)
+         int offset_y = (int)round(0.5 * ((float)orig_height - ((float)orig_width * (float)c.inHeight / (float)c.inWidth)));
+         cv::resize(image(Rect(0, offset_y, orig_width, orig_height - 2 * offset_y)), s_image, Size(c.inWidth, c.inHeight), 0, 0, cv::INTER_AREA);
+       }
+    }
+
+    #ifdef DEBUG_FILES
+    {
+      // Image files can be converted into video using, example script
+      // (on desktop Ubuntu, with ffmpeg installed):
+      // ffmpeg -i netin_%04d.png -vf "scale=(iw*sar)*max(768/(iw*sar)\,320/ih):ih*max(768/(iw*sar)\,320/ih), crop=768:320" -b:v 4000k out.mp4
+      // Update width 768, height 320, if necessary 
+      char netin_name[80];
+      sprintf(netin_name, "netin_%04d.png", frame_idx);
+      cv::imwrite(netin_name, s_image);
+      std::cout << "Video input, width:" << orig_width << " height:" << orig_height << " Network width:" << c.inWidth << " height:" << c.inHeight << std::endl;
+    }
+    #endif
+
     cv::split(s_image, bgr_frames);
     memcpy(frame_buffer,                bgr_frames[0].ptr(), channel_size);
     memcpy(frame_buffer+1*channel_size, bgr_frames[1].ptr(), channel_size);
@@ -365,7 +424,7 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
         if (index < 0)  break;
 
         float score =        out[i * 7 + 2];
-        if (score * 100 < opts.output_prob_threshold)  continue;
+        if (score * 100 < (float)prob_slider)  continue;
 
         int   label = (int)  out[i * 7 + 1];
         int   xmin  = (int) (out[i * 7 + 3] * width);
@@ -375,10 +434,10 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
 
         const ObjectClass& object_class = object_classes->At(label);
 
-#if 0
-        printf("%2d: (%d, %d) -> (%d, %d): %s, score=%f\n",
+        if(opts.verbose) {
+            printf("%2d: (%d, %d) -> (%d, %d): %s, score=%f\n",
                i, xmin, ymin, xmax, ymax, object_class.label.c_str(), score);
-#endif
+        }
 
         if (xmin < 0)       xmin = 0;
         if (ymin < 0)       ymin = 0;
@@ -390,15 +449,18 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
                              object_class.color.red), 2);
     }
 
-    // Resize to output width/height, keep aspect ratio
-    uint32_t output_width = opts.output_width;
-    if (output_width == 0)  output_width = orig_width;
-    uint32_t output_height = (output_width*1.0f) / orig_width * orig_height;
-    cv::resize(frame, r_frame, Size(output_width, output_height));
-
+    r_frame = frame;
     if (opts.is_camera_input || opts.is_video_input)
     {
         cv::imshow("SSD_Multibox", r_frame);
+#ifdef DEBUG_FILES
+        // Image files can be converted into video using, example script
+        // (on desktop Ubuntu, with ffmpeg installed):
+        // ffmpeg -i multibox_%04d.png -vf "scale=(iw*sar)*max(768/(iw*sar)\,320/ih):ih*max(768/(iw*sar)\,320/ih), crop=768:320" -b:v 4000k out.mp4
+        // Update width 768, height 320, if necessary 
+        snprintf(outfile_name, 64, "multibox_%04d.png", frame_index);
+        cv::imwrite(outfile_name, r_frame);
+#endif
         waitKey(1);
     }
     else
