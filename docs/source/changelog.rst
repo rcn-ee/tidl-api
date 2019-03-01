@@ -2,6 +2,22 @@
 Changelog
 #########
 
+1.3.0 [Processor Linux SDK 5.3]
+===============================
+**Added**
+
+#. Added DSP support for MNIST example.
+
+**Changed**
+
+#. PSDK 5.3 and TIDL-API 1.3 use a slightly modified TIDL network binary
+   format to support ONNX network import.  TIDL-API 1.3, as well as
+   tidl-viewer utility, can read both network formats before and after the
+   change.  Network binary in TIDL-API 1.2 and earlier is of size 483364
+   bytes, network binary in TIDL-API 1.3 is of size 484384 bytes.
+
+#. Improved performance of concat layer on C66x DSP.
+
 1.2.2 [Processor Linux SDK 5.2]
 ===============================
 **Added**
