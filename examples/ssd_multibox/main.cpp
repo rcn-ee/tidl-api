@@ -78,7 +78,8 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
                const Configuration& c, const cmdline_opts_t& opts,
                VideoCapture &cap, ifstream &ifs);
 bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
-                      const Configuration& c, const cmdline_opts_t& opts, float confidence_value);
+                      const Configuration& c, const cmdline_opts_t& opts,
+                      float confidence_value);
 static void DisplayHelp();
 
 /***************************************************************/
@@ -86,7 +87,7 @@ static void DisplayHelp();
 /***************************************************************/
 static void on_trackbar( int slider_id, void *inst )
 {
-  //This function is invoked on every slider move. 
+  //This function is invoked on every slider move.
   //No action required, since prob_slider is automatically updated.
   //But, for any additional operation on slider move, this is the place to insert code.
 }
@@ -151,7 +152,7 @@ int main(int argc, char *argv[])
 
 bool RunConfiguration(const cmdline_opts_t& opts)
 {
-    int prob_slider     = DEFAULT_OUTPUT_PROB_THRESHOLD;
+    int prob_slider     = opts.output_prob_threshold;
     // Read the TI DL configuration file
     Configuration c;
     std::string config_file = "../test/testvecs/config/infer/tidl_config_"
@@ -167,10 +168,13 @@ bool RunConfiguration(const cmdline_opts_t& opts)
     VideoCapture cap;
     if (! SetVideoInputOutput(cap, opts, "SSD_Multibox"))  return false;
 
-    std::string TrackbarName("Confidence(%):");
-    prob_slider = (int)floor(opts.output_prob_threshold);
-    createTrackbar( TrackbarName.c_str(), "SSD_Multibox", &prob_slider, 100, on_trackbar );
-    std::cout << TrackbarName << std::endl;
+    if (opts.is_camera_input || opts.is_video_input)
+    {
+        std::string TrackbarName("Confidence(%):");
+        createTrackbar( TrackbarName.c_str(), "SSD_Multibox",
+                        &prob_slider, 100, on_trackbar );
+        std::cout << TrackbarName << std::endl;
+    }
 
     // setup preprocessed input
     ifstream ifs;
@@ -331,10 +335,10 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
         {
            if (! cap.grab()) return false;
            if (! cap.retrieve(image)) return false;
-        } 
+        }
         else
         { // Video clip
-           if (cap.grab()) 
+           if (cap.grab())
            {
              if (! cap.retrieve(image)) return false;
            } else {
@@ -348,36 +352,66 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
     }
 
     // Scale to network input size:
-    // Preserve aspect ratio, by doing central cropping
-    // Choose vertical or horizontal central cropping based on dimension reduction
     Mat s_image, bgr_frames[3];
     orig_width  = image.cols;
     orig_height = image.rows;
-    if(orig_width > orig_height)
+    if (!opts.is_camera_input && !opts.is_video_input)
     {
-       float change_width  = (float)c.inWidth / (float)orig_width;
-       float change_height = (float)c.inHeight / (float)orig_height; 
-       if(change_width < change_height)
-       { // E.g. for 1920x1080->512x512, we first crop central part roi(420, 0, 1080, 1080), then resize to (512x512)
-         int offset_x = (int)round(0.5 * ((float)orig_width - ((float)orig_height * (float)c.inWidth / (float)c.inHeight)));
-         cv::resize(image(Rect(offset_x, 0, orig_width - 2 * offset_x, orig_height)), s_image, Size(c.inWidth, c.inHeight), 0, 0, cv::INTER_AREA);
-       } else {
-         // E.g. for 1920x1080->768x320, we first crop central part roi(0, 140, 1920, 800), then resize to (768x320)
-         int offset_y = (int)round(0.5 * ((float)orig_height - ((float)orig_width * (float)c.inHeight / (float)c.inWidth)));
-         cv::resize(image(Rect(0, offset_y, orig_width, orig_height - 2 * offset_y)), s_image, Size(c.inWidth, c.inHeight), 0, 0, cv::INTER_AREA);
-       }
+        cv::resize(image, s_image, Size(c.inWidth, c.inHeight),
+                   0, 0, cv::INTER_AREA);
+    }
+    else
+    {
+        // Preserve aspect ratio, by doing central cropping
+        // Choose vertical or horizontal central cropping
+        // based on dimension reduction
+        if(orig_width > orig_height)
+        {
+            float change_width  = (float)c.inWidth / (float)orig_width;
+            float change_height = (float)c.inHeight / (float)orig_height;
+            if(change_width < change_height)
+            {
+                // E.g. for 1920x1080->512x512, we first crop central part
+                // roi(420, 0, 1080, 1080), then resize to (512x512)
+                int offset_x = (int)round(0.5 * ((float)orig_width -
+                  ((float)orig_height * (float)c.inWidth / (float)c.inHeight)));
+                cv::resize(image(Rect(offset_x, 0, orig_width - 2 * offset_x,
+                                      orig_height)), s_image,
+                           Size(c.inWidth, c.inHeight), 0, 0, cv::INTER_AREA);
+            } else {
+                // E.g. for 1920x1080->768x320, we first crop central part
+                // roi(0, 140, 1920, 800), then resize to (768x320)
+                int offset_y = (int)round(0.5 * ((float)orig_height -
+                  ((float)orig_width * (float)c.inHeight / (float)c.inWidth)));
+                cv::resize(image(Rect(0, offset_y, orig_width,
+                                      orig_height - 2 * offset_y)), s_image,
+                           Size(c.inWidth, c.inHeight), 0, 0, cv::INTER_AREA);
+            }
+        } else {
+          // E.g. for 540x960->512x512, we first crop central part
+          //      roi(0, 210, 540, 540), then resize to (512x512)
+          // E.g. for 540x960->768x320, we first crop central part
+          //      roi(0, 367, 540, 225), then resize to (768x320)
+          int offset_y = (int)round(0.5 * ((float)orig_height -
+              ((float)orig_width * (float)c.inHeight / (float)c.inWidth)));
+          cv::resize(image(Rect(0, offset_y, orig_width, orig_height -
+                                2 * offset_y)), s_image,
+                     Size(c.inWidth, c.inHeight), 0, 0, cv::INTER_AREA);
+        }
     }
 
     #ifdef DEBUG_FILES
     {
-      // Image files can be converted into video using, example script
-      // (on desktop Ubuntu, with ffmpeg installed):
-      // ffmpeg -i netin_%04d.png -vf "scale=(iw*sar)*max(768/(iw*sar)\,320/ih):ih*max(768/(iw*sar)\,320/ih), crop=768:320" -b:v 4000k out.mp4
-      // Update width 768, height 320, if necessary 
-      char netin_name[80];
-      sprintf(netin_name, "netin_%04d.png", frame_idx);
-      cv::imwrite(netin_name, s_image);
-      std::cout << "Video input, width:" << orig_width << " height:" << orig_height << " Network width:" << c.inWidth << " height:" << c.inHeight << std::endl;
+        // Image files can be converted into video using, example script
+        // (on desktop Ubuntu, with ffmpeg installed):
+        // ffmpeg -i netin_%04d.png -vf "scale=(iw*sar)*max(768/(iw*sar)\,320/ih):ih*max(768/(iw*sar)\,320/ih), crop=768:320" -b:v 4000k out.mp4
+        // Update width 768, height 320, if necessary
+        char netin_name[80];
+        sprintf(netin_name, "netin_%04d.png", frame_idx);
+        cv::imwrite(netin_name, s_image);
+        std::cout << "Video input, width:" << orig_width << " height:"
+                  << orig_height << " Network width:" << c.inWidth
+                  << " height:" << c.inHeight << std::endl;
     }
     #endif
 
@@ -390,7 +424,8 @@ bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
 
 // Create frame with boxes drawn around classified objects
 bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
-                      const Configuration& c, const cmdline_opts_t& opts, float confidence_value)
+                      const Configuration& c, const cmdline_opts_t& opts,
+                      float confidence_value)
 {
     // Asseembly original frame
     int width  = c.inWidth;
@@ -454,7 +489,7 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
         // Image files can be converted into video using, example script
         // (on desktop Ubuntu, with ffmpeg installed):
         // ffmpeg -i multibox_%04d.png -vf "scale=(iw*sar)*max(768/(iw*sar)\,320/ih):ih*max(768/(iw*sar)\,320/ih), crop=768:320" -b:v 4000k out.mp4
-        // Update width 768, height 320, if necessary 
+        // Update width 768, height 320, if necessary
         snprintf(outfile_name, 64, "multibox_%04d.png", frame_index);
         cv::imwrite(outfile_name, r_frame);
 #endif
@@ -462,6 +497,13 @@ bool WriteFrameOutput(const ExecutionObjectPipeline& eop,
     }
     else
     {
+        // Resize to output width/height, keep aspect ratio
+        Mat r_frame;
+        uint32_t output_width = opts.output_width;
+        if (output_width == 0)  output_width = orig_width;
+        uint32_t output_height = (output_width*1.0f) / orig_width * orig_height;
+        cv::resize(frame, r_frame, Size(output_width, output_height));
+
         snprintf(outfile_name, 64, "multibox_%d.png", frame_index);
         cv::imwrite(outfile_name, frame);
         printf("Saving frame %d with SSD multiboxes to: %s\n",
