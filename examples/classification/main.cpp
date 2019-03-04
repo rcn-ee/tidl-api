@@ -530,10 +530,10 @@ void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
         {
             // overlay the display window, if ball seen during last two times
             cv::putText(show_image, labels_classes[rpt_id].c_str(),
-                cv::Point(rectCrop[r].x + 5,rectCrop[r].y + 20), // Coordinates
+                cv::Point(rectCrop[r].x + 5,rectCrop[r].y + 32), // Coordinates
                 cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
-                1.0, // Scale. 2.0 = 2x bigger
-                cv::Scalar(0,0,255), // Color
+                1.5, // Scale. 2.0 = 2x bigger
+                cv::Scalar(0,0,0), // Color
                 1, // Thickness
                 8); // Line type
             cv::rectangle(show_image, rectCrop[r], Scalar(255,0,0), 3);

@@ -31,11 +31,15 @@
 #include <string>
 #include <cstddef>
 #include "configuration.h"
+#include "tidl_create_params.h"
 
 namespace tidl {
 
 std::size_t GetBinaryFileSize (const std::string &F);
 bool        ReadBinary        (const std::string &F, char* buffer, int size);
+bool        ReadNetworkBinary (const std::string &F, char* buffer);
+void        ConvertFromNetwork_1_2(sTIDL_Network_t *new_net,
+                                   sTIDL_1_2_Network_t *old_net);
 bool        CompareFiles      (const std::string &F1, const std::string &F2);
 bool        CompareFrames(const std::string &F1, const std::string &F2,
                          int numFrames, int width, int height);

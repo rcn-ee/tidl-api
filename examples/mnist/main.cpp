@@ -95,11 +95,6 @@ int main(int argc, char *argv[])
         exit(EXIT_SUCCESS);
     }
     assert(opts.num_dsps != 0 || opts.num_eves != 0);
-    if (opts.num_dsps != 0)
-    {
-        cout << "MNIST network not supported on DSP yet." << endl;
-        exit(EXIT_SUCCESS);
-    }
 
     if (opts.input_file.empty())
     {
@@ -339,6 +334,7 @@ void DisplayHelp()
     "  different MNIST network. Default is mnist_lenet.\n"
     "Optional arguments:\n"
     " -c <config>          Valid configs: mnist_lenet\n"
+    " -d <number>          Number of dsp cores to use\n"
     " -e <number>          Number of eve cores to use\n"
     " -i <images>          Path to the MNIST white-on-black images file\n"
     " -l <labels>          Path to the MNIST labels file\n"

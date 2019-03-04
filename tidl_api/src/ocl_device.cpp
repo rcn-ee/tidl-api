@@ -91,7 +91,8 @@ DspDevice::DspDevice(const DeviceIds& ids, const std::string &binary_filename):
         // Queue 0 on device 0
         queue_m[0] = clCreateCommandQueue(context_m,
                                           device_ids[0],
-                                          CL_QUEUE_PROFILING_ENABLE,
+                                          CL_QUEUE_PROFILING_ENABLE|
+                                         CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE,
                                           &errcode);
         errorCheck(errcode, __LINE__);
         BuildProgramFromBinary(binary_filename, device_ids, 1);
@@ -139,7 +140,8 @@ DspDevice::DspDevice(const DeviceIds& ids, const std::string &binary_filename):
             int index = static_cast<int>(id);
             queue_m[index] = clCreateCommandQueue(context_m,
                                           sub_devices[index],
-                                          CL_QUEUE_PROFILING_ENABLE,
+                                          CL_QUEUE_PROFILING_ENABLE|
+                                         CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE,
                                           &errcode);
             errorCheck(errcode, __LINE__);
         }
@@ -501,7 +503,7 @@ Device::Ptr Device::Create(DeviceType core_type, const DeviceIds& ids,
 }
 
 // Minimum version of OpenCL required for this version of TIDL API
-#define MIN_OCL_VERSION "01.01.17.00"
+#define MIN_OCL_VERSION "01.01.18.00"
 static bool CheckOpenCLVersion(cl_platform_id id)
 {
     cl_int err;
