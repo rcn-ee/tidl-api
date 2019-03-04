@@ -283,14 +283,24 @@ bool ReadFrame(ExecutionObjectPipeline &eop,
     }
     else
     {
-        // 640x480 camera input, process one in every 5 frames,
-        // can adjust number of skipped frames to match real time processing
-        if (! cap.grab())  return false;
-        if (! cap.grab())  return false;
-        if (! cap.grab())  return false;
-        if (! cap.grab())  return false;
-        if (! cap.grab())  return false;
-        if (! cap.retrieve(image)) return false;
+      if(opts.is_camera_input)
+      {
+         if (! cap.grab()) return false;
+         if (! cap.retrieve(image)) return false;
+      }
+      else
+      { //Video clip
+        if (cap.grab())
+        {
+          if (! cap.retrieve(image)) return false;
+        } else {
+          //Rewind!
+          std::cout << "Video clip rewinded!" << std::endl;
+          cap.set(CAP_PROP_POS_FRAMES, 0);
+          if (! cap.grab()) return false;
+            if (! cap.retrieve(image)) return false;
+        }
+      }
     }
 
     // scale to network input size 1024 x 512
