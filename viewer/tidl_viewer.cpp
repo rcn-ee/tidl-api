@@ -38,9 +38,8 @@ bool tidl::util::PrintNetwork(const std::string& network_binary,
         return false;
 
     sTIDL_Network_t net;
-    bool status = ReadBinary(network_binary,
-                             reinterpret_cast<char *>(&net),
-                             sizeof(sTIDL_Network_t));
+    bool status = ReadNetworkBinary(network_binary,
+                                    reinterpret_cast<char *>(&net));
     if (!status)
     {
         std::cerr << "ERROR: Invalid network binary: "
@@ -95,9 +94,8 @@ bool tidl::util::GenerateDotGraphForNetwork(const std::string& network_binary,
         return false;
 
     sTIDL_Network_t net;
-    bool status = ReadBinary(network_binary,
-                             reinterpret_cast<char *>(&net),
-                             sizeof(sTIDL_Network_t));
+    bool status = ReadNetworkBinary(network_binary,
+                                    reinterpret_cast<char *>(&net));
     if (!status)
     {
         std::cerr << "ERROR: Invalid network binary: "

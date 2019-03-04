@@ -33,7 +33,8 @@
 #define TIDL_NUM_OUT_BUFS       (16)
 #define TIDL_STRING_SIZE        (256)
 #define TIDL_MAX_PAD_SIZE       (4)
-#define TIDL_MAX_DATA_BUFS      (128)
+/* Fix for JIRA issue TIDL - 303 */
+#define TIDL_MAX_DATA_BUFS      (256)
 #define TIDL_MAX_ALG_IN_BUFS    (16)
 #define TIDL_MAX_ALG_OUT_BUFS   (16)
 
@@ -241,6 +242,15 @@ typedef enum
     TIDL_E_CONV_POOL_INVALID_KER_HEIGHT        = (TIDL_E_CONVOLUTION - 14),
     TIDL_E_CONV_POOL_INVALID_STRIDE_WIDTH      = (TIDL_E_CONVOLUTION - 15),
     TIDL_E_CONV_POOL_INVALID_STRIDE_HEIGHT     = (TIDL_E_CONVOLUTION - 16),
+    /* Deconvolution layer error types */
+    TIDL_E_DECONV_INVALID_INPUT_WIDTH          = (TIDL_E_CONVOLUTION - 17),
+    TIDL_E_DECONV_INVALID_INPUT_HEIGHT         = (TIDL_E_CONVOLUTION - 18),
+    TIDL_E_DECONV_INVALID_OUTPUT_WIDTH         = (TIDL_E_CONVOLUTION - 19),
+    TIDL_E_DECONV_INVALID_OUTPUT_HEIGHT        = (TIDL_E_CONVOLUTION - 20),
+    TIDL_E_DECONV_INVALID_NUM_IN_CHANNELS      = (TIDL_E_CONVOLUTION - 21),
+    TIDL_E_DECONV_INVALID_NUM_OUT_CHANNELS     = (TIDL_E_CONVOLUTION - 22),
+    TIDL_E_DECONV_INVALID_NUM_GROUPS           = (TIDL_E_CONVOLUTION - 23),
+    TIDL_E_DECONV_INVALID_STRIDE               = (TIDL_E_CONVOLUTION - 24),
 
     /* Eltwise layer error types */
     TIDL_E_ELTWISE                             = -1020,
@@ -250,6 +260,7 @@ typedef enum
     TIDL_E_ELTWISE_INVALID_OUTPUT_HEIGHT       = (TIDL_E_ELTWISE - 3),
     TIDL_E_ELTWISE_INVALID_ELTWISE_TYPE        = (TIDL_E_ELTWISE - 4),
     TIDL_E_ELTWISE_INVALID_NUM_CHANNELS        = (TIDL_E_ELTWISE - 5),
+    TIDL_E_ELTWISE_INVALID_INPUT_TYPE          = (TIDL_E_ELTWISE - 6),
 
     /* Pooling error types */
     TIDL_E_POOLING                             = -1030,
@@ -315,21 +326,21 @@ typedef enum
  @brief   This structure define the parmeters of data or kerner buffer
            memeory in TIDL
  @param  ptr
-          Address pointing to the actual buffer
+          For 32-bit platform, ptr is the address pointing to the actual buffer.
+          For 64-bit platform, ptr can be either the index to buffer of pointers,
+          or the lower 32-bit of the address if upper 32-bit is the same for all
+          pointers.
+ @remark This is to make sure the code is portable across 32-bit and 64-bit platforms.
  @param  bufSize
           Size of the buffer in bytes
 */
 typedef struct
 {
-  // The tidl-viewer binary is built for 64b x86/Linux. On such systems,
-  // void* is 64b and this breaks structure size/layout required by TIDL.
-  // Cannot use -m32 with yocto builds. Workaround is to use int32_t for ptr.
-  // ptr is not used by the tidl-viewer.
-  #if defined(__x86_64__)
-  int32_t ptr;
-  #else
+#ifdef PLATFORM_64BIT
+  uint32_t ptr;
+#else
   void* ptr;
-  #endif
+#endif
   int32_t bufSize;
   int32_t reserved[2];
 }sBuffer_t;
@@ -846,6 +857,8 @@ typedef union {
           identify the currently processing group
  @param  weightsElementSizeInBits
           Size of compute layer weight parameters in bytes
+ @param  strideOffsetMethod
+          Offset selection method for stride. Refer eTIDL_strideOffsetMethod
 */
 typedef struct {
   sTIDL_LayerParams_t layerParams;
@@ -857,12 +870,79 @@ typedef struct {
   int32_t coreID;
   int32_t layersGroupId;
   int32_t weightsElementSizeInBits;
+  int32_t strideOffsetMethod;
 }sTIDL_Layer_t;
+
+/**
+ @struct  sTIDL_1_2_Layer_t
+ @brief   This structure define the common layer parmeters
+           in TIDL-API 1.2.x or earlier
+ @param  layerType
+          Layer Type
+ @param  numInBufs
+          Number of input data buffers for the layer
+ @param  numOutBufs
+          Number of output data buffers for the layer
+ @param  inData
+          Input data buffers details
+ @param  outData
+          output data buffers details
+ @param  coreID
+          Processing core ID (EVE or DSP)
+ @param  layersGroupId
+          Group of layers in the net are processed together. This unique number
+          identify the currently processing group
+ @param  weightsElementSizeInBits
+          Size of compute layer weight parameters in bytes
+*/
+typedef struct {
+  sTIDL_LayerParams_t layerParams;
+  int32_t layerType;
+  int32_t numInBufs;
+  int32_t numOutBufs;
+  sTIDL_DataParams_t inData[TIDL_NUM_IN_BUFS];
+  sTIDL_DataParams_t outData[TIDL_NUM_OUT_BUFS];
+  int32_t coreID;
+  int32_t layersGroupId;
+  int32_t weightsElementSizeInBits;
+}sTIDL_1_2_Layer_t;
 
 /**
  @struct  sTIDL_Network_t
  @brief   This structure define the parmeters CNN/Deep learning net
            in TIDL
+ @param  numLayers
+          Number of layers in the network inclusing the input and output data
+          Layers
+ @param  weightsElementSize
+          Size of compute layer weight parameters in bytes
+ @param  slopeElementSize
+          Size of PRelU layer weight/slope parameters in bytes
+ @param  biasElementSize
+          Size of compute layer Bias parameters in bytes
+ @param  dataElementSize
+          Size of compute layer input and adat buffers in bytes
+ @param  interElementSize
+          Size of compute layer intermeadiate datas in bytes
+ @param  quantizationStyle
+          Variable to indicate different types of quantization Styles
+*/
+typedef struct {
+  int32_t numLayers;
+  int32_t weightsElementSize;
+  int32_t slopeElementSize;
+  int32_t biasElementSize;
+  int32_t dataElementSize;
+  int32_t interElementSize;
+  int32_t quantizationStyle;
+  int32_t reserved;
+  sTIDL_Layer_t TIDLLayers[TIDL_NUM_MAX_LAYERS];
+}sTIDL_Network_t;
+
+/**
+ @struct  sTIDL_1_2_Network_t
+ @brief   This structure define the parmeters CNN/Deep learning net
+           in TIDL-API 1.2.x or earlier
  @param  numLayers
           Number of layers in the network inclusing the input and output data
           Layers
@@ -891,8 +971,8 @@ typedef struct {
   int32_t quantizationStyle;
   int32_t strideOffsetMethod;
   int32_t reserved;
-  sTIDL_Layer_t TIDLLayers[TIDL_NUM_MAX_LAYERS];
-}sTIDL_Network_t;
+  sTIDL_1_2_Layer_t TIDLLayers[TIDL_NUM_MAX_LAYERS];
+}sTIDL_1_2_Network_t;
 
 /**
   @struct TIDL_CreateParams
@@ -901,6 +981,31 @@ typedef struct {
   @param  visionParams
           Common parmeters for all ivison based modules
 
+  @param  net
+          This structure define the parmeters CNN/Deep learning net
+          in TIDL
+  @param  currCoreId
+          Id of the core (EVE/DSP) on which TIDL is running
+  @param  currLayersGroupId
+          Id of the each layer (EVE/DSP) on which that layer is
+          running
+  @param  l1MemSize
+          Value indicates the available l1MemSize for TIDL
+  @param  l2MemSize
+          Value indicates the available l2MemSize for TIDL
+  @param  l3MemSize
+          Value indicates the available l3MemSize for TIDL
+  @param  quantHistoryParam1
+          weights used for previously processed inference
+          during application boot time
+  @param  quantHistoryParam2
+          weights used for previously processed inference during
+          application execution (After initial few frames)
+  @param  quantMargin
+          margin added to the average in percentage
+  @param  optimiseExtMem
+          Value indicates  type of memory optimization to be
+          used by TIDL library
 */
 typedef struct
 {
