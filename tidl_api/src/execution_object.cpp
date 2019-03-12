@@ -683,7 +683,7 @@ uint64_t ExecutionObject::Impl::GetProcessCycles(uint32_t context_idx) const
     uint8_t factor = 1;
 
     // ARP32 running at half frequency of VCOP, multiply by 2 for VCOP cycles
-    if (device_m->type() == CL_DEVICE_TYPE_CUSTOM)
+    if (device_type_m == DeviceType::EVE)
         factor = 2;
 
     OCL_TIDL_ProcessParams *p_params = shared_process_params_m.get() +

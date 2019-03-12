@@ -26,8 +26,6 @@
 PYTHON_INCLUDE_DIR ?= $(wildcard $(TARGET_ROOTDIR)/usr/include/python3*)
 
 LIB_NAME = tidl_api.a
-DSP_SRCFILE = dsp/ocl_wrapper.cl
-DSP_OUTFILE = dsp/ocl_wrapper.dsp_h
 LIB_IMGUTIL_NAME = tidl_imgutil.a
 PY_LIB_NAME = tidl.so
 
@@ -78,12 +76,6 @@ PY_INCLUDE = -I$(PYTHON_INCLUDE_DIR) -I$(PYBIND11_INC_DIR)
 # prevent name clashed when multiple shared libraries use pybind11
 $(HOST_OBJ_PYBIND_FILES): CXXFLAGS += -fvisibility=hidden
 
-$(DSP_OUTFILE): $(DSP_SRCFILE)
-	$(MAKE) -C dsp
-
-src/ocl_device.cpp: $(DSP_OUTFILE)
-	touch $@
-
 $(HOST_OBJ_PYBIND_FILES): obj/%.o: src/%.cpp $(HEADERS) src/pybind_common.h
 	@mkdir -p obj
 	@echo Compiling pybind $< ...
@@ -105,8 +97,7 @@ $(LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
 	$(AR) cr $@ $(HOST_OBJ_IMGUTIL_FILES)
 
 clean::
-	$(MAKE) -C dsp clean
-	$(RM) -f $(LIB_NAME) $(PY_LIB_NAME) $(HOST_OBJ_FILES)
-	$(RM) -f $(LIB_IMGUTIL_NAME) $(HOST_OBJ_IMGUTIL_FILES)
+	$(RM) -f $(LIB_NAME) $(PY_LIB_NAME)
+	$(RM) -f $(LIB_IMGUTIL_NAME)
 	$(RM) -rf obj
 
