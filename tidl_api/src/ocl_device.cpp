@@ -266,7 +266,8 @@ bool Kernel::UpdateScalarArg(uint32_t index, size_t size, const void *value)
 Kernel& Kernel::RunAsync(uint32_t context_idx)
 {
     // Execute kernel
-    TRACE::print("\tKernel: device %d executing %s, context %d\n",
+    TRACE::print("\tKernel: %s device %d executing %s, context %d\n",
+                 device_m->GetDeviceName().c_str(),
                  device_index_m, name_m.c_str(), context_idx);
     cl_int ret = clEnqueueTask(device_m->queue_m[device_index_m],
                                kernel_m, 0, 0, &event_m[context_idx]);
@@ -459,7 +460,7 @@ static bool CheckOpenCLVersion(cl_platform_id id)
     err = clGetPlatformInfo(id, CL_PLATFORM_VERSION, 0, nullptr, &length);
     if (err != CL_SUCCESS) return false;
 
-    std::unique_ptr<char> version(new char[length]);
+    std::unique_ptr<char[]> version(new char[length]);
     err = clGetPlatformInfo(id, CL_PLATFORM_VERSION, length, version.get(),
                             nullptr);
     if (err != CL_SUCCESS) return false;
@@ -491,7 +492,7 @@ static bool PlatformIsAM57()
     err = clGetPlatformInfo(id, CL_PLATFORM_NAME, 0, nullptr, &length);
     if (err != CL_SUCCESS) return false;
 
-    std::unique_ptr<char> name(new char[length]);
+    std::unique_ptr<char[]> name(new char[length]);
 
     err = clGetPlatformInfo(id, CL_PLATFORM_NAME, length, name.get(), nullptr);
     if (err != CL_SUCCESS) return false;
