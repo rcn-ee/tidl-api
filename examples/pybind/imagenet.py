@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# Copyright (c) 2018 Texas Instruments Incorporated - http://www.ti.com/
+# Copyright (c) 2019 Texas Instruments Incorporated - http://www.ti.com/
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,11 @@
 
 import os
 import argparse
+import json
+import heapq
+import logging
 import numpy as np
+import cv2
 
 from tidl import DeviceId, DeviceType, Configuration, TidlError
 from tidl import Executor, ExecutionObjectPipeline
@@ -41,33 +45,53 @@ from tidl import allocate_memory, free_memory
 
 def main():
     """Read the configuration and run the network"""
+    #logging.basicConfig(level=logging.INFO)
 
     args = parse_args()
 
-    config_file = '../test/testvecs/config/infer/tidl_config_mnist_lenet.txt'
-    labels_file = '../test/testvecs/input/digits10_labels_10x1.y'
+    config_file = '../test/testvecs/config/infer/tidl_config_j11_v2.txt'
+    labels_file = '../imagenet/imagenet_objects.json'
 
     configuration = Configuration()
     configuration.read_from_file(config_file)
 
-    num_eve = Executor.get_num_devices(DeviceType.EVE)
-    num_dsp = 0
-
-    if num_eve == 0:
-        print('MNIST network currently supported only on EVE')
+    if os.path.isfile(args.input_file):
+        configuration.in_data = args.input_file
+    else:
+        print('Input image {} does not exist'.format(args.input_file))
         return
+    print('Input: {}'.format(args.input_file))
+
+    num_eve = Executor.get_num_devices(DeviceType.EVE)
+    num_dsp = Executor.get_num_devices(DeviceType.DSP)
+
+    if num_eve == 0 and num_dsp == 0:
+        print('No TIDL API capable devices available')
+        return
+
+    # use 1 EVE or DSP since input is a single image
+    # If input is a stream of images, feel free to use all EVEs and/or DSPs
+    if num_eve > 0:
+        num_eve = 1
+        num_dsp = 0
+    else:
+        num_dsp = 1
 
     run(num_eve, num_dsp, configuration, labels_file)
 
     return
 
 
-DESCRIPTION = 'Run the mnist network on preprocessed input.'
+DESCRIPTION = 'Run the imagenet network on input image.'
+DEFAULT_INFILE = '../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg'
 
 def parse_args():
     """Parse input arguments"""
 
     parser = argparse.ArgumentParser(description=DESCRIPTION)
+    parser.add_argument('-i', '--input_file',
+                        default=DEFAULT_INFILE,
+                        help='input image file (that OpenCV can read)')
     args = parser.parse_args()
 
     return args
@@ -77,7 +101,8 @@ PIPELINE_DEPTH = 2
 def run(num_eve, num_dsp, configuration, labels_file):
     """ Run the network on the specified device type and number of devices"""
 
-    print('Running network across {} EVEs, {} DSPs'.format(num_eve, num_dsp))
+    logging.info('Running network across {} EVEs, {} DSPs'.format(num_eve,
+                                                                  num_dsp))
 
     dsp_device_ids = set([DeviceId.ID0, DeviceId.ID1,
                           DeviceId.ID2, DeviceId.ID3][0:num_dsp])
@@ -90,7 +115,7 @@ def run(num_eve, num_dsp, configuration, labels_file):
 
 
     try:
-        print('TIDL API: performing one time initialization ...')
+        logging.info('TIDL API: performing one time initialization ...')
 
         # Collect all EOs from EVE and DSP executors
         eos = []
@@ -105,7 +130,6 @@ def run(num_eve, num_dsp, configuration, labels_file):
             for i in range(dsp.get_num_execution_objects()):
                 eos.append(dsp.at(i))
 
-
         eops = []
         num_eos = len(eos)
         for j in range(PIPELINE_DEPTH):
@@ -114,42 +138,30 @@ def run(num_eve, num_dsp, configuration, labels_file):
 
         allocate_memory(eops)
 
-        # Open input, output files
-        f_in = open(configuration.in_data, 'rb')
-        f_labels = open(labels_file, 'rb')
+        # open labels file
+        with open(labels_file) as json_file:
+            labels_data = json.load(json_file)
 
-        input_size = os.path.getsize(configuration.in_data)
-        configuration.num_frames = int(input_size/(configuration.height *
-                                                   configuration.width))
-
-        print('TIDL API: processing {} input frames ...'.format(configuration.num_frames))
+        configuration.num_frames = 1
+        logging.info('TIDL API: processing {} input frames ...'.format(
+                                                     configuration.num_frames))
 
         num_eops = len(eops)
-        num_errors = 0
         for frame_index in range(configuration.num_frames+num_eops):
             eop = eops[frame_index % num_eops]
 
             if eop.process_frame_wait():
-                num_errors += process_output(eop, f_labels)
+                process_output(eop, labels_data)
 
-            if read_frame(eop, frame_index, configuration, f_in):
+            if read_frame(eop, frame_index, configuration):
                 eop.process_frame_start_async()
 
-
-        f_in.close()
-        f_labels.close()
-
         free_memory(eops)
-
-        if num_errors == 0:
-            print("mnist PASSED")
-        else:
-            print("mnist FAILED")
 
     except TidlError as err:
         print(err)
 
-def read_frame(eo, frame_index, configuration, f_input):
+def read_frame(eo, frame_index, configuration):
     """Read a frame into the ExecutionObject input buffer"""
 
     if frame_index >= configuration.num_frames:
@@ -157,42 +169,47 @@ def read_frame(eo, frame_index, configuration, f_input):
 
     # Read into the EO's input buffer
     arg_info = eo.get_input_buffer()
-    bytes_read = f_input.readinto(arg_info)
+    np_arg = np.asarray(arg_info)
 
-    if bytes_read == 0:
-        return False
-
-    # TIDL library requires a minimum of 2 channels. Read image data into
-    # channel 0. f_input.readinto will read twice as many bytes i.e. 2 input
-    # digits. Seek back to avoid skipping inputs.
-    f_input.seek((frame_index+1)*configuration.height*configuration.width)
+    img = cv2.imread(configuration.in_data)
+    resized = cv2.resize(img, (224, 224), interpolation=cv2.INTER_AREA)
+    b_frame, g_frame, r_frame = cv2.split(resized)
+    np_arg[0*224*224:1*224*224] = np.reshape(b_frame, 224*224)
+    np_arg[1*224*224:2*224*224] = np.reshape(g_frame, 224*224)
+    np_arg[2*224*224:3*224*224] = np.reshape(r_frame, 224*224)
 
     eo.set_frame_index(frame_index)
 
     return True
 
-def process_output(eo, f_labels):
-    """Display and check the inference result against labels."""
+def process_output(eo, labels_data):
+    """Display the inference result using labels."""
 
-    maxval = 0
-    maxloc = -1
+    # keep top k predictions in heap
+    k = 5
+    # output predictions with probability of 10/255 or higher
+    threshold = 10
 
     out_buffer = eo.get_output_buffer()
     output_array = np.asarray(out_buffer)
-    for i in range(out_buffer.size()):
-        if output_array[i] > maxval:
-            maxval = output_array[i]
-            maxloc = i
 
-    print(maxloc)
+    k_heap = []
+    for i in range(k):
+        heapq.heappush(k_heap, (output_array[i], i))
 
-    # Check inference result against label
-    frame_index = eo.get_frame_index()
-    f_labels.seek(frame_index)
-    label = ord(f_labels.read(1))
-    if maxloc != label:
-        print('Error Expected {}, got {}'.format(label, maxloc))
-        return 1
+    for i in range(k, out_buffer.size()):
+        if output_array[i] > k_heap[0][0]:
+            heapq.heappushpop(k_heap, (output_array[i], i))
+
+    k_sorted = []
+    for i in range(k):
+        k_sorted.insert(0, heapq.heappop(k_heap))
+
+    for i in range(k):
+        if k_sorted[i][0] > threshold:
+            print('{}: {},   prob = {:5.2f}%'.format(i+1, \
+                             labels_data['objects'][k_sorted[i][1]]['label'], \
+                             k_sorted[i][0]/255.0*100))
 
     return 0
 

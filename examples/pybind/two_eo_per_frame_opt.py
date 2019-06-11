@@ -100,8 +100,8 @@ def run(num_eve, num_dsp, c):
 
         eops = []
         num_pipe = max(num_eve_eos, num_dsp_eos)
-        for i in range(num_pipe):
-            for i in range(PIPELINE_DEPTH):
+        for j in range(PIPELINE_DEPTH):
+            for i in range(num_pipe):
                 eops.append(ExecutionObjectPipeline([eve.at(i % num_eve_eos),
                                                      dsp.at(i % num_dsp_eos)]))
 
