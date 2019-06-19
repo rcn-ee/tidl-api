@@ -734,12 +734,20 @@ ExecutionObject::Impl::WriteLayerOutputsToFile(const std::string& filename_prefi
             std::string filename(filename_prefix);
             filename += std::to_string(buf->bufferId) + "_";
             filename += std::to_string(buf->ROIWidth) + "x";
-            filename += std::to_string(buf->ROIHeight) + ".bin";
+            filename += std::to_string(buf->ROIHeight);
+            std::string info_filename = filename + ".info";
+            filename += ".bin";
 
             std::ofstream ofs;
             ofs.open(filename, std::ofstream::out);
             ofs.write(tmp, buffer_size);
             ofs.close();
+
+            std::ofstream info_ofs(info_filename, std::ofstream::out);
+            info_ofs << "dataQ: " << buf->dataQ << std::endl;
+            info_ofs << "minValue: " << buf->minValue << std::endl;
+            info_ofs << "maxValue: " << buf->maxValue << std::endl;
+            info_ofs.close();
 
             delete[] tmp;
         }
