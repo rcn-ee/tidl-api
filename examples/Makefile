@@ -34,7 +34,7 @@ RUN_DIRS := $(filter-out classification, $(DIRS))
 define make_in_dirs
 	@for dir in $(1); do \
 	  echo "=============== " $$dir " =================" ; \
-	  $(MAKE) --no-print-directory $(MAKEFILE) -C $$dir $(2); \
+	  $(MAKE) --no-print-directory $(MAKEFILE) -C $$dir $(2) || exit 1; \
 	done
 endef
 

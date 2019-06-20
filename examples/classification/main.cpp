@@ -699,7 +699,7 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
   int rpt_id = -1;
 
   typedef std::pair<uchar, int> val_index;
-  auto constexpr cmp = [](val_index &left, val_index &right) { return left.first > right.first; };
+  auto cmp = [](val_index &left, val_index &right) { return left.first > right.first; };
   std::priority_queue<val_index, std::vector<val_index>, decltype(cmp)> queue(cmp);
   // initialize priority queue with smallest value on top
   for (int i = 0; i < k; i++) {

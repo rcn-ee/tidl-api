@@ -309,7 +309,7 @@ bool WriteFrameOutput(const ExecutionObjectPipeline &eop,
 
     // sort and get k largest values and corresponding indices
     typedef pair<unsigned char, int> val_index;
-    auto constexpr cmp = [](val_index &left, val_index &right)
+    auto cmp = [](val_index &left, val_index &right)
                          { return left.first > right.first; };
     priority_queue<val_index, vector<val_index>, decltype(cmp)> queue(cmp);
     // initialize priority queue with smallest value on top
