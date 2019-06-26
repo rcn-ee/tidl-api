@@ -35,13 +35,13 @@ Examples
      - OpenCV used to read input image from file or capture from camera.
    * - ssd_multibox
      - Object detection
-     - EVE and C66x (network is split across both EVE and C66x)
+     - EVE and C66x (network is split across both EVE and C66x), EVE or C66x (full network on each core)
      - OpenCV used to read input image from file or capture from camera.
    * - mnist
      - handwritten digits recognition (MNIST).  This example illustrates
        low TIDL API overhead (~1.8%) for small networks with low compute
        requirements (<5ms).
-     - EVE
+     - EVE or C66x
      - Pre-processed white-on-black images read from file, with or without
        MNIST database file headers.
    * - classification
@@ -272,6 +272,10 @@ versus ExecutionObject level.
    * - 2 EVEs + 2 C66xs
      - 1630 ms
      - 1408 ms
+
+When there is a requirement to run the SSD networks non-partitioned,
+for example, the SoC only has C66x cores but not EVE cores,
+use ``-e 0`` to run the full network only on C66x cores, without partitioning.
 
 .. _mnist-example:
 

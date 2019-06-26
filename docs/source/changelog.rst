@@ -30,7 +30,7 @@ Changelog
     Enable a two phase approach to generating execution graphs. Use the
     following API function to enable timestamp generation:
 
-    .. code::
+    .. code:: cpp
 
         bool EnableTimeStamps(const std::string& file = "timestamp.log", size_t num_frames=32);
 
@@ -38,7 +38,7 @@ Changelog
 
 #. Added Python 3 bindings for TIDL API. See the ``examples/pybind`` directory for examples of using the Python bindings. Set PYTHONPATH to the location of ``tidl.so``.
 
-   .. code::
+   .. code:: bash
 
         root@am57xx-evm:~# export PYTHONPATH=/home/root/tidl-api/tidl_api
         root@am57xx-evm:~# python3

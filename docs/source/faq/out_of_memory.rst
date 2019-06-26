@@ -4,7 +4,7 @@ Why do I get an assertion failure from malloc_ddr?
 
 Application execution fails with the following error message:
 
-.. code:: shell
+.. code:: console
 
    tidl: device_alloc.h:31: T* tidl::malloc_ddr(size_t) [with T = char; size_t = unsigned int]: Assertion `val != nullptr' failed
 
@@ -28,7 +28,7 @@ Insufficient OpenCL global memory
 +++++++++++++++++++++++++++++++++
 Another possible reason is that total memory requirement specified in the ``Configuration`` using NETWORK_HEAP_SIZE and PARAM_HEAP_SIZE exceeds default memory available for OpenCL.  Follow the instructions below to increase the amount of CMEM (contiguous memory available for OpenCL) from 192MB (0xc000000) to 384MB (0x18000000):
 
-.. code:: bash
+.. code:: diff
 
    $ sudo apt-get install device-tree-compiler # In case dtc is not already installed
    $ scp root@am57:/boot/am57xx-evm-reva3.dtb .

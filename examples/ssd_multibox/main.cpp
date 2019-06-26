@@ -102,9 +102,9 @@ int main(int argc, char *argv[])
     // If there are no devices capable of offloading TIDL on the SoC, exit
     uint32_t num_eves = Executor::GetNumDevices(DeviceType::EVE);
     uint32_t num_dsps = Executor::GetNumDevices(DeviceType::DSP);
-    if (num_eves == 0 || num_dsps == 0)
+    if (num_eves == 0 && num_dsps == 0)
     {
-        cout << "ssd_multibox requires both EVE and DSP for execution." << endl;
+        cout << "ssd_multibox requires EVE or DSP for execution." << endl;
         return EXIT_SUCCESS;
     }
 
@@ -112,8 +112,8 @@ int main(int argc, char *argv[])
     cmdline_opts_t opts;
     opts.config = DEFAULT_CONFIG;
     opts.object_classes_list_file = DEFAULT_OBJECT_CLASSES_LIST_FILE;
-    opts.num_eves = 1;
-    opts.num_dsps = 1;
+    opts.num_eves = num_eves > 0 ? 1 : 0;
+    opts.num_dsps = num_dsps > 0 ? 1 : 0;
     opts.input_file = DEFAULT_INPUT;
     opts.output_prob_threshold = DEFAULT_OUTPUT_PROB_THRESHOLD;
     if (! ProcessArgs(argc, argv, opts))
@@ -121,7 +121,7 @@ int main(int argc, char *argv[])
         DisplayHelp();
         exit(EXIT_SUCCESS);
     }
-    assert(opts.num_dsps != 0 && opts.num_eves != 0);
+    assert(opts.num_dsps != 0 || opts.num_eves != 0);
     if (opts.num_frames == 0)
         opts.num_frames = (opts.is_camera_input || opts.is_video_input) ?
                           NUM_VIDEO_FRAMES :
@@ -164,6 +164,9 @@ bool RunConfiguration(const cmdline_opts_t& opts)
         return false;
     }
     c.enableApiTrace = opts.verbose;
+    if (opts.num_eves == 0 || opts.num_dsps == 0)
+        c.runFullNet = true;
+
     // setup camera/video input
     VideoCapture cap;
     if (! SetVideoInputOutput(cap, opts, "SSD_Multibox"))  return false;
@@ -198,43 +201,81 @@ bool RunConfiguration(const cmdline_opts_t& opts)
         // DSP will run layersGroupId 2 in the network
         Executor* e_eve = CreateExecutor(DeviceType::EVE, opts.num_eves, c, 1);
         Executor* e_dsp = CreateExecutor(DeviceType::DSP, opts.num_dsps, c, 2);
-
-        // Construct ExecutionObjectPipeline that utilizes multiple
-        // ExecutionObjects to process a single frame, each ExecutionObject
-        // processes one layerGroup of the network
-        //
-        // Pipeline depth can enable more optimized pipeline execution:
-        // Given one EVE and one DSP as an example, with different
-        //     pipeline_depth, we have different execution behavior:
-        // If pipeline_depth is set to 1,
-        //    we create one EOP: eop0 (eve0, dsp0)
-        //    pipeline execution of multiple frames over time is as follows:
-        //    --------------------- time ------------------->
-        //    eop0: [eve0...][dsp0]
-        //    eop0:                [eve0...][dsp0]
-        //    eop0:                               [eve0...][dsp0]
-        //    eop0:                                              [eve0...][dsp0]
-        // If pipeline_depth is set to 2,
-        //    we create two EOPs: eop0 (eve0, dsp0), eop1(eve0, dsp0)
-        //    pipeline execution of multiple frames over time is as follows:
-        //    --------------------- time ------------------->
-        //    eop0: [eve0...][dsp0]
-        //    eop1:          [eve0...][dsp0]
-        //    eop0:                   [eve0...][dsp0]
-        //    eop1:                            [eve0...][dsp0]
-        // Additional benefit of setting pipeline_depth to 2 is that
-        //    it can also overlap host ReadFrame() with device processing:
-        //    --------------------- time ------------------->
-        //    eop0: [RF][eve0...][dsp0]
-        //    eop1:     [RF]     [eve0...][dsp0]
-        //    eop0:                    [RF][eve0...][dsp0]
-        //    eop1:                             [RF][eve0...][dsp0]
         vector<ExecutionObjectPipeline *> eops;
-        uint32_t pipeline_depth = 2;  // 2 EOs in EOP -> depth 2
-        for (uint32_t j = 0; j < pipeline_depth; j++)
-            for (uint32_t i = 0; i < max(opts.num_eves, opts.num_dsps); i++)
-                eops.push_back(new ExecutionObjectPipeline(
+
+        if (e_eve != nullptr && e_dsp != nullptr)
+        {
+            // Construct ExecutionObjectPipeline that utilizes multiple
+            // ExecutionObjects to process a single frame, each ExecutionObject
+            // processes one layerGroup of the network
+            //
+            // Pipeline depth can enable more optimized pipeline execution:
+            // Given one EVE and one DSP as an example, with different
+            //     pipeline_depth, we have different execution behavior:
+            // If pipeline_depth is set to 1,
+            //    we create one EOP: eop0 (eve0, dsp0)
+            //    pipeline execution of multiple frames over time is as follows:
+            //    --------------------- time ------------------->
+            //    eop0: [eve0...][dsp0]
+            //    eop0:                [eve0...][dsp0]
+            //    eop0:                               [eve0...][dsp0]
+            //    eop0:                                              [eve0...][dsp0]
+            // If pipeline_depth is set to 2,
+            //    we create two EOPs: eop0 (eve0, dsp0), eop1(eve0, dsp0)
+            //    pipeline execution of multiple frames over time is as follows:
+            //    --------------------- time ------------------->
+            //    eop0: [eve0...][dsp0]
+            //    eop1:          [eve0...][dsp0]
+            //    eop0:                   [eve0...][dsp0]
+            //    eop1:                            [eve0...][dsp0]
+            // Additional benefit of setting pipeline_depth to 2 is that
+            //    it can also overlap host ReadFrame() with device processing:
+            //    --------------------- time ------------------->
+            //    eop0: [RF][eve0...][dsp0]
+            //    eop1:     [RF]     [eve0...][dsp0]
+            //    eop0:                    [RF][eve0...][dsp0]
+            //    eop1:                             [RF][eve0...][dsp0]
+            uint32_t pipeline_depth = 2;  // 2 EOs in EOP -> depth 2
+            for (uint32_t j = 0; j < pipeline_depth; j++)
+                for (uint32_t i = 0; i < max(opts.num_eves, opts.num_dsps); i++)
+                    eops.push_back(new ExecutionObjectPipeline(
                       {(*e_eve)[i%opts.num_eves], (*e_dsp)[i%opts.num_dsps]}));
+        }
+        else
+        {
+            // Construct ExecutionObjectPipeline that utilizes a
+            // ExecutionObject to process a single frame, each ExecutionObject
+            // processes the full network
+            //
+            // Use duplicate EOPs to do double buffering on frame input/output
+            //    because each EOP has its own set of input/output buffers,
+            //    so that host ReadFrame() can overlap device processing
+            // Use one EO as an example, with different buffer_factor,
+            //    we have different execution behavior:
+            // If buffer_factor is set to 1 -> single buffering
+            //    we create one EOP: eop0 (eo0)
+            //    pipeline execution of multiple frames over time is as follows:
+            //    --------------------- time ------------------->
+            //    eop0: [RF][eo0.....][WF]
+            //    eop0:                   [RF][eo0.....][WF]
+            //    eop0:                                     [RF][eo0.....][WF]
+            // If buffer_factor is set to 2 -> double buffering
+            //    we create two EOPs: eop0 (eo0), eop1(eo0)
+            //    pipeline execution of multiple frames over time is as follows:
+            //    --------------------- time ------------------->
+            //    eop0: [RF][eo0.....][WF]
+            //    eop1:     [RF]      [eo0.....][WF]
+            //    eop0:                   [RF]  [eo0.....][WF]
+            //    eop1:                             [RF]  [eo0.....][WF]
+            uint32_t buffer_factor = 2;  // set to 1 for single buffering
+            for (uint32_t j = 0; j < buffer_factor; j++)
+            {
+                for (uint32_t i = 0; i < opts.num_eves; i++)
+                    eops.push_back(new ExecutionObjectPipeline({(*e_eve)[i]}));
+                for (uint32_t i = 0; i < opts.num_dsps; i++)
+                    eops.push_back(new ExecutionObjectPipeline({(*e_dsp)[i]}));
+            }
+        }
         uint32_t num_eops = eops.size();
 
         // Allocate input/output memory for each EOP
@@ -252,9 +293,7 @@ bool RunConfiguration(const cmdline_opts_t& opts)
 
             // Wait for previous frame on the same eop to finish processing
             if (eop->ProcessFrameWait())
-            {
                 WriteFrameOutput(*eop, c, opts, (float)prob_slider);
-            }
 
             // Read a frame and start processing it with current eo
             if (ReadFrame(*eop, frame_idx, c, opts, cap, ifs))
@@ -291,7 +330,9 @@ Executor* CreateExecutor(DeviceType dt, uint32_t num, const Configuration& c,
     for (uint32_t i = 0; i < num; i++)
         ids.insert(static_cast<DeviceId>(i));
 
-    return new Executor(dt, ids, c, layers_group_id);
+    Executor* e = new Executor(dt, ids, c, layers_group_id);
+    assert(e != nullptr);
+    return e;
 }
 
 bool ReadFrame(ExecutionObjectPipeline& eop, uint32_t frame_idx,
