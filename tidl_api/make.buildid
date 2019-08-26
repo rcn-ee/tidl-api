@@ -25,8 +25,8 @@
 # THE POSSIBILITY OF SUCH DAMAGE.
 
 MAJOR_VER=1
-MINOR_VER=4
-PATCH_VER=0
+MINOR_VER=3
+PATCH_VER=1
 
 ifeq ($(shell git rev-parse --short HEAD 2>&1 1>/dev/null; echo $$?),0)
 BUILD_SHA?=$(shell git rev-parse --short HEAD)
