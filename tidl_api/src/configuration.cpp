@@ -39,8 +39,8 @@ Configuration::Configuration(): numFrames(0), inHeight(0), inWidth(0),
                      noZeroCoeffsPercentage(100),
                      preProcType(0),
                      runFullNet(false),
-                     NETWORK_HEAP_SIZE(64 << 20),  // 64MB for inceptionNetv1
-                     PARAM_HEAP_SIZE(9 << 20),    // 9MB for mobileNet1
+                     NETWORK_HEAP_SIZE(internal::DEFAULT_NETWORK_HEAP_SIZE),
+                     PARAM_HEAP_SIZE(internal::DEFAULT_PARAM_HEAP_SIZE),
                      enableOutputTrace(false),
                      enableApiTrace(false),
                      showHeapStats(false),
