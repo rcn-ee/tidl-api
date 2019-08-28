@@ -306,6 +306,10 @@ bool WriteFrameOutput(const ExecutionObjectPipeline &eop,
     const int k = 5;
     unsigned char *out = (unsigned char *) eop.GetOutputBufferPtr();
     int out_size = eop.GetOutputBufferSizeInBytes();
+    // Tensorflow trained network outputs 1001 probabilities,
+    // with 0-index being background, thus we need to subtract 1 when
+    // reporting classified object from 1000 categories
+    int background_offset = out_size == 1001 ? 1 : 0;
 
     // sort and get k largest values and corresponding indices
     typedef pair<unsigned char, int> val_index;
@@ -338,8 +342,9 @@ bool WriteFrameOutput(const ExecutionObjectPipeline &eop,
     for (int i = k - 1; i >= 0; i--)
     {
         if (sorted[i].first * 100 < min_prob_255)  break;
-        cout << k-i << ": "
-             << object_classes->At(sorted[i].second).label
+        int imagenet_index = sorted[i].second - background_offset;
+        cout << k-i << ": [" << imagenet_index << "] "
+             << object_classes->At(imagenet_index).label
              << ",   prob = " << setprecision(4)
              << ((sorted[i].first * 100) / 255.0f) << "%" << endl;
     }
