@@ -244,6 +244,9 @@ bool RunAllConfigurations(int32_t num_devices, DeviceType device_type)
     int errors = 0;
     for (auto config : configurations)
     {
+        // Skip smallRoi, not a real network anyway
+        if (config.compare("smallRoi") == 0)  continue;
+
         std::string config_file = "testvecs/config/infer/tidl_config_"
                                   + config + ".txt";
         std::cout << "Running " << config << " on " << num_devices
@@ -258,9 +261,6 @@ bool RunAllConfigurations(int32_t num_devices, DeviceType device_type)
         status = RunConfiguration(config_file, num_devices, device_type);
 
         if (!status) { errors++; continue; }
-
-        // Skip smallRoi reference checking, will investigate
-        if (config.compare("smallRoi") == 0)  continue;
 
         // Check output against reference output
         std::string reference_output = "testvecs/reference/"
