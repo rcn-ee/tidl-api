@@ -111,7 +111,7 @@ def run(num_eve, num_dsp, configuration, labels_file):
 
     # Heap sizes for this network determined using Configuration.showHeapStats
     configuration.param_heap_size = (3 << 20)
-    configuration.network_heap_size = (20 << 20)
+    configuration.network_heap_size = (34 << 20)
 
 
     try:

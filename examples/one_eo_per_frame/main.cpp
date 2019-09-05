@@ -101,6 +101,8 @@ bool Run(const string& config_file, int num_eve, int num_dsp,
     // Heap sizes for this network determined using Configuration::showHeapStats
     c.PARAM_HEAP_SIZE   = (3 << 20); // 3MB
     c.NETWORK_HEAP_SIZE = (34 << 20); // 34MB
+    // AM572x default CMEM size is 160MB, 4 EVEs + 2DSPs won't fit
+    if (num_eve > 2)  num_eve = 2;
 
     c.numFrames = 16;
 
