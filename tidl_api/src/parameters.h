@@ -31,6 +31,8 @@
 namespace tidl {
 namespace internal {
 
+const size_t DEFAULT_PARAM_HEAP_SIZE   =  (9<<20);  //  9MB for mobileNet1
+const size_t DEFAULT_NETWORK_HEAP_SIZE = (64<<20);  // 64MB for inceptionNetv1
 const size_t DMEM0_SIZE             = 8*1024;
 const size_t DMEM1_SIZE             = 128*1024;
 const size_t OCMC_SIZE              = 320*1024;

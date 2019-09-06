@@ -59,7 +59,7 @@ class Device
     public:
         typedef std::unique_ptr<Device> Ptr;
 
-        Device(cl_device_type t, const DeviceIds& ids);
+        Device(cl_device_type t, const DeviceIds& ids, const char *name);
         virtual ~Device();
 
 
@@ -79,10 +79,13 @@ class Device
 
     protected:
 
-        static const int MAX_DEVICES = 4;
+        static const int MAX_DEVICES = 5;  // max: 1 DSP device + 4 EVE devices
         cl_mem CreateBuffer(const DeviceArgInfo &Arg);
         void   ReleaseBuffer(cl_mem M);
-
+        static bool GetDevices(DeviceType device_type,
+                               cl_device_id cl_d_ids[],
+                               cl_uint *p_num_devices,
+                               cl_uint *p_num_compute_units);
 
               cl_context        context_m;
               cl_program        program_m;
@@ -97,7 +100,7 @@ class Device
 class DspDevice: public Device
 {
     public:
-        DspDevice(const DeviceIds& ids, const std::string &binary_filename);
+        DspDevice(const DeviceIds& ids, const std::string &kernel_names);
         virtual ~DspDevice() {}
 
         DspDevice()                            = delete;
@@ -107,9 +110,9 @@ class DspDevice: public Device
         virtual std::string GetDeviceName() { return "DSP"; }
 
     protected:
-        bool BuildProgramFromBinary(const std::string &binary_filename,
-                                    cl_device_id device_ids[],
-                                    int num_devices);
+        bool BuildBuiltInProgram(const std::string &kernel_names,
+                                 cl_device_id device_ids[],
+                                 int num_devices);
 };
 
 class EveDevice : public Device
@@ -125,10 +128,9 @@ class EveDevice : public Device
         virtual std::string GetDeviceName() { return "EVE"; }
 
     protected:
-        bool BuildProgramFromBinary(const std::string &kernel_names,
-                                    cl_device_id device_ids[],
-                                    int num_devices);
-
+        bool BuildBuiltInProgram(const std::string &kernel_names,
+                                 cl_device_id device_ids[],
+                                 int num_devices);
 };
 
 

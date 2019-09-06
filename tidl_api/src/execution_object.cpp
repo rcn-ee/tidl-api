@@ -683,7 +683,7 @@ uint64_t ExecutionObject::Impl::GetProcessCycles(uint32_t context_idx) const
     uint8_t factor = 1;
 
     // ARP32 running at half frequency of VCOP, multiply by 2 for VCOP cycles
-    if (device_m->type() == CL_DEVICE_TYPE_CUSTOM)
+    if (device_type_m == DeviceType::EVE)
         factor = 2;
 
     OCL_TIDL_ProcessParams *p_params = shared_process_params_m.get() +
@@ -734,12 +734,20 @@ ExecutionObject::Impl::WriteLayerOutputsToFile(const std::string& filename_prefi
             std::string filename(filename_prefix);
             filename += std::to_string(buf->bufferId) + "_";
             filename += std::to_string(buf->ROIWidth) + "x";
-            filename += std::to_string(buf->ROIHeight) + ".bin";
+            filename += std::to_string(buf->ROIHeight);
+            std::string info_filename = filename + ".info";
+            filename += ".bin";
 
             std::ofstream ofs;
             ofs.open(filename, std::ofstream::out);
             ofs.write(tmp, buffer_size);
             ofs.close();
+
+            std::ofstream info_ofs(info_filename, std::ofstream::out);
+            info_ofs << "dataQ: " << buf->dataQ << std::endl;
+            info_ofs << "minValue: " << buf->minValue << std::endl;
+            info_ofs << "maxValue: " << buf->maxValue << std::endl;
+            info_ofs.close();
 
             delete[] tmp;
         }

@@ -280,7 +280,20 @@ and the ``configuration.showHeapStats = true`` line can be removed.
 
     The memory for parameter and network heaps is itself allocated from OpenCL global memory (CMEM). Refer :ref:`opencl-global-memory` for details.
 
+In addition, the following environment variables are provided to overwrite
+the heap sizes and heap allocation optimization level (1 or 2) that are
+specified by default or by application.
 
+.. code-block:: bash
+
+    TIDL_PARAM_HEAP_SIZE_EVE
+    TIDL_PARAM_HEAP_SIZE_DSP
+    TIDL_NETWORK_HEAP_SIZE_EVE
+    TIDL_NETWORK_HEAP_SIZE_DSP
+    TIDL_EXTMEM_ALLOC_OPT_EVE
+    TIDL_EXTMEM_ALLOC_OPT_DSP
+    # # for example,
+    # TIDL_PARAM_HEAP_SIZE_EVE=3000000 TIDL_NETWORK_HEAP_SIZE_EVE=21000000 TIDL_PARAM_HEAP_SIZE_DSP=3000000 TIDL_NETWORK_HEAP_SIZE_DSP=2000000 ./tidl_classification -g 2 -d 1 -e 4 -l ./imagenet.txt -s ./classlist.txt -i ./clips/test10.mp4 -c ./stream_config_j11_v2.txt
 
 .. _network_layer_output:
 

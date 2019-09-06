@@ -74,6 +74,7 @@ class ExecutorImpl
         DeviceIds            device_ids_m;
         DeviceType           core_type_m;
         int                  layers_group_id_m;
+        eTIDL_optimiseExtMem extmem_alloc_opt_m;
 };
 
 } // namespace tidl

@@ -51,10 +51,13 @@ def main():
 
     # Heap sizes for this network determined using Configuration.showHeapStats
     configuration.param_heap_size = (3 << 20)
-    configuration.network_heap_size = (20 << 20)
+    configuration.network_heap_size = (34 << 20)
 
     num_dsp = Executor.get_num_devices(DeviceType.DSP)
     num_eve = Executor.get_num_devices(DeviceType.EVE)
+    # AM572x default CMEM size is 160MB, 4 EVEs + 2DSPs won't fit
+    if num_eve > 2:
+        num_eve = 2
 
     if num_dsp == 0 or num_eve == 0:
         print('This example requires EVEs and DSPs.')
@@ -100,8 +103,8 @@ def run(num_eve, num_dsp, c):
 
         eops = []
         num_pipe = max(num_eve_eos, num_dsp_eos)
-        for i in range(num_pipe):
-            for i in range(PIPELINE_DEPTH):
+        for j in range(PIPELINE_DEPTH):
+            for i in range(num_pipe):
                 eops.append(ExecutionObjectPipeline([eve.at(i % num_eve_eos),
                                                      dsp.at(i % num_dsp_eos)]))
 

@@ -27,6 +27,7 @@
  *****************************************************************************/
 
 #include <assert.h>
+#include <cstdlib>
 #include "executor.h"
 #include "executor_impl.h"
 #include "parameters.h"
@@ -85,14 +86,11 @@ ExecutorImpl::ExecutorImpl(DeviceType core_type, const DeviceIds& ids,
     shared_networkparam_heap_m(nullptr, &__free_ddr),
     device_ids_m(ids),
     core_type_m(core_type),
-    layers_group_id_m(layers_group_id)
+    layers_group_id_m(layers_group_id),
+    extmem_alloc_opt_m(TIDL_optimiseExtMemL1)
 {
-    std::string name;
-    if (core_type_m == DeviceType::DSP)
-        name  = "";
-    else if (core_type_m == DeviceType::EVE)
-        name = STRING(SETUP_KERNEL) ";" STRING(INIT_KERNEL) ";" STRING(PROCESS_KERNEL) ";" STRING(CLEANUP_KERNEL);
-
+    std::string name = STRING(SETUP_KERNEL) ";" STRING(INIT_KERNEL) ";"
+                       STRING(PROCESS_KERNEL) ";" STRING(CLEANUP_KERNEL);
     device_m = Device::Create(core_type_m, ids, name);
 }
 
@@ -110,6 +108,29 @@ uint32_t Executor::GetNumExecutionObjects() const
 bool ExecutorImpl::Initialize(const Configuration& configuration)
 {
     configuration_m = configuration;
+
+    // Env Vars: Overwrite default heap sizes and allocation optimization level
+    char *param_heap   = nullptr;
+    char *network_heap = nullptr;
+    char *extmem_opt   = nullptr;
+    if (core_type_m == DeviceType::DSP)
+    {
+        param_heap     = getenv("TIDL_PARAM_HEAP_SIZE_DSP");
+        network_heap   = getenv("TIDL_NETWORK_HEAP_SIZE_DSP");
+        extmem_opt     = getenv("TIDL_EXTMEM_ALLOC_OPT_DSP");
+    }
+    else
+    {
+        param_heap     = getenv("TIDL_PARAM_HEAP_SIZE_EVE");
+        network_heap   = getenv("TIDL_NETWORK_HEAP_SIZE_EVE");
+        extmem_opt     = getenv("TIDL_EXTMEM_ALLOC_OPT_EVE");
+    }
+    if (param_heap != nullptr)
+        configuration_m.PARAM_HEAP_SIZE = atoi(param_heap);
+    if (network_heap != nullptr)
+        configuration_m.NETWORK_HEAP_SIZE = atoi(network_heap);
+    if (extmem_opt != nullptr && *extmem_opt == '2')
+        extmem_alloc_opt_m = TIDL_optimiseExtMemL2;
 
     // Allocate, initialize TIDL_CreateParams object
     up_malloc_ddr<TIDL_CreateParams> shared_createparam(
@@ -255,7 +276,7 @@ void ExecutorImpl::InitializeNetworkCreateParam(TIDL_CreateParams *CP,
     if (configuration_m.enableOutputTrace)
         CP->optimiseExtMem       = TIDL_optimiseExtMemL0;
     else
-        CP->optimiseExtMem       = TIDL_optimiseExtMemL1;
+        CP->optimiseExtMem       = extmem_alloc_opt_m;
 }
 
 Exception::Exception(const std::string& error, const std::string& file,

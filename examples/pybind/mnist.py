@@ -108,8 +108,8 @@ def run(num_eve, num_dsp, configuration, labels_file):
 
         eops = []
         num_eos = len(eos)
-        for j in range(num_eos):
-            for i in range(PIPELINE_DEPTH):
+        for j in range(PIPELINE_DEPTH):
+            for i in range(num_eos):
                 eops.append(ExecutionObjectPipeline([eos[i]]))
 
         allocate_memory(eops)
