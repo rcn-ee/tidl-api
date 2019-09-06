@@ -2,6 +2,20 @@
 Changelog
 #########
 
+1.3.1 [Processor Linux SDK 6.1]
+===============================
+**Added**
+
+#. Added imagenet python example.
+
+**Changed**
+
+#. Trace data now also include dataQ/minValue/maxValue info.
+
+#. ssd_multibox example now can also run the whole netework on a single core.
+
+#. Shipped network binaries are in new file format, of size 484384 bytes.
+
 1.3.0 [Processor Linux SDK 5.3]
 ===============================
 **Added**

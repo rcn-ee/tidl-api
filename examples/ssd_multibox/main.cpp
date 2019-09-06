@@ -166,6 +166,9 @@ bool RunConfiguration(const cmdline_opts_t& opts)
     c.enableApiTrace = opts.verbose;
     if (opts.num_eves == 0 || opts.num_dsps == 0)
         c.runFullNet = true;
+    // DSP only execution requires larger NETWORK HEAP size
+    if (opts.num_eves == 0)
+        c.NETWORK_HEAP_SIZE = 75000000;
 
     // setup camera/video input
     VideoCapture cap;
