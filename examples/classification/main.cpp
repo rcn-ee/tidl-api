@@ -111,7 +111,8 @@ Rect rectCrop[NUM_ROI];
 // Report average FPS across a sliding window of 16 frames
 AvgFPSWindow fps_window(16);
 
-static int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id);
+static int tf_postprocess(uchar *in, int out_size, int size, int roi_idx,
+                          int frame_idx, int f_id);
 static int ShowRegion(int roi_history[]);
 // from most recent to oldest at top indices
 static int selclass_history[MAX_NUM_ROI][3];
@@ -485,6 +486,7 @@ bool ReadFrame(ExecutionObjectPipeline* eop, const Configuration& c,
                sprintf(tmp_string, "ROI[%02d]", frame_idx % NUM_ROI);
                cv::imshow(tmp_string, r_image);
             }
+            image.copyTo(show_image);
 #endif
             imgutil::PreprocessImage(r_image, eop->GetInputBufferPtr(), c);
             eop->SetFrameIndex(frame_idx);
@@ -495,10 +497,6 @@ bool ReadFrame(ExecutionObjectPipeline* eop, const Configuration& c,
             writer << to_stream;
 #endif
 
-#ifdef LIVE_DISPLAY
-                //waitKey(2);
-            image.copyTo(show_image);
-#endif
             return true;
         }
     } else {
@@ -519,6 +517,7 @@ void DisplayFrame(const ExecutionObjectPipeline* eop, VideoWriter& writer,
     int f_id = eop->GetFrameIndex();
     int curr_roi = f_id % NUM_ROI;
     int is_object = tf_postprocess((uchar*) eop->GetOutputBufferPtr(),
+                                   eop->GetOutputBufferSizeInBytes(),
                                  IMAGE_CLASSES_NUM, curr_roi, frame_idx, f_id);
     selclass_history[curr_roi][2] = selclass_history[curr_roi][1];
     selclass_history[curr_roi][1] = selclass_history[curr_roi][0];
@@ -691,12 +690,17 @@ bool tf_expected_id(int id)
    return false;
 }
 
-int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
+int tf_postprocess(uchar *in, int out_size, int size, int roi_idx,
+                   int frame_idx, int f_id)
 {
   //prob_i = exp(TIDL_Lib_output_i) / sum(exp(TIDL_Lib_output))
   // sort and get k largest values and corresponding indices
   const int k = TOP_CANDIDATES;
   int rpt_id = -1;
+  // Tensorflow trained network outputs 1001 probabilities,
+  // with 0-index being background, thus we need to subtract 1 when
+  // reporting classified object from 1000 categories
+  int background_offset = out_size == 1001 ? 1 : 0;
 
   typedef std::pair<uchar, int> val_index;
   auto cmp = [](val_index &left, val_index &right) { return left.first > right.first; };
@@ -725,13 +729,13 @@ int tf_postprocess(uchar *in, int size, int roi_idx, int frame_idx, int f_id)
 
   for (int i = 0; i < k; i++)
   {
-      int id = sorted[i].second;
+      int id = sorted[i].second - background_offset;
 
       if (tf_expected_id(id))
       {
         std::cout << "Frame:" << frame_idx << "," << f_id << " ROI[" << roi_idx << "]: rank="
                   << k-i << ", outval=" << (float)sorted[i].first / 255 << ", "
-                  << labels_classes[sorted[i].second] << std::endl;
+                  << labels_classes[id] << std::endl;
         rpt_id = id;
       }
   }
