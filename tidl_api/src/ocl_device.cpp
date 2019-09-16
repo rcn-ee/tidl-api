@@ -452,7 +452,7 @@ Device::Ptr Device::Create(DeviceType core_type, const DeviceIds& ids,
 }
 
 // Minimum version of OpenCL required for this version of TIDL API
-#define MIN_OCL_VERSION "01.01.18.00"
+#define MIN_OCL_VERSION "01.01.19.00"
 static bool CheckOpenCLVersion(cl_platform_id id)
 {
     cl_int err;
