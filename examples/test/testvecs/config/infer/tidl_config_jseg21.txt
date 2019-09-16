@@ -1,6 +1,6 @@
 numFrames   = 1
 preProcType = 0
-inData   = ../test/testvecs/input/000100_1024x512_bgr.y
+inData   = "../test/testvecs/input/000100_1024x512_bgr.y"
 outData   = "./stats_tool_out.bin"
 netBinFile     = ../test/testvecs/config/tidl_models/tidl_net_jsegnet21v2.bin
 paramsBinFile        = ../test/testvecs/config/tidl_models/tidl_param_jsegnet21v2.bin

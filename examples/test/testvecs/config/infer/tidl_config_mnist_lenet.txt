@@ -1,6 +1,6 @@
 numFrames   = 1
 preProcType = 0
-inData   = ../test/testvecs/input/digits10_images_28x28.y
+inData   = "../test/testvecs/input/digits10_images_28x28.y"
 outData   = "stats_tool_out.bin"
 netBinFile      = "../test/testvecs/config/tidl_models/tidl_net_mnist_lenet.bin"
 paramsBinFile   = "../test/testvecs/config/tidl_models/tidl_param_mnist_lenet.bin"
