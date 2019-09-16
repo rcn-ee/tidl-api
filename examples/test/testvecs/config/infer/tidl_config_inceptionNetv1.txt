@@ -1,9 +1,9 @@
 numFrames   = 1
 preProcType = 2
-inData   = ../test/testvecs/input/preproc_2_224x224.y
+inData   = "../test/testvecs/input/preproc_2_224x224.y"
 outData   = "stats_tool_out.bin"
-netBinFile      = ../test/testvecs/config/tidl_models/tidl_inception_v1_net.bin
-paramsBinFile   = ../test/testvecs/config/tidl_models/tidl_inception_v1_param.bin
+netBinFile      = ../test/testvecs/config/tidl_models/tidl_net_inceptionv1_224.bin
+paramsBinFile   = ../test/testvecs/config/tidl_models/tidl_param_inceptionv1_224.bin
 inWidth = 224
 inHeight = 224
 inNumChannels = 3

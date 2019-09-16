@@ -1,6 +1,6 @@
 numFrames   = 1
 preProcType = 0
-inData   = ../test/testvecs/input/preproc_0_224x224.y
+inData   = "../test/testvecs/input/preproc_0_224x224.y"
 outData   = "./stats_tool_out.bin"
 netBinFile      = "../test/testvecs/config/tidl_models/tidl_net_imagenet_jacintonet11v2_bn.bin"
 paramsBinFile   = "../test/testvecs/config/tidl_models/tidl_param_imagenet_jacintonet11v2_bn.bin"
