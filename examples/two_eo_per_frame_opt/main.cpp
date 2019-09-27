@@ -96,7 +96,7 @@ bool Run(int num_eve, int num_dsp, const char* ref_output)
 
     // Heap sizes for this network determined using Configuration::showHeapStats
     c.PARAM_HEAP_SIZE   = (3 << 20); // 3MB
-    c.NETWORK_HEAP_SIZE = (34 << 20); // 34MB
+    c.NETWORK_HEAP_SIZE = (20 << 20); // 20MB
 
     // Run this example for 16 input frames
     c.numFrames = 16;
