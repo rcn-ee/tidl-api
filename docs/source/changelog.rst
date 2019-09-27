@@ -2,11 +2,13 @@
 Changelog
 #########
 
-1.3.1 [Processor Linux SDK 6.1]
+1.3.3 [Processor Linux SDK 6.1]
 ===============================
 **Added**
 
 #. Added imagenet python example.
+
+#. Added MobileNet v2 support.
 
 **Changed**
 
