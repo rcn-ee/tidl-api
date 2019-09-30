@@ -276,10 +276,6 @@ versus ExecutionObject level.
 When there is a requirement to run the SSD networks non-partitioned,
 for example, the SoC only has C66x cores but not EVE cores,
 use ``-e 0`` to run the full network only on C66x cores, without partitioning.
-When running full network with C66x DSP cores, jdetnet works fine with default
-heap sizes.  jdetnet_voc requires slightly larger heap size and can be run
-with environment variable, e.g.
-``TIDL_NETWORK_HEAP_SIZE_DSP=75000000 ./ssd_multibox -d 1 -e 0``.
 
 .. _mnist-example:
 
