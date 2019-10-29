@@ -41,7 +41,7 @@ AR = ar
 SRCS = ocl_device.cpp configuration_parser.cpp configuration.cpp\
 	   executor.cpp execution_object.cpp trace.cpp util.cpp \
        execution_object_pipeline.cpp \
-       subgraph_runtime.cpp
+       subgraph_runtime.cpp subgraph_data_conv.cpp
 SRCS_IMGUTIL = imgutil.cpp
 SRCS_PYBIND  = pybind_eo.cpp pybind_eop.cpp pybind_executor.cpp \
 			   pybind_configuration.cpp pybind_helpers.cpp

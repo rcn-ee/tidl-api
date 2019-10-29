@@ -26,6 +26,9 @@
  *  THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
+#include <stdint.h>
+#include <vector>
+
 namespace tidl {
 
 /* @class SubgraphDataConv
@@ -73,10 +76,10 @@ class SubgraphDataConv
         //! @param None
         SubgraphDataConv() {}
 
-        SubgraphDataConv(const vector<bool>& is_signed,
-                         const vector<float>& scaleQ,
-                         const vector<bool>& is_NCHW,
-                         const vector<int>& dims
+        SubgraphDataConv(const std::vector<bool>& is_signed,
+                         const std::vector<float>& scaleQ,
+                         const std::vector<bool>& is_NCHW,
+                         const std::vector<int>& dims
                         ) : is_signed_m(is_signed), scaleQ_m(scaleQ),
                             is_NCHW_m(is_NCHW), dims_m(dims)
                         {}
@@ -99,7 +102,7 @@ class SubgraphDataConv
         //!        by TIDL
         //! @param in floating point vector input to quantize
         //! @param out 8-bit Quantized output (quantized from in)
-        void ScaleQuant(const std::vector<float*>& in, uint8_t* out);
+        void ScaleQuant(const std::vector<float*>& in, uint8_t* out) const;
 
         //! @brief De-Quantizes 8-bit Quantized {in} to floating point {out}
         //!        and transposes buffer from NCHW to NHWC format (if needed),
@@ -107,7 +110,7 @@ class SubgraphDataConv
         //!        tensor, as expected by external tensors
         //! @param in 8-bit Quantized input to De-Quantize
         //! @param out floating point output (De-Quantized from in)
-        void ScaleDequant(const uint8_t *in, std::vector<float*>& out);
+        void ScaleDequant(const uint8_t *in, std::vector<float*>& out) const;
 
     private:
         //! if tensor needs to be evaluated as signed char
@@ -123,6 +126,6 @@ class SubgraphDataConv
 
         //! flattened 4d dims of external tensors
         std::vector<int> dims_m;
-}
+};
 
 }  // namespace tidl

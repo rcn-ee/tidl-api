@@ -33,6 +33,7 @@
 #include <mutex>
 #include <condition_variable>
 #include "execution_object_pipeline.h"
+#include "subgraph_data_conv.h"
 
 
 namespace tidl {
@@ -106,8 +107,8 @@ class ResM {
     void                     FreeEOP(uint32_t subgraph_id,
                                      ExecutionObjectPipeline* eop);
     Configuration&           GetConfiguration(uint32_t subgraph_id);
-    //const SubgraphDataConv&        GetInConv(uint32_t subgraph_id);
-    //const SubgraphDataConv&        GetOutConv(uint32_t subgraph_id);
+    const SubgraphDataConv&  GetInConv(uint32_t subgraph_id);
+    const SubgraphDataConv&  GetOutConv(uint32_t subgraph_id);
 
 
   private:
@@ -135,6 +136,8 @@ class ResM {
     std::vector<Executor*> es_m;
     std::vector<Executor*> e2s_m;
     std::vector<ResEOP> *eops_m;
+    std::vector<SubgraphDataConv*> in_conv_m;
+    std::vector<SubgraphDataConv*> out_conv_m;
 };
 
 } // namespace tidl

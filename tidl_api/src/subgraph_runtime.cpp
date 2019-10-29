@@ -121,6 +121,10 @@ ResM::~ResM()
     if (e != nullptr) delete e;
   for (const Executor* e : e2s_m)
     if (e != nullptr) delete e;
+  for (SubgraphDataConv *dc : in_conv_m)
+    if (dc != nullptr) delete dc;
+  for (SubgraphDataConv *dc : out_conv_m)
+    if (dc != nullptr) delete dc;
 }
 
 ResM& ResM::Instance(uint32_t total_num_subgraphs)
@@ -155,6 +159,15 @@ void ResM::Init(uint32_t num_subgraphs)
     es_m.resize(num_subgraphs_m, nullptr);
     e2s_m.resize(num_subgraphs_m, nullptr);
     eops_m = new std::vector<ResEOP>(num_subgraphs_m);
+
+    // TODO: this should come from parsing config file
+    for (uint32_t i = 0; i < num_subgraphs_m; i++)
+    {
+      in_conv_m.push_back(new SubgraphDataConv(
+                                    {true}, {128.0f}, {false}, {1,3,224,224}));
+      out_conv_m.push_back(new SubgraphDataConv(
+                                    {false}, {255.0f}, {true}, {1,1,1,1001}));
+    }
   }
 }
 
@@ -318,4 +331,15 @@ Configuration& ResM::GetConfiguration(uint32_t subgraph_id)
   return cs_m[subgraph_id];
 }
 
+const SubgraphDataConv& ResM::GetInConv(uint32_t subgraph_id)
+{
+  assert(in_conv_m[subgraph_id] != nullptr);
+  return *in_conv_m[subgraph_id];
+}
+
+const SubgraphDataConv& ResM::GetOutConv(uint32_t subgraph_id)
+{
+  assert(out_conv_m[subgraph_id] != nullptr);
+  return *out_conv_m[subgraph_id];
+}
 
