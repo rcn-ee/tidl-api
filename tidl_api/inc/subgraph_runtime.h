@@ -35,6 +35,17 @@
 #include "execution_object_pipeline.h"
 #include "subgraph_data_conv.h"
 
+extern "C" {
+
+void TidlRunSubgraph(int total_subgraphs,
+                     int subgraph_id,
+                     int num_inputs,
+                     int num_outputs,
+                     float **inputTensors,
+                     float **outputTensors
+                    );
+
+}  // extern "C"
 
 namespace tidl {
 
@@ -42,51 +53,30 @@ namespace tidl {
 // Auto-generated code from Relay/TVM compilation step after
 // partitioning and lowering to backend implementation
 
-// TODO: need to figure out exact arguments and format
-extern void tidl::RunSubgraphImpl(int subgraph_id,
-                                  const std::vector<float*>&,
-                                  const std::vector<float*>&);
-
-void tidlRunSubgraph(int subgraph_id,
+void TVM_TidlFunction(int total_subgraphs, int subgraph_id,
                      int num_input_tensors, int num_output_tensors,
                      PackedArgs args)
 {
-  std::vector<float *> in_data, out_data;
+  float** in_data  = new float*[num_input_tensors];
+  float** out_data = new float*[num_output_tensors];
 
   for (int i = 0; i < num_input_tensors + num_output_tensors; i++)
     if (i < num_input_tensors)
-      in_data.push_back(args.data[i]);
+      in_data[i] = args.data[i];
     else
-      out_data.push_back(args.data[i]);
+      out_data[i - num_input_tensors] = args.data[i];
 
-  tidl::RunSubgraphImpl(subgraph_id, in_data, out_data);
+  // call into this function in libtidl.so
+  // dlopen("libtidl.so")
+  // TidlFunc = dlsym("TidlRunSubgraph");
+  (*TidlFunc)(total_subgraphs, subgraph_id,
+              num_input_tensors, num_output_tensors,
+              in_data, out_data);
+
+  delete [] in_data;
+  delete [] out_data;
 }
 #endif
-
-
-#if 0
-// user application code
-// subgraph_id will be used to find TIDL config file
-// e.g. subgraph_1.cfg, subgraph_2.cfg, etc
-void RunSubgraphImpl(int subgraph_id,
-                     int total_num_subgraphs,
-                     const std::vector<float*>& ext_in_data,
-                     const std::vector<float*>& ext_out_data)
-{
-  ResM& res = ResM::Instance(total_num_subgraphs);
-  const ExecutionObjectPipeline& eop = res.GetEOP(subgraph_id);
-  const SubgraphDataConv& in_conv    = res.GetInConv(subgraph_id);
-  const SubgraphDataConv& out_conv   = res.GetOutConv(subgraph_id);
-
-  in_data = eop.GetInputBufferPtr();
-  in_conv.ScaleQuant(ext_in_data, in_data);
-  eop.ProcessFrameStartAsync();
-  eop.ProcessFrameWait();
-  out_data = eop.GetOutputBufferPtr();
-  out_conv.ScaleDeQuant(out_data, ext_out_data);
-  res.FreeEOP(subgraph_id, eop);
-}
-#endif 
 
 
 // Singleton ResM   .h file

@@ -38,56 +38,65 @@
 // Auto-generated code from Relay/TVM compilation step after
 // partitioning and lowering to backend implementation
 
-// TODO: need to figure out exact arguments and format
-extern void tidl::RunSubgraphImpl(int subgraph_id,
-                                  const std::vector<float*>&,
-                                  const std::vector<float*>&);
-
-void tidlRunSubgraph(int subgraph_id,
+void TVM_TidlFunction(int total_subgraphs, int subgraph_id,
                      int num_input_tensors, int num_output_tensors,
                      PackedArgs args)
 {
-  std::vector<float *> in_data, out_data;
+  float** in_data  = new float*[num_input_tensors];
+  float** out_data = new float*[num_output_tensors];
 
   for (int i = 0; i < num_input_tensors + num_output_tensors; i++)
     if (i < num_input_tensors)
-      in_data.push_back(args.data[i]);
+      in_data[i] = args.data[i];
     else
-      out_data.push_back(args.data[i]);
+      out_data[i - num_input_tensors] = args.data[i];
 
-  tidl::RunSubgraphImpl(subgraph_id, in_data, out_data);
+  // call into this function in libtidl.so
+  // dlopen("libtidl.so")
+  // TidlFunc = dlsym("TidlRunSubgraph");
+  (*TidlFunc)(total_subgraphs, subgraph_id,
+              num_input_tensors, num_output_tensors,
+              in_data, out_data);
+
+  delete [] in_data;
+  delete [] out_data;
 }
 #endif
-
-
-#if 0
-// user application code
-// subgraph_id will be used to find TIDL config file
-// e.g. subgraph_1.cfg, subgraph_2.cfg, etc
-void RunSubgraphImpl(int subgraph_id,
-                     int total_num_subgraphs,
-                     const std::vector<float*>& ext_in_data,
-                     const std::vector<float*>& ext_out_data)
-{
-  ResM& res = ResM::Instance(total_num_subgraphs);
-  const ExecutionObjectPipeline& eop = res.GetEOP(subgraph_id);
-  const SubgraphDataConv& in_conv    = res.GetInConv(subgraph_id);
-  const SubgraphDataConv& out_conv   = res.GetOutConv(subgraph_id);
-
-  in_data = eop.GetInputBufferPtr();
-  in_conv.ScaleQuant(ext_in_data, in_data);
-  eop.ProcessFrameStartAsync();
-  eop.ProcessFrameWait();
-  out_data = eop.GetOutputBufferPtr();
-  out_conv.ScaleDeQuant(out_data, ext_out_data);
-  res.FreeEOP(subgraph_id, eop);
-}
-#endif
-
 
 
 // Singleton ResM .cpp
 using namespace tidl;
+
+
+void TidlRunSubgraph(int total_subgraphs,
+                     int subgraph_id,
+                     int num_inputs,
+                     int num_outputs,
+                     float **inputTensors,
+                     float **outputTensors
+                    )
+{
+  ResM& res = ResM::Instance(total_subgraphs);
+  ExecutionObjectPipeline* eop     = res.GetEOP(subgraph_id);
+  const SubgraphDataConv& in_conv  = res.GetInConv(subgraph_id);
+  const SubgraphDataConv& out_conv = res.GetOutConv(subgraph_id);
+
+  std::vector<float *> in_data_v, out_data_v;
+  for (int i = 0; i < num_inputs; i++)
+    in_data_v.emplace_back(inputTensors[i]);
+  for (int i = 0; i < num_outputs; i++)
+    out_data_v.emplace_back(outputTensors[i]);
+  char* in_data = eop->GetInputBufferPtr();
+  in_conv.ScaleQuant(in_data_v, (uint8_t *) in_data);
+
+  eop->ProcessFrameStartAsync();
+  eop->ProcessFrameWait();
+
+  char* out_data = eop->GetOutputBufferPtr();
+  out_conv.ScaleDequant((const uint8_t *) out_data, out_data_v);
+  res.FreeEOP(subgraph_id, eop);
+}
+
 
 typedef Loki::SingletonHolder <tidl::ResM, Loki::CreateUsingNew,
 Loki::DefaultLifetime, Loki::ClassLevelLockable> tidlSingleResM;
@@ -190,7 +199,7 @@ ExecutionObjectPipeline* ResM::GetEOP(uint32_t subgraph_id)
     std::string cfg_file = "subgraph" + std::to_string(subgraph_id) + ".cfg";
     bool status = cs_m[subgraph_id].ReadFromFile(cfg_file);
     assert(status);
-    
+
     // Check if last few layers can be offloaded to DSPs
     //       and DSPs are available
     DeviceIds e_ids, e2_ids;
@@ -225,7 +234,7 @@ ExecutionObjectPipeline* ResM::GetEOP(uint32_t subgraph_id)
         if (num_lg2_dsps_used_m < num_dsps_m)
         {
           if (enable_trace_m)
-            printf("Subgraph %d: assign layers %d to %d to group 2 for DSP\n", 
+            printf("Subgraph %d: assign layers %d to %d to group 2 for DSP\n",
                    subgraph_id, i, start_layer);
           while (i <= start_layer)
             cs_m[subgraph_id].layerIndex2LayerGroupId[i++] = 2;
