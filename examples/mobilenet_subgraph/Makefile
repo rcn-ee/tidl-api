@@ -28,6 +28,7 @@ EXE = imagenet
 
 include ../make.common
 
+# overwrite LIBS, -ltidl_api should be able to pull -lOpenCL
 LIBS     += -lopencv_highgui -lopencv_imgcodecs -lopencv_videoio\
 			-lopencv_imgproc -lopencv_core
 LIBS     += -ljson-c

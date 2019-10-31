@@ -26,6 +26,8 @@
  *  THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
+#pragma once
+
 #include <stdint.h>
 #include <vector>
 

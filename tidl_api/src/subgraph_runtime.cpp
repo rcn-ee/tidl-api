@@ -32,6 +32,7 @@
 
 #include "util.h"
 #include "subgraph_runtime.h"
+#include "subgraph_runtime_impl.h"
 
 
 #if 0
@@ -42,20 +43,25 @@ void TVM_TidlFunction(int total_subgraphs, int subgraph_id,
                      int num_input_tensors, int num_output_tensors,
                      PackedArgs args)
 {
-  float** in_data  = new float*[num_input_tensors];
-  float** out_data = new float*[num_output_tensors];
+  float** in_data  = new float*[num_inputs_per_inference * batch_size];
+  float** out_data = new float*[num_outputs_per_inference * batch_size];
 
-  for (int i = 0; i < num_input_tensors + num_output_tensors; i++)
-    if (i < num_input_tensors)
-      in_data[i] = args.data[i];
-    else
-      out_data[i - num_input_tensors] = args.data[i];
+  for (in j = 0; j < batch_size; j++)
+  {
+    for (int i = 0; i < num_inputs_per_inference + num_outputs_per_inference;
+         i++)
+      if (i < num_inputs_per_inference)
+        in_data[j * num_inputs_per_inference + i] = args.data[i][j];
+      else
+        out_data[j * num_outpus_per_inference + i - num_inputs_per_inference]
+                                                  = args.data[i][j];
+  }
 
   // call into this function in libtidl.so
-  // dlopen("libtidl.so")
+  // dlopen("libtidl_api.so")
   // TidlFunc = dlsym("TidlRunSubgraph");
-  (*TidlFunc)(total_subgraphs, subgraph_id,
-              num_input_tensors, num_output_tensors,
+  (*TidlFunc)(total_subgraphs, subgraph_id, batch_size
+              num_inputs_per_inference, num_outputs_per_inference,
               in_data, out_data);
 
   delete [] in_data;
@@ -70,31 +76,57 @@ using namespace tidl;
 
 void TidlRunSubgraph(int total_subgraphs,
                      int subgraph_id,
-                     int num_inputs,
-                     int num_outputs,
-                     float **inputTensors,
-                     float **outputTensors
+                     int batch_size,
+                     int num_inputs_per_inference,
+                     int num_outputs_per_inference,
+                     float **input_tensors,
+                     float **output_tensors
                     )
 {
   ResM& res = ResM::Instance(total_subgraphs);
-  ExecutionObjectPipeline* eop     = res.GetEOP(subgraph_id);
+  res.InitSubgraph(subgraph_id);
+  int num_eops = res.GetNumEOPs(subgraph_id);
+  if (num_eops > batch_size)  num_eops = batch_size;
+  std::vector<ExecutionObjectPipeline*> eops(num_eops);
+  for (int i = 0; i < num_eops; i++)
+    eops[i] = res.GetEOP(subgraph_id);
   const SubgraphDataConv& in_conv  = res.GetInConv(subgraph_id);
   const SubgraphDataConv& out_conv = res.GetOutConv(subgraph_id);
 
-  std::vector<float *> in_data_v, out_data_v;
-  for (int i = 0; i < num_inputs; i++)
-    in_data_v.emplace_back(inputTensors[i]);
-  for (int i = 0; i < num_outputs; i++)
-    out_data_v.emplace_back(outputTensors[i]);
-  char* in_data = eop->GetInputBufferPtr();
-  in_conv.ScaleQuant(in_data_v, (uint8_t *) in_data);
+  std::vector<std::vector<float *>> in_data_v(batch_size),
+                                    out_data_v(batch_size);
+  for (int frame_idx = 0; frame_idx < batch_size; frame_idx++)
+  {
+    for (int i = 0; i < num_inputs_per_inference; i++)
+      in_data_v[frame_idx].emplace_back(input_tensors[
+                                    frame_idx * num_inputs_per_inference + i]);
+    for (int i = 0; i < num_outputs_per_inference; i++)
+      out_data_v[frame_idx].emplace_back(output_tensors[
+                                    frame_idx * num_inputs_per_inference + i]);
+  }
 
-  eop->ProcessFrameStartAsync();
-  eop->ProcessFrameWait();
+  // Process batch_size frames with available eops in pipelined manner
+  // additional num_eops iterations to flush the pipeline (epilogue)
+  for (int frame_idx = 0; frame_idx < batch_size + num_eops; frame_idx++)
+  {
+    ExecutionObjectPipeline *eop = eops[frame_idx % num_eops];
 
-  char* out_data = eop->GetOutputBufferPtr();
-  out_conv.ScaleDequant((const uint8_t *) out_data, out_data_v);
-  res.FreeEOP(subgraph_id, eop);
+    if (eop->ProcessFrameWait())
+    {
+      const uint8_t *out_data = (const uint8_t*) eop->GetOutputBufferPtr();
+      out_conv.ScaleDequant(out_data, out_data_v[frame_idx - num_eops]);
+    }
+
+    if (frame_idx < batch_size)
+    {
+       uint8_t *in_data = (uint8_t *) eop->GetInputBufferPtr();
+      in_conv.ScaleQuant(in_data_v[frame_idx], in_data);
+      eop->ProcessFrameStartAsync();
+    }
+  }
+
+  for (int i = 0; i < num_eops; i++)
+      res.FreeEOP(subgraph_id, eops[i]);
 }
 
 
@@ -155,7 +187,6 @@ void ResM::Init(uint32_t num_subgraphs)
 
     // Allocating resources
     num_eves_m = Executor::GetNumDevices(DeviceType::EVE);
-    num_eves_m = 1; // TODO: to remove after debugging
     num_dsps_m = Executor::GetNumDevices(DeviceType::DSP);
 
     assert(num_eves_m > 0 || num_dsps_m > 0);
@@ -180,7 +211,8 @@ void ResM::Init(uint32_t num_subgraphs)
   }
 }
 
-ExecutionObjectPipeline* ResM::GetEOP(uint32_t subgraph_id)
+
+void ResM::InitSubgraph(uint32_t subgraph_id)
 {
   assert(subgraph_id < num_subgraphs_m);
   ResEOP& res_eop = (*eops_m)[subgraph_id];
@@ -240,6 +272,11 @@ ExecutionObjectPipeline* ResM::GetEOP(uint32_t subgraph_id)
             cs_m[subgraph_id].layerIndex2LayerGroupId[i++] = 2;
           e2_ids.insert(static_cast<DeviceId>(num_lg2_dsps_used_m));
           num_lg2_dsps_used_m += 1;
+          if (num_subgraphs_m == 1)  // Allocate all dsps if only one subgraph
+          {
+            while (num_lg2_dsps_used_m < num_dsps_m)
+              e2_ids.insert(static_cast<DeviceId>(num_lg2_dsps_used_m++));
+          }
         }
       }
       delete net;
@@ -304,6 +341,24 @@ ExecutionObjectPipeline* ResM::GetEOP(uint32_t subgraph_id)
     res_eop.free_eop_index = 0;
     res_eop.is_used.resize(res_eop.eops->size(), false);
   }
+}
+
+uint32_t ResM::GetNumEOPs(uint32_t subgraph_id)
+{
+  assert(subgraph_id < num_subgraphs_m);
+  ResEOP& res_eop = (*eops_m)[subgraph_id];
+  assert (res_eop.eops != nullptr);
+
+  return res_eop.eops->size();
+}
+
+ExecutionObjectPipeline* ResM::GetEOP(uint32_t subgraph_id)
+{
+  assert(subgraph_id < num_subgraphs_m);
+  ResEOP& res_eop = (*eops_m)[subgraph_id];
+  assert(res_eop.eops != nullptr);
+
+  std::unique_lock<std::mutex> lock(res_eop.mutex_eops);
 
   // Return an available EOP (round robin allocation)
   uint32_t curr_eop = res_eop.free_eop_index;
@@ -318,7 +373,10 @@ ExecutionObjectPipeline* ResM::GetEOP(uint32_t subgraph_id)
 
 void ResM::FreeEOP(uint32_t subgraph_id, ExecutionObjectPipeline* eop)
 {
+  assert(subgraph_id < num_subgraphs_m);
   ResEOP& res_eop = (*eops_m)[subgraph_id];
+  assert(res_eop.eops != nullptr);
+
   {
     std::unique_lock<std::mutex> lock(res_eop.mutex_eops);
     for (uint32_t i = 0; i < res_eop.is_used.size(); i++)
@@ -342,12 +400,14 @@ Configuration& ResM::GetConfiguration(uint32_t subgraph_id)
 
 const SubgraphDataConv& ResM::GetInConv(uint32_t subgraph_id)
 {
+  assert(subgraph_id < num_subgraphs_m);
   assert(in_conv_m[subgraph_id] != nullptr);
   return *in_conv_m[subgraph_id];
 }
 
 const SubgraphDataConv& ResM::GetOutConv(uint32_t subgraph_id)
 {
+  assert(subgraph_id < num_subgraphs_m);
   assert(out_conv_m[subgraph_id] != nullptr);
   return *out_conv_m[subgraph_id];
 }

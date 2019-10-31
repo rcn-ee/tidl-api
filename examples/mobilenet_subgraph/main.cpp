@@ -44,6 +44,7 @@
 #include "execution_object.h"
 #include "execution_object_pipeline.h"
 #include "subgraph_runtime.h"
+#include "subgraph_data_conv.h"
 #include "configuration.h"
 #include "../common/object_classes.h"
 #include "imgutil.h"
@@ -70,7 +71,8 @@ const char *default_inputs[NUM_DEFAULT_INPUTS] =
 std::unique_ptr<ObjectClasses> object_classes;
 
 bool RunConfiguration(cmdline_opts_t& opts);
-bool ReadFrame(const cmdline_opts_t& opts, VideoCapture &cap, float** inputs);
+bool ReadFrame(const cmdline_opts_t& opts, VideoCapture &cap, float** inputs,
+               int batch_size);
 bool WriteFrameOutput(float *out, const cmdline_opts_t& opts);
 void DisplayHelp();
 
@@ -140,6 +142,7 @@ bool RunConfiguration(cmdline_opts_t& opts)
     VideoCapture cap;
     if (! SetVideoInputOutput(cap, opts, "ImageNet"))  return false;
 
+    cout << "\n##### Batch size 1 testing ######\n" << endl;
     try
     {
         float **inputs = new float *[1];
@@ -152,8 +155,8 @@ bool RunConfiguration(cmdline_opts_t& opts)
           chrono::time_point<chrono::steady_clock> tloop0, tloop1;
           tloop0 = chrono::steady_clock::now();
 
-          ReadFrame(opts, cap, inputs);
-          TidlRunSubgraph(1, 0, 1, 1, inputs, outputs);
+          ReadFrame(opts, cap, inputs, 1);
+          TidlRunSubgraph(1, 0, 1, 1, 1, inputs, outputs);
           WriteFrameOutput(outputs[0], opts);
 
           tloop1 = chrono::steady_clock::now();
@@ -175,11 +178,56 @@ bool RunConfiguration(cmdline_opts_t& opts)
         status = false;
     }
 
+    int batch_size = 8;
+    cout << "\n##### Batch size " << batch_size << " testing ######\n" << endl;
+    try
+    {
+        float **inputs  = new float *[batch_size];
+        float **outputs = new float *[batch_size];
+        for (int i = 0; i < batch_size; i++)
+        {
+            inputs[i]  = new float[1*3*224*224];
+            outputs[i] = new float[1001];
+        }
+
+        chrono::time_point<chrono::steady_clock> tloop0, tloop1;
+        tloop0 = chrono::steady_clock::now();
+
+        ReadFrame(opts, cap, inputs, batch_size);
+        TidlRunSubgraph(1, 0, batch_size, 1, 1, inputs, outputs);
+        for (int i = 0; i < batch_size; i++)
+        {
+            cout << "Frame " << i << " of " << batch_size << " output:" << endl;
+            WriteFrameOutput(outputs[i], opts);
+        }
+
+        tloop1 = chrono::steady_clock::now();
+        chrono::duration<float> elapsed = tloop1 - tloop0;
+        cout << "Batch size " << batch_size
+             << " time (including read/write/opencv/print/etc): "
+             << setw(6) << setprecision(4)
+             << (elapsed.count() * 1000) << "ms" << endl;
+
+        for (int i = 0; i < batch_size; i++)
+        {
+            delete [] inputs[i];
+            delete [] outputs[i];
+        }
+        delete [] inputs;
+        delete [] outputs;
+    }
+    catch (tidl::Exception &e)
+    {
+        cerr << e.what() << endl;
+        status = false;
+    }
+
     return status;
 }
 
 
-bool ReadFrame(const cmdline_opts_t& opts, VideoCapture &cap, float** inputs)
+bool ReadFrame(const cmdline_opts_t& opts, VideoCapture &cap, float** inputs,
+               int batch_size)
 {
     Configuration c;
     c.inNumChannels = 3;;
@@ -226,8 +274,11 @@ bool ReadFrame(const cmdline_opts_t& opts, VideoCapture &cap, float** inputs)
 
     // TI DL image preprocessing, into frame_buffer
     bool status = imgutil::PreprocessImage(image, frame_buffer, c);
-    std::vector<float *> in_data_v{inputs[0]};
-    in_conv.ScaleDequant((const uint8_t *)frame_buffer, in_data_v);
+    for (int i = 0; i < batch_size; i++)
+    {
+        std::vector<float *> in_data_v{inputs[i]};
+        in_conv.ScaleDequant((const uint8_t *)frame_buffer, in_data_v);
+    }
     delete [] frame_buffer;
     return status;
 }
@@ -247,6 +298,7 @@ bool WriteFrameOutput(float *out, const cmdline_opts_t& opts)
     auto cmp = [](val_index &left, val_index &right)
                          { return left.first > right.first; };
     priority_queue<val_index, vector<val_index>, decltype(cmp)> queue(cmp);
+
     // initialize priority queue with smallest value on top
     for (int i = 0; i < k; i++)
         queue.push(val_index(out[i], i));

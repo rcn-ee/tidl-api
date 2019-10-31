@@ -29,25 +29,36 @@
 //! @file subgraph_runtime.h
 
 #pragma once
-#include <vector>
-#include <mutex>
-#include <condition_variable>
-#include "execution_object_pipeline.h"
-#include "subgraph_data_conv.h"
 
 extern "C" {
 
-void TidlRunSubgraph(int total_subgraphs,
-                     int subgraph_id,
-                     int num_inputs,
-                     int num_outputs,
-                     float **inputTensors,
-                     float **outputTensors
-                    );
+//! @brief Top level inference to run a TIDL subgraph
+//! @param total_subgraphs  total number of TIDL subgraphs in whole inference
+//! @param subgraph_id  index of current TIDL subgraph
+//! @param batch_size  number of samples/inferences in this batch
+//! @param num_inputs_per_inference  number of inputs to TIDL subgraph
+//!        for every sample/inference
+//! @param num_outputs_per_inference  number of outputs from TIDL subgraph
+//!        for every sample/inference
+//! @param input_tensors  input data to TIDL subgraph, layout as
+//!        batch1_input1, batch1_input2, ..., batch1_inputM,
+//!        ... ... ...
+//!        batchN_input1, batchN_input2, ..., batchN_inputM
+//! @param output_tensors  output data from TIDL subgraph, layout as
+//!        batch1_output1, batch1_output2, ..., batch1_outputK,
+//!        ... ... ...
+//!        batchN_output1, batchN_output2, ..., batchN_outputK
+extern void TidlRunSubgraph(int total_subgraphs,
+                            int subgraph_id,
+                            int batch_size,
+                            int num_inputs_per_inference,
+                            int num_outputs_per_inference,
+                            float **input_tensors,
+                            float **output_tensors
+                           );
 
 }  // extern "C"
 
-namespace tidl {
 
 #if 0
 // Auto-generated code from Relay/TVM compilation step after
@@ -57,20 +68,25 @@ void TVM_TidlFunction(int total_subgraphs, int subgraph_id,
                      int num_input_tensors, int num_output_tensors,
                      PackedArgs args)
 {
-  float** in_data  = new float*[num_input_tensors];
-  float** out_data = new float*[num_output_tensors];
+  float** in_data  = new float*[num_inputs_per_inference * batch_size];
+  float** out_data = new float*[num_outputs_per_inference * batch_size];
 
-  for (int i = 0; i < num_input_tensors + num_output_tensors; i++)
-    if (i < num_input_tensors)
-      in_data[i] = args.data[i];
-    else
-      out_data[i - num_input_tensors] = args.data[i];
+  for (in j = 0; j < batch_size; j++)
+  {
+    for (int i = 0; i < num_inputs_per_inference + num_outputs_per_inference;
+         i++)
+      if (i < num_inputs_per_inference)
+        in_data[j * num_inputs_per_inference + i] = args.data[i][j];
+      else
+        out_data[j * num_outpus_per_inference + i - num_inputs_per_inference]
+                                                  = args.data[i][j];
+  }
 
   // call into this function in libtidl.so
-  // dlopen("libtidl.so")
+  // dlopen("libtidl_api.so")
   // TidlFunc = dlsym("TidlRunSubgraph");
-  (*TidlFunc)(total_subgraphs, subgraph_id,
-              num_input_tensors, num_output_tensors,
+  (*TidlFunc)(total_subgraphs, subgraph_id, batch_size
+              num_inputs_per_inference, num_outputs_per_inference,
               in_data, out_data);
 
   delete [] in_data;
@@ -78,56 +94,3 @@ void TVM_TidlFunction(int total_subgraphs, int subgraph_id,
 }
 #endif
 
-
-// Singleton ResM   .h file
-// Resource manager for available EVE and DSP devices,
-//   - Allocates EVEs and DSPs
-//   - Constructs Executors (tidl_setup) and ExecutionObjects (tid_init)
-//   - Creates set of ExecutionPipelines (with or without DSP)
-//   - Allocating EOP on demand (acquire and free semantics)
-//   - Allocates input/output buffers
-class ResM {
-  public:
-    ResM();
-    ~ResM();
-    static ResM& Instance(uint32_t total_num_subgraphs = 1);
-
-    // how to ge
-    ExecutionObjectPipeline* GetEOP(uint32_t subgraph_id);
-    void                     FreeEOP(uint32_t subgraph_id,
-                                     ExecutionObjectPipeline* eop);
-    Configuration&           GetConfiguration(uint32_t subgraph_id);
-    const SubgraphDataConv&  GetInConv(uint32_t subgraph_id);
-    const SubgraphDataConv&  GetOutConv(uint32_t subgraph_id);
-
-
-  private:
-    void Init(uint32_t num_subgraphs);
-
-    bool     enable_trace_m;
-    uint32_t num_subgraphs_m;
-    uint32_t num_es_per_subgraph_m;
-    uint32_t num_eves_m;
-    uint32_t num_dsps_m;
-    uint32_t num_lg2_dsps_used_m;  // in partitioned execution case
-    std::mutex mutex_init_m;
-
-    // indexed by subgraph_id for resources
-    struct ResEOP {
-      ResEOP() : free_eop_index(0), is_used(), eops(nullptr) {}
-
-      uint32_t free_eop_index;
-      std::mutex mutex_eops;
-      std::condition_variable cv_eops;
-      std::vector<bool> is_used;
-      std::vector<ExecutionObjectPipeline*>* eops;
-    };
-    std::vector<Configuration> cs_m;
-    std::vector<Executor*> es_m;
-    std::vector<Executor*> e2s_m;
-    std::vector<ResEOP> *eops_m;
-    std::vector<SubgraphDataConv*> in_conv_m;
-    std::vector<SubgraphDataConv*> out_conv_m;
-};
-
-} // namespace tidl
