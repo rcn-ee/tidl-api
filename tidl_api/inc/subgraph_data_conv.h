@@ -74,15 +74,23 @@ namespace tidl {
 class SubgraphDataConv
 {
     public:
+        enum ConvType {
+            FLOAT_Q = 0,         // conversion between float <-> Q
+            FLOAT_FLOAT = 1,     // conversion between float <-> float
+            Q_Q = 2              // conversion between Q <-> Q
+        };
+
         //! @brief Creates a SubgraphDataConv.
         //! @param None
         SubgraphDataConv() {}
 
-        SubgraphDataConv(const std::vector<bool>& is_signed,
+        SubgraphDataConv(const std::vector<int>& conv_type,
+                         const std::vector<bool>& is_signed,
                          const std::vector<float>& scaleQ,
                          const std::vector<bool>& is_NCHW,
                          const std::vector<int>& dims
-                        ) : is_signed_m(is_signed), scaleQ_m(scaleQ),
+                        ) : conv_type_m(conv_type),
+                            is_signed_m(is_signed), scaleQ_m(scaleQ),
                             is_NCHW_m(is_NCHW), dims_m(dims)
                         {}
 
@@ -115,10 +123,13 @@ class SubgraphDataConv
         void ScaleDequant(const uint8_t *in, std::vector<float*>& out) const;
 
     private:
-        //! if tensor needs to be evaluated as signed char
+        //! data type conversion, 0: float <-> Q, 1: float <-> float, 2: Q <-> Q
+        std::vector<int> conv_type_m;
+
+        //! if tensor needs to be evaluated as signed char (if float <-> Q)
         std::vector<bool> is_signed_m;
 
-        //! Q value for Quantization and Dequantization
+        //! Q value for Quantization and Dequantization (if float <-> Q)
         std::vector<float> scaleQ_m;
 
         //! the format of external tensors, NCHW or NHWC

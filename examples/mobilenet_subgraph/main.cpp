@@ -39,6 +39,7 @@
 #include <queue>
 #include <vector>
 #include <chrono>
+#include <future>
 
 #include "executor.h"
 #include "execution_object.h"
@@ -145,6 +146,7 @@ bool RunConfiguration(cmdline_opts_t& opts)
     cout << "\n##### Batch size 1 testing ######\n" << endl;
     try
     {
+        TidlInitSubgraph(1, 0);
         float **inputs = new float *[1];
         inputs[0] = new float[1*3*224*224];
         float **outputs = new float *[1];
@@ -222,6 +224,60 @@ bool RunConfiguration(cmdline_opts_t& opts)
         status = false;
     }
 
+    // This is only to test the multithreaded inference
+    // async/future may not be the most efficient multithreading method
+    // threading pool might have better performance
+    cout << "\n##### Multithreaded inference testing #####\n" << endl;
+    int num_threads = 8;
+    int num_iters = 8;
+    try
+    {
+        float **inputs  = new float *[num_threads];
+        float **outputs = new float *[num_threads];
+        for (int i = 0; i < num_threads; i++)
+        {
+            inputs[i]  = new float[1*3*224*224];
+            outputs[i] = new float[1001];
+        }
+        vector<future<bool>> futures(num_threads);
+
+        chrono::time_point<chrono::steady_clock> tloop0, tloop1;
+        tloop0 = chrono::steady_clock::now();
+
+        for (int i = 0; i < num_iters + num_threads; i++)
+        {
+          int index = i % num_threads;
+          if (i >= num_threads)
+          {
+            if (futures[index].get())
+              WriteFrameOutput(outputs[index], opts);
+          }
+
+          if (i < num_iters)
+          {
+            ReadFrame(opts, cap, &inputs[index], 1);
+            futures[index] = std::async(std::launch::async,
+                                        [inputs, outputs](int index) {
+               TidlRunSubgraph(1, 0, 1, 1, 1, &inputs[index], &outputs[index]);
+               return true;
+               },
+                                        index);
+          }
+        }
+
+        tloop1 = chrono::steady_clock::now();
+        chrono::duration<float> elapsed = tloop1 - tloop0;
+        cout << "Multithreaded (num_threads=" << num_threads
+             << ") loop time (including read/write/opencv/print/etc): "
+             << setw(6) << setprecision(4)
+             << (elapsed.count() * 1000) << "ms" << endl;
+    }
+    catch (tidl::Exception &e)
+    {
+        cerr << e.what() << endl;
+        status = false;
+    }
+
     return status;
 }
 
@@ -234,7 +290,7 @@ bool ReadFrame(const cmdline_opts_t& opts, VideoCapture &cap, float** inputs,
     c.inWidth = 224;
     c.inHeight = 224;
     c.preProcType = 2;
-    SubgraphDataConv in_conv{{true}, {128.0f}, {false}, {1,3,224,224}};
+    SubgraphDataConv in_conv{{0}, {true}, {128.0f}, {false}, {1,3,224,224}};
 
     char* frame_buffer = new char[3*224*224];
     assert (frame_buffer != nullptr);

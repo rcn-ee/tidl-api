@@ -32,6 +32,7 @@
 
 #include <string>
 #include <map>
+#include <vector>
 #include <iostream>
 
 namespace tidl {
@@ -144,6 +145,32 @@ class Configuration
 
     //! Margin added to the average in percentage.
     int quantMargin;
+
+    //! subgraph data conversion type at subgraph inputs
+    //! 0: float <-> Q, 1: float <-> float, 2: Q <-> Q
+    std::vector<int> inConvType;
+
+    //! subgraph is signed data at subgraph inputs
+    std::vector<int> inIsSigned;
+
+    //! subgraph scaleF2Q factor at subgraph inputs
+    std::vector<float> inScaleF2Q;
+
+    //! subgraph is external tensor NCHW layout at subgraph inputs
+    std::vector<int> inIsNCHW;
+
+    //! subgraph data conversion type at subgraph outputs
+    //! 0: float <-> Q, 1: float <-> float, 2: Q <-> Q
+    std::vector<int> outConvType;
+
+    //! subgraph is signed data at subgraph outputs
+    std::vector<int> outIsSigned;
+
+    //! subgraph scaleF2Q factor at subgraph outputs
+    std::vector<float> outScaleF2Q;
+
+    //! subgraph is external tensor NCHW layout at subgraph outputs
+    std::vector<int> outIsNCHW;
 
     //! Default constructor.
     Configuration();

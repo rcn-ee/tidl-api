@@ -74,6 +74,13 @@ void TVM_TidlFunction(int total_subgraphs, int subgraph_id,
 using namespace tidl;
 
 
+void TidlInitSubgraph(int total_subgraphs, int subgraph_id)
+{
+  ResM& res = ResM::Instance(total_subgraphs);
+  res.InitSubgraph(subgraph_id);
+}
+
+
 void TidlRunSubgraph(int total_subgraphs,
                      int subgraph_id,
                      int batch_size,
@@ -199,15 +206,8 @@ void ResM::Init(uint32_t num_subgraphs)
     es_m.resize(num_subgraphs_m, nullptr);
     e2s_m.resize(num_subgraphs_m, nullptr);
     eops_m = new std::vector<ResEOP>(num_subgraphs_m);
-
-    // TODO: this should come from parsing config file
-    for (uint32_t i = 0; i < num_subgraphs_m; i++)
-    {
-      in_conv_m.push_back(new SubgraphDataConv(
-                                    {true}, {128.0f}, {false}, {1,3,224,224}));
-      out_conv_m.push_back(new SubgraphDataConv(
-                                    {false}, {255.0f}, {true}, {1,1,1,1001}));
-    }
+    in_conv_m.resize(num_subgraphs_m, nullptr);
+    out_conv_m.resize(num_subgraphs_m, nullptr);
   }
 }
 
@@ -219,18 +219,62 @@ void ResM::InitSubgraph(uint32_t subgraph_id)
 
   std::unique_lock<std::mutex> lock(res_eop.mutex_eops);
 
+  // Constructing EOPs if not already constructed
   if (res_eop.eops == nullptr)
   {
     if (enable_trace_m)
       printf("Subgraph %d: initialing E/EOPs with %d cores\n",
              subgraph_id, num_es_per_subgraph_m);
 
-    // Constructing EOPs if not already constructed
-    // Each subgraph -> num_eves_per_subgraph_m EOPs
-    // Each EOP -> use_count
+    // Read config file
     std::string cfg_file = "subgraph" + std::to_string(subgraph_id) + ".cfg";
     bool status = cs_m[subgraph_id].ReadFromFile(cfg_file);
     assert(status);
+
+    // Read the network
+    sTIDL_Network_t *net = new sTIDL_Network_t;
+    status = ReadNetworkBinary(cs_m[subgraph_id].netBinFile,
+                               reinterpret_cast<char *>(net));
+    assert(status);
+
+    // Get data conversion info from configuration
+    // Get input/output tensors dimensions from network
+    // Construct data converters at the subgraph boundaries
+    std::vector<int> inDims, outDims;
+    for (int32_t layer = 0; layer < net->numLayers; layer++)
+    {
+      if (net->TIDLLayers[layer].layerType != (int32_t) TIDL_DataLayer)
+        continue;
+      if (net->TIDLLayers[layer].numInBufs <= 0)
+      {
+        for (int d = 0; d < 4; d++)
+          inDims.push_back(net->TIDLLayers[layer].outData[0].dimValues[d]);
+      }
+      if (net->TIDLLayers[layer].numOutBufs <= 0)
+      {
+        for (int d = 0; d < 4; d++)
+          outDims.push_back(net->TIDLLayers[layer].inData[0].dimValues[d]);
+      }
+    }
+    assert(cs_m[subgraph_id].inIsNCHW.size() * 4 == inDims.size());
+    assert(cs_m[subgraph_id].outIsNCHW.size() * 4 == outDims.size());
+    std::vector<bool> inIsSigned, outIsSigned, inIsNCHW, outIsNCHW;
+    for (int v : cs_m[subgraph_id].inIsSigned)  inIsSigned.push_back(v != 0);
+    for (int v : cs_m[subgraph_id].inIsNCHW)    inIsNCHW.push_back(v != 0);
+    for (int v : cs_m[subgraph_id].outIsSigned) outIsSigned.push_back(v != 0);
+    for (int v : cs_m[subgraph_id].outIsNCHW)   outIsNCHW.push_back(v != 0);
+    in_conv_m[subgraph_id] = new SubgraphDataConv(
+                                               cs_m[subgraph_id].inConvType,
+                                               inIsSigned,
+                                               cs_m[subgraph_id].inScaleF2Q,
+                                               inIsNCHW,
+                                               inDims);
+    out_conv_m[subgraph_id] = new SubgraphDataConv(
+                                               cs_m[subgraph_id].outConvType,
+                                               outIsSigned,
+                                               cs_m[subgraph_id].outScaleF2Q,
+                                               outIsNCHW,
+                                               outDims);
 
     // Check if last few layers can be offloaded to DSPs
     //       and DSPs are available
@@ -241,10 +285,6 @@ void ResM::InitSubgraph(uint32_t subgraph_id)
     // uint32_t num_dsps_used = 0;
     if (num_eves_m > 0 && num_dsps_m > 0 && ! cs_m[subgraph_id].runFullNet)
     {
-      sTIDL_Network_t *net = new sTIDL_Network_t;
-      bool status = ReadNetworkBinary(cs_m[subgraph_id].netBinFile,
-                                      reinterpret_cast<char *>(net));
-      assert(status);
       int32_t start_layer = net->numLayers -1;
       int32_t end_layer = 0;
       if (net->TIDLLayers[start_layer].layerType == (int32_t) TIDL_DataLayer)
@@ -286,7 +326,7 @@ void ResM::InitSubgraph(uint32_t subgraph_id)
       cs_m[subgraph_id].runFullNet = true;
     cs_m[subgraph_id].enableApiTrace = enable_trace_m;
 
-    // Constructing Es and EOPs
+    // Constructing Es and EOPs, each subgraph -> num_eves_per_subgraph_m EOPs
     res_eop.eops = new std::vector<ExecutionObjectPipeline*>;
     uint32_t buffer_factor = 2;  // double buffering factor
     if (num_eves_m > 0)

@@ -32,6 +32,15 @@
 
 extern "C" {
 
+//! @brief Top level API to initialize a TIDL subgraph on device
+//!        If not invoked ahead of time, TidlRunSubgraph() will call this
+//!        function before any inference
+//! @param total_subgraphs  total number of TIDL subgraphs in whole inference
+//! @param subgraph_id  index of current TIDL subgraph
+extern void TidlInitSubgraph(int total_subgraphs,
+                             int subgraph_id
+                            );
+
 //! @brief Top level inference to run a TIDL subgraph
 //! @param total_subgraphs  total number of TIDL subgraphs in whole inference
 //! @param subgraph_id  index of current TIDL subgraph

@@ -26,6 +26,8 @@
  *  THE POSSIBILITY OF SUCH DAMAGE.
  *****************************************************************************/
 
+#include <cassert>
+#include <cstring>
 #include "subgraph_data_conv.h"
 
 using namespace tidl;
@@ -75,32 +77,91 @@ const
   int offset = 0;
   for (uint32_t d = 0; d < is_NCHW_m.size(); d++)
   {
-    float Q     = scaleQ_m[d];
     int   N     = dims_m[4 * d + 0];
     int   C     = dims_m[4 * d + 1];
     int   H     = dims_m[4 * d + 2];
     int   W     = dims_m[4 * d + 3];
-    int   vmin  = is_signed_m[d] ? -128 : 0;
-    int   vmax  = is_signed_m[d] ?  127 : 255;
-    float *in_d = in[d];
-    if (is_NCHW_m[d])  // no need to transpose external tensor
+
+    if (conv_type_m[d] == ConvType::FLOAT_Q)
     {
-      for (int i = 0; i < N * C * H * W; i++)
-        out[offset + i] = QuantizeValue(in_d[i], Q, vmin, vmax);
+      float Q     = scaleQ_m[d];
+      int   vmin  = is_signed_m[d] ? -128 : 0;
+      int   vmax  = is_signed_m[d] ?  127 : 255;
+      float *in_d = in[d];
+      if (is_NCHW_m[d] || (C == 1) || (H*W == 1))
+      {
+        // no need to transpose external tensor
+        for (int i = 0; i < N * C * H * W; i++)
+          out[offset + i] = QuantizeValue(in_d[i], Q, vmin, vmax);
+      }
+      else
+      {
+        // need to transpose external tensor
+        for (int n = 0; n < N; n++)
+          for (int c = 0; c < C; c++)
+            for (int h = 0; h < H; h++)
+              for (int w = 0; w < W; w++)
+              {
+                int nchw = GetIndex(n, c, h, w, N, C, H, W);
+                int nhwc = GetIndex(n, h, w, c, N, H, W, C);
+                out[offset + nchw] = QuantizeValue(in_d[nhwc], Q, vmin, vmax);
+              }
+      }
     }
-    else  // need to transpose external tensor
+    else if (conv_type_m[d] == ConvType::FLOAT_FLOAT)
     {
-      for (int n = 0; n < N; n++)
-        for (int c = 0; c < C; c++)
-          for (int h = 0; h < H; h++)
-            for (int w = 0; w < W; w++)
-            {
-              int nchw = GetIndex(n, c, h, w, N, C, H, W);
-              int nhwc = GetIndex(n, h, w, c, N, H, W, C);
-              out[offset + nchw] = QuantizeValue(in_d[nhwc], Q, vmin, vmax);
-            }
+      assert((W & 0x3) == 0);   // last dimension is bytes
+      int f_W = W / 4;          // number of elements
+      float *in_d = in[d];
+      float *out_d = (float *) (out + offset);
+      if (is_NCHW_m[d] || (C == 1) || (H*W == 1))
+      {
+        // no need to transpose external tensor
+        memcpy(out_d, in_d, N * C * H * W);    // W is bytes
+      }
+      else
+      {
+        // need to transpose external tensor
+        for (int n = 0; n < N; n++)
+          for (int c = 0; c < C; c++)
+            for (int h = 0; h < H; h++)
+              for (int w = 0; w < f_W; w++)
+              {
+                int nchw = GetIndex(n, c, h, w, N, C, H, f_W);
+                int nhwc = GetIndex(n, h, w, c, N, H, f_W, C);
+                out_d[nchw] = in_d[nhwc];
+              }
+      }
     }
-    offset += N * C * H * W;
+    else if (conv_type_m[d] == ConvType::Q_Q)
+    {
+      uint8_t *in_d = (uint8_t *) &in[d];
+      uint8_t *out_d = (out + offset);
+      if (is_NCHW_m[d] || (C == 1) || (H*W == 1))
+      {
+        // no need to transpose external tensor
+        memcpy(out_d, in_d, N * C * H * W);
+      }
+      else
+      {
+        // need to transpose external tensor
+        for (int n = 0; n < N; n++)
+          for (int c = 0; c < C; c++)
+            for (int h = 0; h < H; h++)
+              for (int w = 0; w < W; w++)
+              {
+                int nchw = GetIndex(n, c, h, w, N, C, H, W);
+                int nhwc = GetIndex(n, h, w, c, N, H, W, C);
+                out_d[nchw] = in_d[nhwc];
+              }
+      }
+    }
+    else
+    {
+      assert(false);
+    }
+
+    offset += N * C * H * W;  // accumulate in bytes
   }
 }
 
@@ -111,31 +172,90 @@ const
   int offset = 0;
   for (uint32_t d = 0; d < is_NCHW_m.size(); d++)
   {
-    float Q      = scaleQ_m[d];
-    float Q_inv  = 1.0f / Q;
     int   N      = dims_m[4 * d + 0];
     int   C      = dims_m[4 * d + 1];
     int   H      = dims_m[4 * d + 2];
     int   W      = dims_m[4 * d + 3];
-    bool  S      = is_signed_m[d];
-    float *out_d = out[d];
-    if (is_NCHW_m[d])  // no need to transpose external tensor
+
+    if (conv_type_m[d] == ConvType::FLOAT_Q)
     {
-      for (int i = 0; i < N * C * H * W; i++)
-        out_d[i] = DequantizeValue(in[offset + i], Q_inv, S);
+      float Q      = scaleQ_m[d];
+      float Q_inv  = 1.0f / Q;
+      bool  S      = is_signed_m[d];
+      float *out_d = out[d];
+      if (is_NCHW_m[d] || (C == 1) || (H*W == 1))
+      {
+        // no need to transpose external tensor
+        for (int i = 0; i < N * C * H * W; i++)
+          out_d[i] = DequantizeValue(in[offset + i], Q_inv, S);
+      }
+      else
+      {
+        // need to transpose external tensor
+        for (int n = 0; n < N; n++)
+          for (int c = 0; c < C; c++)
+            for (int h = 0; h < H; h++)
+              for (int w = 0; w < W; w++)
+              {
+                int nchw = GetIndex(n, c, h, w, N, C, H, W);
+                int nhwc = GetIndex(n, h, w, c, N, H, W, C);
+                out_d[nhwc] = DequantizeValue(in[offset + nchw], Q_inv, S);
+              }
+      }
     }
-    else  // need to transpose external tensor
+    else if (conv_type_m[d] == ConvType::FLOAT_FLOAT)
     {
-      for (int n = 0; n < N; n++)
-        for (int c = 0; c < C; c++)
-          for (int h = 0; h < H; h++)
-            for (int w = 0; w < W; w++)
-            {
-              int nchw = GetIndex(n, c, h, w, N, C, H, W);
-              int nhwc = GetIndex(n, h, w, c, N, H, W, C);
-              out_d[nhwc] = DequantizeValue(in[offset + nchw], Q_inv, S);
-            }
+      assert((W & 0x3) == 0);   // last dimension is bytes
+      int f_W = W / 4;          // number of elements
+      float *in_d = (float *) (in + offset);
+      float *out_d = out[d];
+      if (is_NCHW_m[d] || (C == 1) || (H*W == 1))
+      {
+        // no need to transpose external tensor
+        memcpy(out_d, in_d, N * C * H * W);    // W is bytes
+      }
+      else
+      {
+        // need to transpose external tensor
+        for (int n = 0; n < N; n++)
+          for (int c = 0; c < C; c++)
+            for (int h = 0; h < H; h++)
+              for (int w = 0; w < f_W; w++)
+              {
+                int nchw = GetIndex(n, c, h, w, N, C, H, f_W);
+                int nhwc = GetIndex(n, h, w, c, N, H, f_W, C);
+                out_d[nhwc] = in_d[nchw];
+              }
+      }
     }
+    else if (conv_type_m[d] == ConvType::Q_Q)
+    {
+      uint8_t *in_d = (uint8_t *) (in + offset);
+      uint8_t *out_d = (uint8_t * ) &out[d];
+      if (is_NCHW_m[d] || (C == 1) || (H*W == 1))
+      {
+        // no need to transpose external tensor
+        memcpy(out_d, in_d, N * C * H * W);
+      }
+      else
+      {
+        // need to transpose external tensor
+        for (int n = 0; n < N; n++)
+          for (int c = 0; c < C; c++)
+            for (int h = 0; h < H; h++)
+              for (int w = 0; w < W; w++)
+              {
+                int nchw = GetIndex(n, c, h, w, N, C, H, W);
+                int nhwc = GetIndex(n, h, w, c, N, H, W, C);
+                out_d[nhwc] = in_d[nchw];
+              }
+      }
+    }
+    else
+    {
+      assert(false);
+    }
+
     offset += N * C * H * W;
   }
 }
