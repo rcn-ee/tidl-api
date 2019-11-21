@@ -36,7 +36,7 @@ LIBS     += -ljson-c
 LIBS     += -L$(TIDL_API_DIR) -ltidl_api -ltidl_imgutil
 
 SOURCES = main.cpp ../common/object_classes.cpp ../common/utils.cpp \
-          ../common/video_utils.cpp
+          ../common/video_utils.cpp thread_pool.cpp
 
 $(EXE): $(HEADERS) $(SOURCES)
 	$(CXX) $(CXXFLAGS) $(SOURCES) \

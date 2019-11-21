@@ -32,6 +32,13 @@
 
 extern "C" {
 
+//! @brief Top level API to get preferred batch_size for a subgraph
+//!        Best performance comes with preferred batch_size processing
+//!        plus multi-threaded (num_threads = 2) processing
+//! @param total_subgraphs  total number of TIDL subgraphs in whole inference
+//! @return preferred batch size
+extern int TidlGetPreferredBatchSize(int total_subgraphs);
+
 //! @brief Top level API to initialize a TIDL subgraph on device
 //!        If not invoked ahead of time, TidlRunSubgraph() will call this
 //!        function before any inference

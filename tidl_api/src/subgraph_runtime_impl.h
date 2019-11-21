@@ -60,6 +60,7 @@ class ResM {
     Configuration&           GetConfiguration(uint32_t subgraph_id);
     const SubgraphDataConv&  GetInConv(uint32_t subgraph_id);
     const SubgraphDataConv&  GetOutConv(uint32_t subgraph_id);
+    uint32_t                 GetNumEs() { return num_es_per_subgraph_m; }
 
 
   private:

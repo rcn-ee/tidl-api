@@ -73,6 +73,11 @@ void TVM_TidlFunction(int total_subgraphs, int subgraph_id,
 // Singleton ResM .cpp
 using namespace tidl;
 
+int TidlGetPreferredBatchSize(int total_subgraphs)
+{
+  ResM& res = ResM::Instance(total_subgraphs);
+  return res.GetNumEs();
+}
 
 void TidlInitSubgraph(int total_subgraphs, int subgraph_id)
 {
