@@ -48,6 +48,13 @@ extern void TidlInitSubgraph(int total_subgraphs,
                              int subgraph_id
                             );
 
+//! @brief Top level API to free a TIDL subgraph on device
+//! @param total_subgraphs  total number of TIDL subgraphs in whole inference
+//! @param subgraph_id  index of current TIDL subgraph
+extern void TidlFreeSubgraph(int total_subgraphs,
+                             int subgraph_id
+                            );
+
 //! @brief Top level inference to run a TIDL subgraph
 //! @param total_subgraphs  total number of TIDL subgraphs in whole inference
 //! @param subgraph_id  index of current TIDL subgraph

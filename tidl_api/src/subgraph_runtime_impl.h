@@ -53,6 +53,7 @@ class ResM {
 
     // how to get resources for subgraph_id
     void                     InitSubgraph(uint32_t subgraph_id);
+    void                     FreeSubgraph(uint32_t subgraph_id);
     uint32_t                 GetNumEOPs(uint32_t subgraph_id);
     ExecutionObjectPipeline* GetEOP(uint32_t subgraph_id);
     void                     FreeEOP(uint32_t subgraph_id,

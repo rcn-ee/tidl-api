@@ -85,6 +85,11 @@ void TidlInitSubgraph(int total_subgraphs, int subgraph_id)
   res.InitSubgraph(subgraph_id);
 }
 
+void TidlFreeSubgraph(int total_subgraphs, int subgraph_id)
+{
+  ResM& res = ResM::Instance(total_subgraphs);
+  res.FreeSubgraph(subgraph_id);
+}
 
 void TidlRunSubgraph(int total_subgraphs,
                      int subgraph_id,
@@ -152,32 +157,44 @@ ResM::ResM() : enable_trace_m(false), num_subgraphs_m(0),
 
 ResM::~ResM()
 {
+  for (uint32_t i = 0; i < num_subgraphs_m; i++)
+    FreeSubgraph(i);
+
+  delete eops_m;
+  eops_m = nullptr;
+}
+
+void ResM::FreeSubgraph(uint32_t subgraph_id)
+{
+  assert(subgraph_id < num_subgraphs_m);
+
   if (eops_m != nullptr)
   {
-    for (const ResEOP& res_eop : *eops_m)
+    ResEOP& res_eop = (*eops_m)[subgraph_id];
+    if (res_eop.eops != nullptr)
     {
-      if (res_eop.eops != nullptr)
+      for (const ExecutionObjectPipeline* eop : *(res_eop.eops))
       {
-        for (const ExecutionObjectPipeline* eop : *(res_eop.eops))
-        {
-          free(eop->GetInputBufferPtr());
-          free(eop->GetOutputBufferPtr());
-          delete eop;
-        }
+        free(eop->GetInputBufferPtr());
+        free(eop->GetOutputBufferPtr());
+        delete eop;
       }
+      delete res_eop.eops;
+      res_eop.eops = nullptr;
     }
-    delete eops_m;
-    eops_m = nullptr;
   }
 
-  for (const Executor* e : es_m)
-    if (e != nullptr) delete e;
-  for (const Executor* e : e2s_m)
-    if (e != nullptr) delete e;
-  for (SubgraphDataConv *dc : in_conv_m)
-    if (dc != nullptr) delete dc;
-  for (SubgraphDataConv *dc : out_conv_m)
-    if (dc != nullptr) delete dc;
+  delete es_m[subgraph_id];
+  es_m[subgraph_id] = nullptr;
+
+  delete e2s_m[subgraph_id];
+  e2s_m[subgraph_id] = nullptr;
+
+  delete in_conv_m[subgraph_id];
+  in_conv_m[subgraph_id] = nullptr;
+
+  delete out_conv_m[subgraph_id];
+  out_conv_m[subgraph_id] = nullptr;
 }
 
 ResM& ResM::Instance(uint32_t total_num_subgraphs)
@@ -290,42 +307,55 @@ void ResM::InitSubgraph(uint32_t subgraph_id)
     // uint32_t num_dsps_used = 0;
     if (num_eves_m > 0 && num_dsps_m > 0 && ! cs_m[subgraph_id].runFullNet)
     {
-      int32_t start_layer = net->numLayers -1;
-      int32_t end_layer = 0;
-      if (net->TIDLLayers[start_layer].layerType == (int32_t) TIDL_DataLayer)
-        start_layer -= 1;
-      if (net->TIDLLayers[end_layer].layerType == (int32_t) TIDL_DataLayer)
-        end_layer += 1;
-      int32_t i = start_layer;
-      for ( ; i > end_layer; i--)
+      if (cs_m[subgraph_id].layerIndex2LayerGroupId.empty())
       {
-        int32_t layer_type = net->TIDLLayers[i].layerType;
-        if (layer_type != (int32_t) TIDL_SoftMaxLayer &&
-            layer_type != (int32_t) TIDL_InnerProductLayer &&
-            layer_type != (int32_t) TIDL_PoolingLayer)
-          break;
-      }
-      i += 1;
-      if (i <= start_layer)
-      {
-        if (num_lg2_dsps_used_m < num_dsps_m)
+        int32_t start_layer = net->numLayers -1;
+        int32_t end_layer = 0;
+        if (net->TIDLLayers[start_layer].layerType == (int32_t) TIDL_DataLayer)
+          start_layer -= 1;
+        if (net->TIDLLayers[end_layer].layerType == (int32_t) TIDL_DataLayer)
+          end_layer += 1;
+        int32_t i = start_layer;
+        for ( ; i > end_layer; i--)
         {
-          if (enable_trace_m)
-            printf("Subgraph %d: assign layers %d to %d to group 2 for DSP\n",
-                   subgraph_id, i, start_layer);
-          while (i <= start_layer)
-            cs_m[subgraph_id].layerIndex2LayerGroupId[i++] = 2;
-          e2_ids.insert(static_cast<DeviceId>(num_lg2_dsps_used_m));
-          num_lg2_dsps_used_m += 1;
-          if (num_subgraphs_m == 1)  // Allocate all dsps if only one subgraph
+          int32_t layer_type = net->TIDLLayers[i].layerType;
+          if (layer_type != (int32_t) TIDL_SoftMaxLayer &&
+              layer_type != (int32_t) TIDL_InnerProductLayer &&
+              layer_type != (int32_t) TIDL_PoolingLayer)
+            break;
+        }
+        i += 1;
+        if (i <= start_layer)
+        {
+          if (num_lg2_dsps_used_m < num_dsps_m)
           {
-            while (num_lg2_dsps_used_m < num_dsps_m)
-              e2_ids.insert(static_cast<DeviceId>(num_lg2_dsps_used_m++));
+            if (enable_trace_m)
+              printf("Subgraph %d: assign layers %d to %d to group 2 for DSP\n",
+                     subgraph_id, i, start_layer);
+            while (i <= start_layer)
+              cs_m[subgraph_id].layerIndex2LayerGroupId[i++] = 2;
           }
         }
       }
-      delete net;
+      else
+      {
+        if (enable_trace_m)
+          printf("Subgraph %d: using layer2group map in config file for DSP\n",
+                 subgraph_id);
+      }
+
+      if (! cs_m[subgraph_id].layerIndex2LayerGroupId.empty())
+      {
+        e2_ids.insert(static_cast<DeviceId>(num_lg2_dsps_used_m));
+        num_lg2_dsps_used_m += 1;
+        if (num_subgraphs_m == 1)  // Allocate all dsps if only one subgraph
+        {
+          while (num_lg2_dsps_used_m < num_dsps_m)
+            e2_ids.insert(static_cast<DeviceId>(num_lg2_dsps_used_m++));
+        }
+      }
     }
+    delete net;
 
     if (e2_ids.empty())
       cs_m[subgraph_id].runFullNet = true;

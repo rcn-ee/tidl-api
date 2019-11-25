@@ -67,6 +67,11 @@ using namespace cv;
 #define NUM_DEFAULT_INPUTS  1
 #define DEFAULT_OBJECT_CLASSES_LIST_FILE "imagenet_objects.json"
 #define DEFAULT_OUTPUT_PROB_THRESHOLD  5
+#define MOBILENET_IN_C         (3)
+#define MOBILENET_IN_H         (224)
+#define MOBILENET_IN_W         (224)
+#define MOBILENET_INPUT_SIZE   (1*MOBILENET_IN_C*MOBILENET_IN_H*MOBILENET_IN_W)
+#define MOBILENET_OUTPUT_SIZE  (1001)
 const char *default_inputs[NUM_DEFAULT_INPUTS] =
 {
     "../test/testvecs/input/objects/cat-pet-animal-domestic-104827.jpeg"
@@ -169,9 +174,9 @@ bool RunConfiguration(cmdline_opts_t& opts)
     {
         TidlInitSubgraph(1, 0);
         float **inputs = new float *[1];
-        inputs[0] = new float[1*3*224*224];
+        inputs[0] = new float[MOBILENET_INPUT_SIZE];
         float **outputs = new float *[1];
-        outputs[0] = new float[1001];
+        outputs[0] = new float[MOBILENET_OUTPUT_SIZE];
 
         for (int i = 0; i < 5; i ++)
         {
@@ -216,8 +221,8 @@ bool RunConfiguration(cmdline_opts_t& opts)
             float **outputs = new float *[batch_size];
             for (int i = 0; i < batch_size; i++)
             {
-                inputs[i]  = new float[1*3*224*224];
-                outputs[i] = new float[1001];
+                inputs[i]  = new float[MOBILENET_INPUT_SIZE];
+                outputs[i] = new float[MOBILENET_OUTPUT_SIZE];
             }
 
             chrono::time_point<chrono::steady_clock> tloop0, tloop1;
@@ -273,8 +278,8 @@ bool RunConfiguration(cmdline_opts_t& opts)
         float **outputs = new float *[num_threads];
         for (int i = 0; i < num_threads; i++)
         {
-            inputs[i]  = new float[1*3*224*224];
-            outputs[i] = new float[1001];
+            inputs[i]  = new float[MOBILENET_INPUT_SIZE];
+            outputs[i] = new float[MOBILENET_OUTPUT_SIZE];
         }
         vector<future<bool>> futures(num_threads);
         bool skip_outputs = false;
@@ -341,8 +346,8 @@ bool RunConfiguration(cmdline_opts_t& opts)
         vector<UserData> v_data(num_threads);
         for (int i = 0; i < num_threads; i++)
         {
-            inputs[i]  = new float[1*3*224*224];
-            outputs[i] = new float[1001];
+            inputs[i]  = new float[MOBILENET_INPUT_SIZE];
+            outputs[i] = new float[MOBILENET_OUTPUT_SIZE];
             v_data[i].inputs  = &inputs[i];
             v_data[i].outputs = &outputs[i];
         }
@@ -406,8 +411,8 @@ bool RunConfiguration(cmdline_opts_t& opts)
         float **outputs = new float *[num_threads * batch_size];
         for (int i = 0; i < num_threads * batch_size; i++)
         {
-            inputs[i]  = new float[1*3*224*224];
-            outputs[i] = new float[1001];
+            inputs[i]  = new float[MOBILENET_INPUT_SIZE];
+            outputs[i] = new float[MOBILENET_OUTPUT_SIZE];
         }
         vector<future<bool>> futures(num_threads);
         bool skip_outputs = false;
@@ -482,13 +487,14 @@ bool ReadFrame(const cmdline_opts_t& opts, VideoCapture &cap, float** inputs,
                int batch_size)
 {
     Configuration c;
-    c.inNumChannels = 3;;
-    c.inWidth = 224;
-    c.inHeight = 224;
+    c.inNumChannels = MOBILENET_IN_C;
+    c.inWidth = MOBILENET_IN_W;
+    c.inHeight = MOBILENET_IN_H;
     c.preProcType = 2;
-    SubgraphDataConv in_conv{{0}, {true}, {128.0f}, {false}, {1,3,224,224}};
+    SubgraphDataConv in_conv{{0}, {true}, {128.0f}, {false},
+                             {1,MOBILENET_IN_C,MOBILENET_IN_H,MOBILENET_IN_W}};
 
-    char* frame_buffer = new char[3*224*224];
+    char* frame_buffer = new char[MOBILENET_INPUT_SIZE];
     assert (frame_buffer != nullptr);
 
     Mat image;
