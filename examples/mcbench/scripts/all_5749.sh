@@ -1,3 +1,4 @@
+# Set of TIDL benchmarking test cases for AM5749 SoC, with 2xDSP and 2xEVE
 ./mcbench -g 1 -d 0 -e 2 -c ../test/testvecs/config/infer/tidl_config_mobileNet1.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
 ./mcbench -g 1 -d 2 -e 0 -c ../test/testvecs/config/infer/tidl_config_mobileNet1.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
 ./mcbench -g 2 -d 1 -e 2 -c ../test/testvecs/config/infer/tidl_config_mobileNet1_lg2.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
