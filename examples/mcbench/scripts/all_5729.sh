@@ -1,26 +1,14 @@
 # Set of TIDL benchmarking test cases for AM5729 SoC, with 2xDSP and 4xEVE
-./mcbench -g 1 -d 0 -e 4 -c ../test/testvecs/config/infer/tidl_config_mobileNet1.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
-./mcbench -g 1 -d 2 -e 0 -c ../test/testvecs/config/infer/tidl_config_mobileNet1.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
+export TIDL_NETWORK_HEAP_SIZE_EVE=56623104
+export TIDL_NETWORK_HEAP_SIZE_DSP=56623104
+./mcbench -g 1 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
+./mcbench -g 1 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2_dense.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
+
+export TIDL_NETWORK_HEAP_SIZE_EVE=67108864
+export TIDL_NETWORK_HEAP_SIZE_DSP=8388608
 ./mcbench -g 2 -d 1 -e 4 -c ../test/testvecs/config/infer/tidl_config_mobileNet1_lg2.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
 ./mcbench -g 2 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_mobileNet1_lg2.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
-./mcbench -g 1 -d 0 -e 4 -c ../test/testvecs/config/infer/tidl_config_mobileNet2.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
-./mcbench -g 1 -d 2 -e 0 -c ../test/testvecs/config/infer/tidl_config_mobileNet2.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
-./mcbench -g 2 -d 1 -e 4 -c ../test/testvecs/config/infer/tidl_config_mobileNet2_lg2.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
 ./mcbench -g 2 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_mobileNet2_lg2.txt -f 50 -i ../test/testvecs/input/preproc_2_224x224_multi.y
-./mcbench -g 1 -d 0 -e 4 -c ../test/testvecs/config/infer/tidl_config_squeeze1_1.txt -f 50 -i ../test/testvecs/input/preproc_1_227x227_multi.y
-./mcbench -g 1 -d 2 -e 0 -c ../test/testvecs/config/infer/tidl_config_squeeze1_1.txt -f 50 -i ../test/testvecs/input/preproc_1_227x227_multi.y
-./mcbench -g 1 -d 0 -e 4 -c ../test/testvecs/config/infer/tidl_config_inceptionNetv1.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 1 -d 2 -e 0 -c ../test/testvecs/config/infer/tidl_config_inceptionNetv1.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 2 -d 1 -e 4 -c ../test/testvecs/config/infer/tidl_config_inceptionNetv1_lg2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
 ./mcbench -g 2 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_inceptionNetv1_lg2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 1 -d 0 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 1 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 2 -d 1 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2_lg2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
 ./mcbench -g 2 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2_lg2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 1 -d 0 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2_dense.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 1 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2_dense.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 2 -d 1 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2_dense_lg2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
 ./mcbench -g 2 -d 2 -e 4 -c ../test/testvecs/config/infer/tidl_config_j11_v2_dense_lg2.txt -f 50 -i ../test/testvecs/input/preproc_0_224x224_multi.y
-./mcbench -g 1 -d 0 -e 4 -c ../test/testvecs/config/infer/tidl_config_jseg21_dense.txt -f 50 -i ../test/testvecs/input/000100_1024x512_bgr.y
-./mcbench -g 1 -d 0 -e 4 -c ../test/testvecs/config/infer/tidl_config_jseg21.txt -f 50 -i ../test/testvecs/input/000100_1024x512_bgr.y
-./mcbench -g 2 -d 1 -e 4 -c ../test/testvecs/config/infer/tidl_config_jdetnet.txt -f 50 -i ../test/testvecs/input/preproc_0_768x320_multi.y
