@@ -52,6 +52,7 @@ struct ConfigParser : qi::grammar<Iterator, ascii::space_type>
     ConfigParser(Configuration &x) : ConfigParser::base_type(entry)
     {
         using qi::int_;
+        using qi::float_;
         using qi::bool_;
         using qi::lit;
         using qi::lexeme;
@@ -65,6 +66,10 @@ struct ConfigParser : qi::grammar<Iterator, ascii::space_type>
         // Rules for parsing paths. Discard '"'
         path %= lexeme[+(char_ - '"')];
         q_path = qi::omit[*char_('"')] >> path >> qi::omit[*char_('"')];
+
+        // Rules for parsing subgraph data conversion information
+        intvec = int_ >> *int_;
+        floatvec = float_ >> *float_;
 
         // Grammar for parsing configuration file
         entry %=
@@ -85,7 +90,15 @@ struct ConfigParser : qi::grammar<Iterator, ascii::space_type>
                                    int_[ph::ref(x.quantHistoryParam1)= _1] |
          lit("quantHistoryParam2")   >> '=' >>
                                    int_[ph::ref(x.quantHistoryParam2)= _1] |
-         lit("quantMargin")   >> '=' >> int_[ph::ref(x.quantMargin)= _1]
+         lit("quantMargin")   >> '=' >> int_[ph::ref(x.quantMargin)= _1] |
+         lit("inConvType")    >> '=' >> intvec[ph::ref(x.inConvType) = _1] |
+         lit("inIsSigned")    >> '=' >> intvec[ph::ref(x.inIsSigned) = _1] |
+         lit("inScaleF2Q")    >> '=' >> floatvec[ph::ref(x.inScaleF2Q) = _1] |
+         lit("inIsNCHW")      >> '=' >> intvec[ph::ref(x.inIsNCHW) = _1] |
+         lit("outConvType")   >> '=' >> intvec[ph::ref(x.outConvType) = _1] |
+         lit("outIsSigned")   >> '=' >> intvec[ph::ref(x.outIsSigned) = _1] |
+         lit("outScaleF2Q")   >> '=' >> floatvec[ph::ref(x.outScaleF2Q) = _1] |
+         lit("outIsNCHW")     >> '=' >> intvec[ph::ref(x.outIsNCHW) = _1]
          ;
     }
 
@@ -95,6 +108,9 @@ struct ConfigParser : qi::grammar<Iterator, ascii::space_type>
 
     qi::rule<Iterator, std::pair<int, int>(), ascii::space_type> id2group;
     qi::rule<Iterator, std::map<int, int>(), ascii::space_type> id2groups;
+
+    qi::rule<Iterator, std::vector<int>(), ascii::space_type> intvec;
+    qi::rule<Iterator, std::vector<float>(), ascii::space_type> floatvec;
 };
 
 bool Configuration::ReadFromFile(const std::string &file_name)

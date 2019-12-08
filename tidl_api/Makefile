@@ -26,10 +26,13 @@
 PYTHON_INCLUDE_DIR ?= $(wildcard $(TARGET_ROOTDIR)/usr/include/python3*)
 
 LIB_NAME = tidl_api.a
+SHARED_LIB_NAME = libtidl_api.so
 LIB_IMGUTIL_NAME = tidl_imgutil.a
+SHARED_LIB_IMGUTIL_NAME = libtidl_imgutil.so
 PY_LIB_NAME = tidl.so
 
-all: $(LIB_NAME) $(LIB_IMGUTIL_NAME) $(PY_LIB_NAME)
+all: $(LIB_NAME) $(LIB_IMGUTIL_NAME) $(PY_LIB_NAME) \
+     $(SHARED_LIB_NAME) $(SHARED_LIB_IMGUTIL_NAME)
 
 include make.inc
 include make.buildid
@@ -40,7 +43,8 @@ AR = ar
 
 SRCS = ocl_device.cpp configuration_parser.cpp configuration.cpp\
 	   executor.cpp execution_object.cpp trace.cpp util.cpp \
-       execution_object_pipeline.cpp
+       execution_object_pipeline.cpp \
+       subgraph_runtime.cpp subgraph_data_conv.cpp
 SRCS_IMGUTIL = imgutil.cpp
 SRCS_PYBIND  = pybind_eo.cpp pybind_eop.cpp pybind_executor.cpp \
 			   pybind_configuration.cpp pybind_helpers.cpp
@@ -90,11 +94,17 @@ obj/%.o: src/%.cpp $(HEADERS)
 $(LIB_NAME): $(HOST_OBJ_FILES)
 	$(AR) cr $@ $(HOST_OBJ_FILES)
 
+$(SHARED_LIB_NAME): $(HOST_OBJ_FILES)
+	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lOpenCL $(HOST_OBJ_FILES) -o $@
+
 $(PY_LIB_NAME): $(HOST_OBJ_PYBIND_FILES) $(LIB_NAME)
 	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lOpenCL -locl_util $^ -o $@
 
 $(LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
 	$(AR) cr $@ $(HOST_OBJ_IMGUTIL_FILES)
+
+$(SHARED_LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
+	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared $(HOST_OBJ_IMGUTIL_FILES) -o $@
 
 clean::
 	$(RM) -f $(LIB_NAME) $(PY_LIB_NAME)
