@@ -2,6 +2,12 @@
 Changelog
 #########
 
+1.4.0 [Processor Linux SDK 6.2]
+===============================
+**Added**
+
+#. Subgraph execution support.
+
 1.3.3 [Processor Linux SDK 6.1]
 ===============================
 **Added**
@@ -9,6 +15,9 @@ Changelog
 #. Added imagenet python example.
 
 #. Added MobileNet v2 support.
+
+#. Added environment variables to control pre-allocated network memory sizes.
+   TIDL_{PARAM,NETWORK}_HEAP_SIZE_{DSP,EVE}
 
 **Changed**
 
