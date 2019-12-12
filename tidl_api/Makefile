@@ -37,6 +37,8 @@ all: $(LIB_NAME) $(LIB_IMGUTIL_NAME) $(PY_LIB_NAME) \
 include make.inc
 include make.buildid
 
+SO_VER=$(MAJOR_VER).$(MINOR_VER).$(PATCH_VER)
+
 RM = rm
 AR = ar
 
@@ -95,7 +97,10 @@ $(LIB_NAME): $(HOST_OBJ_FILES)
 	$(AR) cr $@ $(HOST_OBJ_FILES)
 
 $(SHARED_LIB_NAME): $(HOST_OBJ_FILES)
-	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lOpenCL $(HOST_OBJ_FILES) -o $@
+	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -Wl,-soname,$@.$(MAJOR_VER) \
+		-lOpenCL $(HOST_OBJ_FILES) -o $@.$(SO_VER)
+	ln -sf $@.$(SO_VER) $@.$(MAJOR_VER)
+	ln -sf $@.$(MAJOR_VER) $@
 
 $(PY_LIB_NAME): $(HOST_OBJ_PYBIND_FILES) $(LIB_NAME)
 	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lOpenCL -locl_util $^ -o $@
@@ -104,10 +109,14 @@ $(LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
 	$(AR) cr $@ $(HOST_OBJ_IMGUTIL_FILES)
 
 $(SHARED_LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
-	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared $(HOST_OBJ_IMGUTIL_FILES) -o $@
+	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -Wl,-soname,$@.$(MAJOR_VER) \
+		$(HOST_OBJ_IMGUTIL_FILES) -o $@.$(SO_VER)
+	ln -sf $@.$(SO_VER) $@.$(MAJOR_VER)
+	ln -sf $@.$(MAJOR_VER) $@
 
 clean::
 	$(RM) -f $(LIB_NAME) $(PY_LIB_NAME)
 	$(RM) -f $(LIB_IMGUTIL_NAME)
+	$(RM) -f $(SHARED_LIB_NAME)* $(SHARED_LIB_IMGUTIL_NAME)*
 	$(RM) -rf obj
 
