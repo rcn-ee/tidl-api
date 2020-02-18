@@ -118,7 +118,10 @@ bool Configuration::ReadFromFile(const std::string &file_name)
     std::ifstream IFS(file_name);
 
     if (!IFS.good())
+    {
+        std::cerr << "cfg: cannot read file: " << file_name << std::endl;
         return false;
+    }
 
     typedef ConfigParser<std::string::const_iterator> ConfigParser;
 
@@ -141,7 +144,7 @@ bool Configuration::ReadFromFile(const std::string &file_name)
 
         if (!result)
         {
-            std::cout << "Parsing failed on line " << line_num
+            std::cout << "cfg: parsing failed on line " << line_num
                       << ": " << str << std::endl;
             break;
         }
