@@ -313,3 +313,27 @@ See ``examples/layer_output/main.cpp, ProcessTrace()`` for examples of using the
 
 .. _Processor SDK Linux Software Developer's Guide: http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/index.html
 .. _Processor SDK Linux Software Developer's Guide (TIDL chapter): http://software-dl.ti.com/processor-sdk-linux/esd/docs/latest/linux/Foundational_Components_TIDL.html
+
+Subgraph runtime
+++++++++++++++++
+
+TIDL API subgraph runtime are intended for interfacing with external inference
+frameworks.  Subgraph runtime are not intended for direct use in user
+applications.
+
+Subgraph config file
+====================
+
+Subgraph config file are named as "subgraph<number>.cfg", while <number>
+is the subgraph index in the original graph/network.  The environment
+variable `TIDL_SUBGRAPH_DIR` speicifies the directory where subgraph config
+files reside.  If not specified, the current directory is assumed.
+
+Subgraph config file requires extra parameters to describe data conversion
+at the subgraph boundaries.  Please see
+`examples/mobilenet_subgraph/subgraph0.cfg` for an example of minimal
+set of required parameters.
+
+Subgraph runtime API
+====================
+Please see `tidl_api/inc/subgraph_runtime.h` for details.

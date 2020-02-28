@@ -146,30 +146,43 @@ class Configuration
     //! Margin added to the average in percentage.
     int quantMargin;
 
-    //! subgraph data conversion type at subgraph inputs
-    //! 0: float <-> Q, 1: float <-> float, 2: Q <-> Q
+    //! Subgraph: config file for subgraph runtime, default to false
+    //!   (intended for interfacing with external inference frameworks,
+    //!    not intended for direct use in user applications)
+    //! The following {in,out}* parameters describe the tensor(s) value/layout
+    //! conversion at the subgraph boundaries for subgraph runtime.
+    //! Each parameter (vector) can be a space separated list, corresponding to
+    //! multiple input tensors and multiple output tensors, if applicable.
+    bool isSubgraphCfg;
+
+    //! subgraph: data value conversion type at subgraph input boundary,
+    //! between external tensors and TIDL tensors
+    //! 0: float -> Q, 1: float -> float, 2: Q -> Q
     std::vector<int> inConvType;
 
-    //! subgraph is signed data at subgraph inputs
+    //! subgraph: are external input tensors signed data
     std::vector<int> inIsSigned;
 
-    //! subgraph scaleF2Q factor at subgraph inputs
+    //! subgraph: scaleF2Q factor for converting values of input tensors
+    //! saturation(float_value * inScaleF2Q) = quantized_value
     std::vector<float> inScaleF2Q;
 
-    //! subgraph is external tensor NCHW layout at subgraph inputs
+    //! subgraph: are external input tensors in NCHW layout
     std::vector<int> inIsNCHW;
 
-    //! subgraph data conversion type at subgraph outputs
-    //! 0: float <-> Q, 1: float <-> float, 2: Q <-> Q
+    //! subgraph: data value conversion type at subgraph output boundary,
+    //! between TIDL tensors and external tensors
+    //! 0: Q -> float, 1: float -> float, 2: Q -> Q
     std::vector<int> outConvType;
 
-    //! subgraph is signed data at subgraph outputs
+    //! subgraph: are external output tensors signed data
     std::vector<int> outIsSigned;
 
-    //! subgraph scaleF2Q factor at subgraph outputs
+    //! subgraph: scaleF2Q factor for converting values of output tensors
+    //! quantized_value / outScaleF2Q = float_value
     std::vector<float> outScaleF2Q;
 
-    //! subgraph is external tensor NCHW layout at subgraph outputs
+    //! subgraph: are external output tensors in NCHW layout
     std::vector<int> outIsNCHW;
 
     //! Default constructor.

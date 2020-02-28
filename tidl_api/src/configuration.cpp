@@ -46,7 +46,16 @@ Configuration::Configuration(): numFrames(0), inHeight(0), inWidth(0),
                      showHeapStats(false),
                      quantHistoryParam1(20),
                      quantHistoryParam2(5),
-                     quantMargin(0)
+                     quantMargin(0),
+                     isSubgraphCfg(false),
+                     inConvType(),
+                     inIsSigned(),
+                     inScaleF2Q(),
+                     inIsNCHW(),
+                     outConvType(),
+                     outIsSigned(),
+                     outScaleF2Q(),
+                     outIsNCHW()
 {
 }
 
@@ -70,35 +79,57 @@ void Configuration::Print(std::ostream &os) const
 bool Configuration::Validate() const
 {
     int errors = 0;
-
-    if (inHeight == 0 || inWidth == 0)
-    {
-        std::cerr << "inHeight, inWidth must be > 0" << std::endl;
-        errors++;
-    }
-
-    if (inNumChannels < 1)
-    {
-        std::cerr << "inNumChannels must be > 1" << std::endl;
-        errors++;
-    }
-
     struct stat buffer;
+
+    if (! isSubgraphCfg)
+    {
+        if (inHeight == 0 || inWidth == 0)
+        {
+            std::cerr << "cfg: inHeight, inWidth must be > 0" << std::endl;
+            errors++;
+        }
+
+        if (inNumChannels < 1)
+        {
+            std::cerr << "cfg: inNumChannels must be > 1" << std::endl;
+            errors++;
+        }
+
+        if (!inData.empty() && stat(inData.c_str(), &buffer) != 0)
+        {
+            std::cerr << "cfg: inData not found: " << inData << std::endl;
+            errors++;
+        }
+    }
+    else
+    {
+        if (inConvType.size() == 0 || inIsSigned.size() == 0 ||
+            inScaleF2Q.size() == 0 || inIsNCHW.size() == 0 ||
+            outConvType.size() == 0 || outIsSigned.size() == 0 ||
+            outScaleF2Q.size() == 0 || outIsNCHW.size() == 0)
+        {
+            std::cerr << "cfg: subgraph data info not found" << std::endl;
+            errors++;
+        }
+
+        if (inConvType.size() != inIsNCHW.size() ||
+            outConvType.size() != outIsNCHW.size())
+        {
+            std::cerr << "cfg: Mismatching subgraph data info" << std::endl;
+            errors++;
+        }
+    }
+
     if (stat(netBinFile.c_str(), &buffer) != 0)
     {
-        std::cerr << "netBinFile not found: " << netBinFile << std::endl;
+        std::cerr << "cfg: netBinFile not found: " << netBinFile << std::endl;
         errors++;
     }
 
     if (stat(paramsBinFile.c_str(), &buffer) != 0)
     {
-        std::cerr << "paramsBinFile not found: " << paramsBinFile << std::endl;
-        errors++;
-    }
-
-    if (!inData.empty() && stat(inData.c_str(), &buffer) != 0)
-    {
-        std::cerr << "inData not found: " << inData << std::endl;
+        std::cerr << "cfg: paramsBinFile not found: " << paramsBinFile
+                  << std::endl;
         errors++;
     }
 

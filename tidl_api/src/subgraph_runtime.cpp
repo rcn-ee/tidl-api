@@ -250,6 +250,10 @@ void ResM::InitSubgraph(uint32_t subgraph_id)
 
     // Read config file
     std::string cfg_file = "subgraph" + std::to_string(subgraph_id) + ".cfg";
+    char *subgraph_dir = getenv("TIDL_SUBGRAPH_DIR");
+    if (subgraph_dir != nullptr)
+      cfg_file = std::string(subgraph_dir) + "/" + cfg_file;
+    cs_m[subgraph_id].isSubgraphCfg = true;
     bool status = cs_m[subgraph_id].ReadFromFile(cfg_file);
     assert(status);
 
