@@ -218,6 +218,16 @@ void ResM::Init(uint32_t num_subgraphs)
     num_eves_m = Executor::GetNumDevices(DeviceType::EVE);
     num_dsps_m = Executor::GetNumDevices(DeviceType::DSP);
 
+    char *env_subgraph_num_eves = getenv("TIDL_SUBGRAPH_NUM_EVES");
+    if (env_subgraph_num_eves != nullptr)
+    {
+        uint32_t subgraph_num_eves = atoi(env_subgraph_num_eves);
+        if (subgraph_num_eves > 0 && subgraph_num_eves < num_eves_m)
+            num_eves_m = subgraph_num_eves;
+        if (subgraph_num_eves > 0 && subgraph_num_eves < num_dsps_m)
+            num_dsps_m = subgraph_num_eves;
+    }
+
     assert(num_eves_m > 0 || num_dsps_m > 0);
     assert(num_subgraphs_m <= num_eves_m || num_subgraphs_m <= num_dsps_m);
     num_es_per_subgraph_m = num_eves_m / num_subgraphs_m;
