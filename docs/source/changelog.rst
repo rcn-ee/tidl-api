@@ -2,11 +2,12 @@
 Changelog
 #########
 
-1.5.0 [Processor Linux SDK 6.3]
+1.5.1 [Processor Linux SDK 6.3]
 ===============================
 **Changed**
 
-#. Cleaned up subgraph cfg file entries.  Added TIDL_SUBGRAPH_DIR env var.
+#. Cleaned up subgraph cfg file entries.  Added TIDL_SUBGRAPH_DIR and
+   TIDL_SUBGRAPH_NUM_EVES env var.
 
 1.4.0 [Processor Linux SDK 6.2]
 ===============================

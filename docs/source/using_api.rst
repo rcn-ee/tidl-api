@@ -326,7 +326,7 @@ Subgraph config file
 
 Subgraph config file are named as "subgraph<number>.cfg", while <number>
 is the subgraph index in the original graph/network.  The environment
-variable `TIDL_SUBGRAPH_DIR` speicifies the directory where subgraph config
+variable `TIDL_SUBGRAPH_DIR` specifies the directory where subgraph config
 files reside.  If not specified, the current directory is assumed.
 
 Subgraph config file requires extra parameters to describe data conversion
@@ -337,3 +337,7 @@ set of required parameters.
 Subgraph runtime API
 ====================
 Please see `tidl_api/inc/subgraph_runtime.h` for details.
+
+The envrionment variable `TIDL_SUBGRAPH_NUM_EVES` specifies the number of
+EVEs used for inferencing.  If not specified, all available EVEs will be
+initialized and used.
