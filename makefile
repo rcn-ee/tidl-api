@@ -42,8 +42,8 @@ else
 VIEWER_TARGET=arm
 endif
 
-INSTALL_DIR_API = $(DEST_DIR)/usr/share/ti/tidl
-INSTALL_DIR_EXAMPLES = $(DEST_DIR)/usr/share/ti/examples/tidl
+INSTALL_DIR_API ?= $(DEST_DIR)/usr/share/ti/tidl
+INSTALL_DIR_EXAMPLES ?= $(DEST_DIR)/usr/share/ti/examples/tidl
 
 CP_ARGS = -Prf
 ifneq (,$(findstring 86, $(shell uname -m)))

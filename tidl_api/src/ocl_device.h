@@ -33,8 +33,8 @@
  */
 
 #pragma once
-#include <CL/cl.h>
-#include <CL/cl_ext.h>
+#include <CL/TI/cl.h>
+#include <CL/TI/cl_ext.h>
 #include <vector>
 #include <memory>
 #include "executor.h"
