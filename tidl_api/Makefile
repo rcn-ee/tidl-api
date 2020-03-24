@@ -95,10 +95,10 @@ $(LIB_NAME): $(HOST_OBJ_FILES)
 	$(AR) cr $@ $(HOST_OBJ_FILES)
 
 $(SHARED_LIB_NAME): $(HOST_OBJ_FILES)
-	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lOpenCL $(HOST_OBJ_FILES) -o $@
+	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lTIOpenCL $(HOST_OBJ_FILES) -o $@
 
 $(PY_LIB_NAME): $(HOST_OBJ_PYBIND_FILES) $(LIB_NAME)
-	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lOpenCL -locl_util $^ -o $@
+	$(CXX) $(CXXFLAGS) -Wl,-Bsymbolic -shared -lTIOpenCL -locl_util $^ -o $@
 
 $(LIB_IMGUTIL_NAME): $(HOST_OBJ_IMGUTIL_FILES)
 	$(AR) cr $@ $(HOST_OBJ_IMGUTIL_FILES)
